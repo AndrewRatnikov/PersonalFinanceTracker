@@ -8,13 +8,15 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 1.1. TanStack Start Setup
 
-- [ ] Initialize TanStack Start project using the official template (Vite-based).
-- [ ] Install core dependencies:
-  - `@tanstack/react-start`
-  - `tailwindcss` + `autoprefixer` + `postcss`
-  - `lucide-react` (for icons)
-  - `zod` (for schema validation)
-- [ ] Configure `app.config.ts` for TanStack Start and `tailwind.config.ts` for the monochromatic dark-mode theme.
+- [x] Initialize TanStack Start project using the official template (Vite-based).
+- [/] Install core dependencies:
+  - [x] `@tanstack/react-start`
+  - [x] `tailwindcss`
+  - [x] `lucide-react`
+  - [ ] `zod` (for schema validation)
+  - [ ] `recharts` (for analytics visuals - from PRD)
+  - [ ] `sonner` (for notifications)
+- [x] Configure `vite.config.ts` (Already exists with Tailwind support).
 
 ### 1.2. Supabase Integration
 
@@ -50,7 +52,8 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 3.1. File-Based Routing Structure
 
-- [ ] `src/routes/index.tsx`: The Daily Dashboard / Entry point.
+- [x] **Cleanup**: Remove demo routes and experimental data files (`src/routes/demo/*`, `src/data/demo.*`).
+- [ ] `src/routes/index.tsx`: Rewrite for the Daily Dashboard / Entry point.
 - [ ] `src/routes/analytics.tsx`: Donut and Bar charts with date-range filters.
 - [ ] `src/routes/settings.tsx`: Category management and export/import tools.
 - [ ] `src/routes/login.tsx`: Google Auth entry.
