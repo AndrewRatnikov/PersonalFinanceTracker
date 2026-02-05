@@ -20,12 +20,19 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 1.2. Supabase Integration
 
-- [ ] Initialize Supabase client in `src/lib/supabase.ts`.
-- [ ] Create `.env` file with `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+- [x] Initialize Supabase client in `src/lib/supabase.ts`.
+- [x] Create `.env` file with `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
 - [ ] **Database Schema Execution**:
-  - Run SQL to create `categories` and `expenses` tables with RLS (Row Level Security) enabled.
-  - Setup triggers for `updated_at` timestamps.
-- [ ] Setup Google OAuth in the Supabase Dashboard and configure the redirect URLs.
+  - Run SQL in Supabase Editor to create `categories` and `expenses` tables.
+  - Apply RLS (Row Level Security) policies for user isolation.
+  - Setup triggers for `updated_at` (See detail in `src/lib/supabase.ts` or PRD).
+  - _Detail:_
+    - `categories`: `id`, `user_id`, `name`, `icon`, `created_at`.
+    - `expenses`: `id`, `user_id`, `category_id`, `amount`, `currency` (UAH/USD/EUR), `description`, `is_recurring`, `created_at`, `updated_at`.
+- [ ] **Setup Google OAuth**:
+  - Configure Google Cloud Project (OAuth Consent + Client IDs).
+  - Enable Google Provider in Supabase Dashboard.
+  - Set Redirect URLs: `http://localhost:3000/auth/callback` and Supabase Auth callback.
 
 ---
 
