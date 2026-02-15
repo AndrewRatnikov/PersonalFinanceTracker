@@ -22,14 +22,14 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 - [x] Initialize Supabase client in `src/lib/supabase.ts`.
 - [x] Create `.env` file with `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-- [ ] **Database Schema Execution**:
+- [x] **Database Schema Execution**:
   - Run SQL in Supabase Editor to create `categories` and `expenses` tables.
   - Apply RLS (Row Level Security) policies for user isolation.
   - Setup triggers for `updated_at` (See detail in `src/lib/supabase.ts` or PRD).
   - _Detail:_
     - `categories`: `id`, `user_id`, `name`, `icon`, `created_at`.
     - `expenses`: `id`, `user_id`, `category_id`, `amount`, `currency` (UAH/USD/EUR), `description`, `is_recurring`, `created_at`, `updated_at`.
-- [ ] **Setup Google OAuth**:
+- [x] **Setup Google OAuth**:
   - Configure Google Cloud Project (OAuth Consent + Client IDs).
   - Enable Google Provider in Supabase Dashboard.
   - Set Redirect URLs: `http://localhost:3000/auth/callback` and Supabase Auth callback.
@@ -38,10 +38,121 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ## 2. Authentication & Guarding
 
-### 2.1. Auth State Management
+### 2.1. Auth State Management (Detailed)
 
-- [ ] Implement a `useAuth` hook or context that wraps the Supabase `onAuthStateChange`.
-- [ ] Create a `Server Function` to validate the user session on the server side for SSR.
+1.  **Dependencies**:
+    - `@supabase/ssr`: For cookie-based auth in SSR/Server Functions.
+    - `cookie`: (Optional) specifically for manual cookie parsing if needed.
+
+2.  **Supabase Client (`src/lib/supabase.ts`)**:
+    Split into browser and server client creators.
+
+    ```typescript
+    import {
+      createBrowserClient,
+      createServerClient,
+      parseCookieHeader,
+    } from '@supabase/ssr'
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+    export const createBrowserSupabaseClient = () =>
+      createBrowserClient(supabaseUrl, supabaseAnonKey)
+
+    export const createServerSupabaseClient = (context: {
+      req: Request
+      res: Response
+    }) =>
+      createServerClient(supabaseUrl, supabaseAnonKey, {
+        cookies: {
+          getAll() {
+            return parseCookieHeader(context.req.headers.get('Cookie') ?? '')
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              context.res.headers.set(
+                'Set-Cookie',
+                `${name}=${value}; ${options.maxAge}; ...`,
+              ),
+            )
+          },
+        },
+      })
+    ```
+
+3.  **Auth Context (`src/hooks/useAuth.tsx`)**:
+    A React context to provide user state globally.
+
+    ```tsx
+    import { createContext, useContext, useEffect, useState } from 'react'
+    import { User } from '@supabase/supabase-js'
+    import { createBrowserSupabaseClient } from '../lib/supabase'
+
+    const AuthContext = createContext<{
+      user: User | null
+      isLoading: boolean
+    }>({ user: null, isLoading: true })
+
+    export const AuthProvider = ({
+      children,
+    }: {
+      children: React.ReactNode
+    }) => {
+      const [user, setUser] = useState<User | null>(null)
+      const [isLoading, setIsLoading] = useState(true)
+      const supabase = createBrowserSupabaseClient()
+
+      useEffect(() => {
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+          setUser(session?.user ?? null)
+          setIsLoading(false)
+        })
+        return () => subscription.unsubscribe()
+      }, [])
+
+      return (
+        <AuthContext.Provider value={{ user, isLoading }}>
+          {children}
+        </AuthContext.Provider>
+      )
+    }
+    ```
+
+4.  **Server Session Logic (`src/lib/auth.ts`)**:
+    A Server Function to validate sessions on the server.
+
+    ```typescript
+    import { createServerFn } from '@tanstack/react-start'
+    import { getWebRequest } from 'vinxi/http'
+    import { createServerSupabaseClient } from './supabase'
+
+    export const getServerUser = createServerFn('GET', async () => {
+      const req = getWebRequest()
+      // Note: Implementation specific to TanStack Start's middleware/header handling
+      const supabase = createServerSupabaseClient({ req, res: null }) // Simplified
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      return user
+    })
+    ```
+
+5.  **Router Integration (`src/routes/__root.tsx`)**:
+    Injecting auth into the router context and guarding routes.
+    ```tsx
+    export const Route = createRootRouteWithContext<{
+      auth: { user: User | null; isLoading: boolean }
+    }>()({
+      beforeLoad: async ({ context, location }) => {
+        if (!context.auth.user && !location.pathname.startsWith('/login')) {
+          throw redirect({ to: '/login', search: { redirect: location.href } })
+        }
+      },
+    })
+    ```
 
 ### 2.2. Login View
 
