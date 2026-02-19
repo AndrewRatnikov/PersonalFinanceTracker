@@ -1,10 +1,31 @@
-import { createClient } from '@supabase/supabase-js'
+import {
+  createBrowserClient,
+  createServerClient,
+  parseCookieHeader,
+} from '@supabase/ssr'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !publishableKey) {
-  throw new Error('Missing Supabase environment variables')
-}
+export const createBrowserSupabaseClient = () =>
+  createBrowserClient(supabaseUrl, supabaseAnonKey)
 
-export const supabase = createClient(supabaseUrl, publishableKey)
+export const createServerSupabaseClient = (
+  cookieString: string,
+  setCookie: (name: string, value: string, options: any) => void,
+) =>
+  createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return parseCookieHeader(cookieString).map((cookie) => ({
+          name: cookie.name,
+          value: cookie.value ?? '',
+        }))
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) =>
+          setCookie(name, value, options),
+        )
+      },
+    },
+  })

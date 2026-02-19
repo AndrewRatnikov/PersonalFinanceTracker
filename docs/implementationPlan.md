@@ -60,21 +60,21 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
     export const createBrowserSupabaseClient = () =>
       createBrowserClient(supabaseUrl, supabaseAnonKey)
 
-    export const createServerSupabaseClient = (context: {
-      req: Request
-      res: Response
-    }) =>
+    export const createServerSupabaseClient = (
+      cookieString: string,
+      setCookie: (name: string, value: string, options: any) => void,
+    ) =>
       createServerClient(supabaseUrl, supabaseAnonKey, {
         cookies: {
           getAll() {
-            return parseCookieHeader(context.req.headers.get('Cookie') ?? '')
+            return parseCookieHeader(cookieString).map((cookie) => ({
+              name: cookie.name,
+              value: cookie.value ?? '',
+            }))
           },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              context.res.headers.set(
-                'Set-Cookie',
-                `${name}=${value}; ${options.maxAge}; ...`,
-              ),
+              setCookie(name, value, options),
             )
           },
         },
@@ -82,14 +82,14 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
     ```
 
 3.  **Auth Context (`src/hooks/useAuth.tsx`)**:
-    A React context to provide user state globally.
+    A React context to provide user state globally for browser-side renders once loaded.
 
     ```tsx
     import { createContext, useContext, useEffect, useState } from 'react'
     import { User } from '@supabase/supabase-js'
     import { createBrowserSupabaseClient } from '../lib/supabase'
 
-    const AuthContext = createContext<{
+    export const AuthContext = createContext<{
       user: User | null
       isLoading: boolean
     }>({ user: null, isLoading: true })
@@ -111,7 +111,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
           setIsLoading(false)
         })
         return () => subscription.unsubscribe()
-      }, [])
+      }, [supabase])
 
       return (
         <AuthContext.Provider value={{ user, isLoading }}>
@@ -119,50 +119,94 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
         </AuthContext.Provider>
       )
     }
+
+    export const useAuth = () => {
+      const context = useContext(AuthContext)
+      if (!context) {
+        throw new Error('useAuth must be used within an AuthProvider')
+      }
+      return context
+    }
     ```
 
 4.  **Server Session Logic (`src/lib/auth.ts`)**:
-    A Server Function to validate sessions on the server.
+    Server Functions to validate sessions on the server and to exchange OAuth codes using TanStack's native cookie utilities.
 
     ```typescript
     import { createServerFn } from '@tanstack/react-start'
-    import { getWebRequest } from 'vinxi/http'
+    import { getRequest, setCookie } from '@tanstack/react-start/server'
     import { createServerSupabaseClient } from './supabase'
 
-    export const getServerUser = createServerFn('GET', async () => {
-      const req = getWebRequest()
-      // Note: Implementation specific to TanStack Start's middleware/header handling
-      const supabase = createServerSupabaseClient({ req, res: null }) // Simplified
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      return user
-    })
+    export const getServerUser = createServerFn({ method: 'GET' }).handler(
+      async () => {
+        const req = getRequest()
+        if (!req) return null
+
+        const supabase = createServerSupabaseClient(
+          req.headers.get('cookie') ?? '',
+          (name, value, options) => {
+            setCookie(name, value, options as any)
+          },
+        )
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        return user
+      },
+    )
+
+    export const exchangeAuthCode = createServerFn({ method: 'POST' }).handler(
+      async (ctx: any) => {
+        const code = ctx.data as string
+        const req = getRequest()
+        if (!req) return null
+
+        const supabase = createServerSupabaseClient(
+          req.headers.get('cookie') ?? '',
+          (name, value, options) => {
+            setCookie(name, value, options as any)
+          },
+        )
+
+        await supabase.auth.exchangeCodeForSession(code)
+      },
+    )
     ```
 
 5.  **Router Integration (`src/routes/__root.tsx`)**:
-    Injecting auth into the router context and guarding routes.
+    Guarding routes securely by awaiting the `getServerUser` Server Function during SSR, prior to returning the context to child components.
+
     ```tsx
-    export const Route = createRootRouteWithContext<{
-      auth: { user: User | null; isLoading: boolean }
-    }>()({
-      beforeLoad: async ({ context, location }) => {
-        if (!context.auth.user && !location.pathname.startsWith('/login')) {
+    export const Route = createRootRouteWithContext<AuthContext>()({
+      beforeLoad: async ({ location }) => {
+        // Call the server function to validate the user session securely.
+        const user = await getServerUser()
+        const isLoading = false
+
+        if (
+          !user &&
+          !location.pathname.startsWith('/login') &&
+          !location.pathname.startsWith('/auth/callback')
+        ) {
           throw redirect({ to: '/login', search: { redirect: location.href } })
         }
+
+        // Return the updated context to propagate the user down to child routes.
+        return { auth: { user, isLoading } }
       },
+      // ... head, scripts, devtools omitted for brevity
     })
     ```
 
 ### 2.2. Login View
 
-- [ ] Create `/login` route.
-- [ ] Build a minimalist "Speed-Login" page with a single "Login with Google" button.
-- [ ] Implement the redirect logic after successful authentication.
+- [x] Create `/login` route.
+- [x] Build a minimalist "Speed-Login" page with a single "Login with Google" button.
+- [x] Implement the redirect logic after successful authentication.
 
 ### 2.3. Route Guarding
 
-- [ ] Implement a root-level check in `src/routes/__root.tsx` to redirect unauthenticated users to `/login`.
+- [x] Implement a root-level check in `src/routes/__root.tsx` to redirect unauthenticated users to `/login`.
 
 ---
 

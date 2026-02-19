@@ -7,7 +7,9 @@ import { routeTree } from './routeTree.gen'
 export const getRouter = () => {
   const router = createRouter({
     routeTree,
-    context: {},
+    context: {
+      auth: { user: null, isLoading: false },
+    },
 
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,

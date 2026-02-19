@@ -1,12 +1,43 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import {
+  HeadContent,
+  Scripts,
+  createRootRouteWithContext,
+  redirect,
+} from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import type { User } from '@supabase/supabase-js'
 
+import { getServerUser } from '../lib/auth'
 import Header from '../components/Header'
 
 import appCss from '../styles.css?url'
 
-export const Route = createRootRoute({
+interface AuthContext {
+  auth: {
+    user: User | null
+    isLoading: boolean
+  }
+}
+
+export const Route = createRootRouteWithContext<AuthContext>()({
+  beforeLoad: async ({ location }) => {
+    // Call the server function to validate the user session securely.
+    // TanStack Start handles the network request transparently if this is run on the client.
+    const user = await getServerUser()
+    const isLoading = false
+
+    if (
+      !user &&
+      !location.pathname.startsWith('/login') &&
+      !location.pathname.startsWith('/auth/callback')
+    ) {
+      throw redirect({ to: '/login', search: { redirect: location.href } })
+    }
+
+    // Return the updated context to propagate the user down to child routes.
+    return { auth: { user, isLoading } }
+  },
   head: () => ({
     meta: [
       {
@@ -17,7 +48,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'MinimaSpend',
       },
     ],
     links: [
