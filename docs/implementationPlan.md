@@ -9,12 +9,12 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 ### 1.1. TanStack Start Setup
 
 - [x] Initialize TanStack Start project using the official template (Vite-based).
-- [/] Install core dependencies:
+- [x] Install core dependencies:
   - [x] `@tanstack/react-start`
   - [x] `tailwindcss`
   - [x] `lucide-react`
   - [ ] `zod` (for schema validation)
-  - [ ] `recharts` (for analytics visuals - from PRD)
+  - [x] `recharts` (for analytics visuals - from PRD)
   - [ ] `sonner` (for notifications)
 - [x] Configure `vite.config.ts` (Already exists with Tailwind support).
 
@@ -215,10 +215,10 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 ### 3.1. File-Based Routing Structure
 
 - [x] **Cleanup**: Remove demo routes and experimental data files (`src/routes/demo/*`, `src/data/demo.*`).
-- [ ] `src/routes/index.tsx`: Rewrite for the Daily Dashboard / Entry point.
+- [x] `src/routes/index.tsx`: Rewrite for the Daily Dashboard / Entry point.
 - [ ] `src/routes/analytics.tsx`: Donut and Bar charts with date-range filters.
 - [ ] `src/routes/settings.tsx`: Category management and export/import tools.
-- [ ] `src/routes/login.tsx`: Google Auth entry.
+- [x] `src/routes/login.tsx`: Google Auth entry.
 
 ### 3.2. Auto-Provisioning Logic
 
@@ -231,13 +231,13 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 4.1. Server Functions for Mutations
 
-- [ ] `createExpense`: Validates input with Zod and inserts into Supabase.
+- [x] `createExpense`: Validates input and inserts into Supabase.
 - [ ] `createCategory`: Allows users to add custom labels.
 
 ### 4.2. Forms & Validation
 
-- [ ] **Category Select**: A focusable, mobile-friendly category picker.
-- [ ] **Amount Input**: A large, numeric-only input with currency selector (UAH/USD/EUR).
+- [x] **Category Select**: A focusable, mobile-friendly category picker.
+- [x] **Amount Input**: A large, numeric-only input with currency selector (UAH/USD/EUR).
 - [ ] Implement Zod-backed form validation for both manual and "Command-Line" style entries.
 
 ### 4.3. UX Polish
@@ -249,7 +249,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ## 5. Success Criteria for Phase 1
 
-- [ ] User can log in with Google.
+- [x] User can log in with Google.
 - [ ] User sees default categories on first visit.
-- [ ] User can successfully add an expense and see it persisted in the DB.
+- [x] User can successfully add an expense and see it persisted in the DB.
 - [ ] Navigation between Dashboard, Analytics, and Settings is functional.

@@ -34,3 +34,13 @@ export interface CreateExpenseInput {
   categoryId: string
 }
 
+export interface CreateCategoryInput {
+  name: string
+  icon?: string | null
+}
+
+export interface UpdateCategoryInput {
+  id: string
+  name: string
+  icon?: string | null
+}
