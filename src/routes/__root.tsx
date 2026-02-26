@@ -6,19 +6,12 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import type { User } from '@supabase/supabase-js'
 
 import { getServerUser } from '../lib/auth'
+import type { AuthContext } from '../lib/authContext'
 import Header from '../components/Header'
 
 import appCss from '../styles.css?url'
-
-interface AuthContext {
-  auth: {
-    user: User | null
-    isLoading: boolean
-  }
-}
 
 export const Route = createRootRouteWithContext<AuthContext>()({
   beforeLoad: async ({ location }) => {

@@ -7,13 +7,19 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 
-export default function DashboardStats({ data }: { data: any[] }) {
+import type { MonthlyExpenseSummary } from '../lib/domain'
+
+interface DashboardStatsProps {
+  data: MonthlyExpenseSummary[]
+}
+
+export default function DashboardStats({ data }: DashboardStatsProps) {
   // If no data, return nothing or empty skeleton
   if (!data || data.length === 0) return null
 
   // The last item in our data is the current month
   const currentMonthData = data[data.length - 1]
-  const currentTotal = currentMonthData ? currentMonthData.target : 0
+  const currentTotal = currentMonthData ? currentMonthData.total : 0
 
   return (
     <div className="w-full flex flex-col gap-6 py-4">
@@ -61,7 +67,7 @@ export default function DashboardStats({ data }: { data: any[] }) {
               ]}
             />
             <Bar
-              dataKey="target"
+              dataKey="total"
               fill="#06b6d4"
               radius={[4, 4, 0, 0]}
               maxBarSize={40}

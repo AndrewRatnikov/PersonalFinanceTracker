@@ -2,6 +2,7 @@ import { createRouter } from '@tanstack/react-router'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
+import type { AuthContext } from './lib/authContext'
 
 // Create a new router instance
 export const getRouter = () => {
@@ -9,7 +10,7 @@ export const getRouter = () => {
     routeTree,
     context: {
       auth: { user: null, isLoading: false },
-    },
+    } as AuthContext,
 
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,

@@ -1,27 +1,27 @@
 import { useState } from 'react'
 
+import type { Category, CreateExpenseInput, Currency } from '../lib/domain'
+
+interface SpeedEntryFormProps {
+  categories: Category[]
+  onSubmit: (data: CreateExpenseInput) => void
+  isPending?: boolean
+}
+
 export default function SpeedEntryForm({
   categories,
   onSubmit,
   isPending,
-}: {
-  categories: any[]
-  onSubmit: (data: {
-    amount: number
-    currency: string
-    category_id: string
-  }) => void
-  isPending?: boolean
-}) {
+}: SpeedEntryFormProps) {
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState('UAH')
+  const [currency, setCurrency] = useState<Currency>('UAH')
   // Automatically select the first category if available
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!amount || !categoryId) return
-    onSubmit({ amount: Number(amount), currency, category_id: categoryId })
+    onSubmit({ amount: Number(amount), currency, categoryId })
     // Reset form after submit
     setAmount('')
   }

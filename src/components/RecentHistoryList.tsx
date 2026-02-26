@@ -1,4 +1,10 @@
-export default function RecentHistoryList({ expenses }: { expenses: any[] }) {
+import type { Expense } from '../lib/domain'
+
+interface RecentHistoryListProps {
+  expenses: Expense[]
+}
+
+export default function RecentHistoryList({ expenses }: RecentHistoryListProps) {
   if (!expenses || expenses.length === 0) {
     return (
       <div className="text-center text-slate-400 py-8 bg-slate-800/40 rounded-2xl border border-slate-700/30">
@@ -13,7 +19,7 @@ export default function RecentHistoryList({ expenses }: { expenses: any[] }) {
         Recent History
       </h3>
       {expenses.map((expense) => {
-        const date = new Date(expense.created_at)
+        const date = new Date(expense.createdAt)
         const timeString = date.toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
@@ -30,11 +36,11 @@ export default function RecentHistoryList({ expenses }: { expenses: any[] }) {
           >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl shadow-inner">
-                {expense.categories?.icon || '🏷️'}
+                {expense.category?.icon || '🏷️'}
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold text-white">
-                  {expense.categories?.name || 'Uncategorized'}
+                  {expense.category?.name || 'Uncategorized'}
                 </span>
                 <span className="text-sm text-slate-400">
                   {dateString} • {timeString}

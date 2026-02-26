@@ -1,17 +1,25 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
-import {
-  getMonthlyExpenses,
-  getRecentExpenses,
-  getUserCategories,
-  createExpense,
-} from '../lib/database'
+
+import { getMonthlyExpenses } from '../lib/analytics'
+import { getUserCategories } from '../lib/categories'
+import { createExpense, getRecentExpenses } from '../lib/expenses'
+import type {
+  Category,
+  CreateExpenseInput,
+  Expense,
+  MonthlyExpenseSummary,
+} from '../lib/domain'
 import DashboardStats from '../components/DashboardStats'
 import SpeedEntryForm from '../components/SpeedEntryForm'
 import RecentHistoryList from '../components/RecentHistoryList'
 
 export const Route = createFileRoute('/')({
-  loader: async () => {
+  loader: async (): Promise<{
+    monthlyStats: MonthlyExpenseSummary[]
+    recentExpenses: Expense[]
+    categories: Category[]
+  }> => {
     // Fetch all necessary dashboard data in parallel
     const [monthlyStats, recentExpenses, categories] = await Promise.all([
       getMonthlyExpenses(),
@@ -32,15 +40,11 @@ function Dashboard() {
   const router = useRouter()
   const [isPending, setIsPending] = useState(false)
 
-  const handleCreateExpense = async (data: {
-    amount: number
-    currency: string
-    category_id: string
-  }) => {
+  const handleCreateExpense = async (data: CreateExpenseInput) => {
     setIsPending(true)
     try {
       // Execute the server function to insert the record
-      await createExpense({ data })
+      await createExpense(data)
       // Invalidate the router to trigger a re-fetch of the loader data
       await router.invalidate()
     } catch (error) {
