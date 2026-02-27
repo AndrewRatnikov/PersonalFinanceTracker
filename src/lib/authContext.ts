@@ -6,4 +6,3 @@ export interface AuthContext {
     isLoading: boolean
   }
 }
-

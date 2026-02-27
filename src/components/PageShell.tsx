@@ -13,4 +13,3 @@ export default function PageShell({ children }: PageShellProps) {
     </div>
   )
 }
-
