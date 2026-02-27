@@ -28,6 +28,41 @@ export interface MonthlyExpenseSummary {
   total: number
 }
 
+export interface CategoryBreakdownItem {
+  categoryId: string
+  name: string
+  icon?: string | null
+  /**
+   * Total amount spent in this category for the selected range.
+   */
+  total: number
+}
+
+export interface AnalyticsTimelinePoint {
+  /**
+   * ISO date string (YYYY-MM-DD) representing the day bucket.
+   */
+  date: string
+  /**
+   * Human-friendly label for charts, e.g. `03 Feb`.
+   */
+  label: string
+  total: number
+}
+
+export interface AnalyticsRangeSummary {
+  /**
+   * ISO datetime string for the inclusive range start.
+   */
+  from: string
+  /**
+   * ISO datetime string for the inclusive range end.
+   */
+  to: string
+  categoryBreakdown: CategoryBreakdownItem[]
+  timeline: AnalyticsTimelinePoint[]
+}
+
 export interface CreateExpenseInput {
   amount: number
   currency: Currency

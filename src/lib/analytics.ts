@@ -1,6 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 
-import type { MonthlyExpenseSummary } from './domain'
+import type {
+  AnalyticsRangeSummary,
+  AnalyticsTimelinePoint,
+  CategoryBreakdownItem,
+  MonthlyExpenseSummary,
+} from './domain'
 import { getAuthenticatedClient } from './serverClient'
 
 export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
@@ -67,4 +72,149 @@ export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
     return chartData
   },
 )
+
+type RangeInput = {
+  from?: string
+  to?: string
+}
+
+function getDefaultRange(): { from: string; to: string } {
+  const now = new Date()
+  const to = new Date(now)
+  to.setHours(23, 59, 59, 999)
+
+  const from = new Date(now)
+  from.setDate(from.getDate() - 29)
+  from.setHours(0, 0, 0, 0)
+
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  }
+}
+
+function normalizeRange(input: RangeInput): { from: string; to: string } {
+  const fallback = getDefaultRange()
+
+  if (!input.from && !input.to) {
+    return fallback
+  }
+
+  let fromDate = input.from ? new Date(input.from) : new Date(fallback.from)
+  let toDate = input.to ? new Date(input.to) : new Date(fallback.to)
+
+  if (Number.isNaN(fromDate.getTime())) {
+    fromDate = new Date(fallback.from)
+  }
+  if (Number.isNaN(toDate.getTime())) {
+    toDate = new Date(fallback.to)
+  }
+
+  if (fromDate > toDate) {
+    const tmp = fromDate
+    fromDate = toDate
+    toDate = tmp
+  }
+
+  fromDate.setHours(0, 0, 0, 0)
+  toDate.setHours(23, 59, 59, 999)
+
+  return {
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+  }
+}
+
+export const getRangeAnalytics = createServerFn({ method: 'GET' })
+  .inputValidator((input: RangeInput | undefined): RangeInput => {
+    if (!input || typeof input !== 'object') return {}
+    const { from, to } = input
+    return {
+      from: typeof from === 'string' && from ? from : undefined,
+      to: typeof to === 'string' && to ? to : undefined,
+    }
+  })
+  .handler(async ({ data }): Promise<AnalyticsRangeSummary> => {
+    const { supabase, user } = await getAuthenticatedClient()
+    const range = normalizeRange(data ?? {})
+
+    const { data: rows, error } = await supabase
+      .from('expenses')
+      .select(
+        'id, amount, currency, category_id, created_at, categories (id, name, icon)',
+      )
+      .eq('user_id', user.id)
+      .gte('created_at', range.from)
+      .lte('created_at', range.to)
+
+    if (error) {
+      throw error
+    }
+
+    const categoryMap = new Map<string, CategoryBreakdownItem>()
+    const timelineMap = new Map<string, number>()
+
+    if (rows) {
+      for (const row of rows as any[]) {
+        const amount = Number(row.amount)
+        if (!Number.isFinite(amount) || amount <= 0) continue
+        if (!row.category_id || !row.categories) continue
+
+        const categoryId = row.category_id as string
+        const existing = categoryMap.get(categoryId)
+        const name = row.categories.name as string
+        const icon = (row.categories.icon ?? null) as string | null
+
+        if (existing) {
+          existing.total += amount
+        } else {
+          categoryMap.set(categoryId, {
+            categoryId,
+            name,
+            icon,
+            total: amount,
+          })
+        }
+
+        const dateObj = new Date(row.created_at)
+        if (Number.isNaN(dateObj.getTime())) continue
+        const y = dateObj.getUTCFullYear()
+        const m = dateObj.getUTCMonth() + 1
+        const d = dateObj.getUTCDate()
+        const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(
+          2,
+          '0',
+        )}`
+
+        const prevTotal = timelineMap.get(key) ?? 0
+        timelineMap.set(key, prevTotal + amount)
+      }
+    }
+
+    const categoryBreakdown = Array.from(categoryMap.values()).sort(
+      (a, b) => b.total - a.total,
+    )
+
+    const timelineKeys = Array.from(timelineMap.keys()).sort()
+    const timeline: AnalyticsTimelinePoint[] = timelineKeys.map((key) => {
+      const [year, month, day] = key.split('-').map(Number)
+      const dateObj = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1))
+      const label = dateObj.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: 'short',
+      })
+      return {
+        date: key,
+        label,
+        total: timelineMap.get(key) ?? 0,
+      }
+    })
+
+    return {
+      from: range.from,
+      to: range.to,
+      categoryBreakdown,
+      timeline,
+    }
+  })
 

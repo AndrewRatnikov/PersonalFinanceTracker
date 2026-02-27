@@ -216,8 +216,8 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 - [x] **Cleanup**: Remove demo routes and experimental data files (`src/routes/demo/*`, `src/data/demo.*`).
 - [x] `src/routes/index.tsx`: Rewrite for the Daily Dashboard / Entry point.
-- [ ] `src/routes/analytics.tsx`: Donut and Bar charts with date-range filters.
-- [ ] `src/routes/settings.tsx`: Category management and export/import tools.
+- [x] `src/routes/analytics.tsx`: Donut and Bar charts with date-range filters.
+- [x] `src/routes/settings.tsx`: Category management and export/import tools.
 - [x] `src/routes/login.tsx`: Google Auth entry.
 
 ### 3.2. Auto-Provisioning Logic
@@ -232,7 +232,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 ### 4.1. Server Functions for Mutations
 
 - [x] `createExpense`: Validates input and inserts into Supabase.
-- [ ] `createCategory`: Allows users to add custom labels.
+- [x] `createCategory`: Allows users to add custom labels.
 
 ### 4.2. Forms & Validation
 
@@ -252,4 +252,4 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 - [x] User can log in with Google.
 - [ ] User sees default categories on first visit.
 - [x] User can successfully add an expense and see it persisted in the DB.
-- [ ] Navigation between Dashboard, Analytics, and Settings is functional.
+- [x] Navigation between Dashboard, Analytics, and Settings is functional.
