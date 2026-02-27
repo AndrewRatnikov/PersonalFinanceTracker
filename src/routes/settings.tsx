@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Tag, Database } from 'lucide-react'
+import { Database, Tag } from 'lucide-react'
 
 import { getUserCategories } from '../lib/categories'
-import type { Category } from '../lib/domain'
 import { TabButton } from '../components/settings/TabButton'
 import { CategoriesTab } from '../components/settings/CategoriesTab'
 import { DataToolsTab } from '../components/settings/DataToolsTab'
+import type { Category } from '../lib/domain'
 import PageShell from '@/components/PageShell'
 
 // ---------------------------------------------------------------------------
@@ -14,7 +14,7 @@ import PageShell from '@/components/PageShell'
 // ---------------------------------------------------------------------------
 
 export const Route = createFileRoute('/settings')({
-  loader: async (): Promise<{ categories: Category[] }> => {
+  loader: async (): Promise<{ categories: Array<Category> }> => {
     const categories = await getUserCategories()
     return { categories }
   },

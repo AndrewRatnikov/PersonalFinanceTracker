@@ -1,18 +1,16 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest, setCookie } from '@tanstack/react-start/server'
-import type { User } from '@supabase/supabase-js'
-
 import { createServerSupabaseClient } from './supabase'
+import type { User } from '@supabase/supabase-js'
 
 export const getServerUser = createServerFn({ method: 'GET' }).handler(
   async (): Promise<User | null> => {
     const req = getRequest()
-    if (!req) return null
 
     const supabase = createServerSupabaseClient(
       req.headers.get('cookie') ?? '',
       (name, value, options) => {
-        setCookie(name, value, options as any)
+        setCookie(name, value, options)
       },
     )
     const {
@@ -42,12 +40,11 @@ export const exchangeAuthCode = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }): Promise<void> => {
     const req = getRequest()
-    if (!req) return
 
     const supabase = createServerSupabaseClient(
       req.headers.get('cookie') ?? '',
       (name, value, options) => {
-        setCookie(name, value, options as any)
+        setCookie(name, value, options)
       },
     )
 

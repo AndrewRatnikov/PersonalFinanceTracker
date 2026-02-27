@@ -1,31 +1,31 @@
 import {
-  BarChart,
   Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
 } from 'recharts'
 
 import type { MonthlyExpenseSummary } from '../../lib/domain'
 
 interface DashboardStatsProps {
-  data: MonthlyExpenseSummary[]
+  data: Array<MonthlyExpenseSummary>
 }
 
 export default function DashboardStats({ data }: DashboardStatsProps) {
   // If no data, return nothing or empty skeleton
-  if (!data || data.length === 0) return null
+  if (data.length === 0) return null
 
   // The last item in our data is the current month
   const currentMonthData = data[data.length - 1]
-  const currentTotal = currentMonthData ? currentMonthData.total : 0
+  const currentTotal = currentMonthData.total
 
   return (
     <div className="w-full flex flex-col gap-6 py-4">
       <div className="text-center">
         <h2 className="text-sm font-medium text-slate-400 uppercase tracking-widest">
-          Spent This Month ({currentMonthData?.name})
+          Spent This Month ({currentMonthData.name})
         </h2>
         <div className="mt-2 text-5xl font-black text-white mix-blend-screen">
           {currentTotal} <span className="text-2xl text-cyan-500">UAH</span>

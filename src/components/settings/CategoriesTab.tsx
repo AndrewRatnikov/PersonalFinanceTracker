@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useRouter, useLoaderData } from '@tanstack/react-router'
+import { useLoaderData, useRouter } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { createCategory } from '../../lib/categories'
 import { CategoryRow } from './CategoryRow'
@@ -7,9 +7,7 @@ import type { Category } from '../../lib/domain'
 
 export function CategoriesTab() {
   // Use useLoaderData with 'from' to avoid circular dependency with Route object
-  const { categories } = useLoaderData({ from: '/settings' }) as {
-    categories: Category[]
-  }
+  const { categories } = useLoaderData({ from: '/settings' })
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)

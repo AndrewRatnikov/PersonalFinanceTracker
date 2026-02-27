@@ -1,10 +1,10 @@
 import {
-  PieChart,
-  Pie,
   Cell,
-  Tooltip,
-  ResponsiveContainer,
   Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
 } from 'recharts'
 
 import type { CategoryBreakdownItem } from '../../lib/domain'
@@ -12,11 +12,11 @@ import type { CategoryBreakdownItem } from '../../lib/domain'
 const COLORS = ['#06b6d4', '#22c55e', '#f97316', '#eab308', '#a855f7']
 
 interface Props {
-  data: CategoryBreakdownItem[]
+  data: Array<CategoryBreakdownItem>
 }
 
 export default function CategoryDonutChart({ data }: Props) {
-  if (!data || data.length === 0) {
+  if (data.length === 0) {
     return (
       <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
         No expenses in this period.
@@ -56,10 +56,7 @@ export default function CategoryDonutChart({ data }: Props) {
               borderRadius: '8px',
               color: '#e5e7eb',
             }}
-            formatter={(value: number, name: string) => [
-              `${value} UAH`,
-              name,
-            ]}
+            formatter={(value: number, name: string) => [`${value} UAH`, name]}
           />
           <Legend
             verticalAlign="bottom"
@@ -71,4 +68,3 @@ export default function CategoryDonutChart({ data }: Props) {
     </div>
   )
 }
-

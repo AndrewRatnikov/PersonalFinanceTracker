@@ -1,18 +1,18 @@
 import { createServerFn } from '@tanstack/react-start'
 
+import { getAuthenticatedClient } from './serverClient'
 import type {
   Category,
   CreateCategoryInput,
   UpdateCategoryInput,
 } from './domain'
-import { getAuthenticatedClient } from './serverClient'
 
 // ---------------------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------------------
 
 export const getUserCategories = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<Category[]> => {
+  async (): Promise<Array<Category>> => {
     const { supabase, user } = await getAuthenticatedClient()
 
     const { data, error } = await supabase
@@ -23,7 +23,7 @@ export const getUserCategories = createServerFn({ method: 'GET' }).handler(
 
     if (error) throw error
 
-    return (data ?? []).map((row: any) => ({
+    return data.map((row: any) => ({
       id: row.id,
       name: row.name,
       icon: row.icon ?? null,

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Pencil, Trash2, Check, X } from 'lucide-react'
-import { updateCategory, deleteCategory } from '../../lib/categories'
+import { Check, Pencil, Trash2, X } from 'lucide-react'
+import { deleteCategory, updateCategory } from '../../lib/categories'
 import type { Category } from '../../lib/domain'
 
 interface CategoryRowProps {

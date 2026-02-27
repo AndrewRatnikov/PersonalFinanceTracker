@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { Category, CreateExpenseInput, Currency } from '../lib/domain'
 
 interface SpeedEntryFormProps {
-  categories: Category[]
+  categories: Array<Category>
   onSubmit: (data: CreateExpenseInput) => void
   isPending?: boolean
 }

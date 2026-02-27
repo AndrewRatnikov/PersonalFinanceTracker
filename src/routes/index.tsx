@@ -1,15 +1,15 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
-import { getMonthlyExpenses } from '@/lib/analytics'
-import { getUserCategories } from '@/lib/categories'
-import { createExpense, getRecentExpenses } from '@/lib/expenses'
 import type {
   Category,
   CreateExpenseInput,
   Expense,
   MonthlyExpenseSummary,
 } from '@/lib/domain'
+import { getMonthlyExpenses } from '@/lib/analytics'
+import { getUserCategories } from '@/lib/categories'
+import { createExpense, getRecentExpenses } from '@/lib/expenses'
 import DashboardStats from '@/components/index/DashboardStats'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import RecentHistoryList from '@/components/index/RecentHistoryList'
@@ -17,9 +17,9 @@ import PageShell from '@/components/PageShell'
 
 export const Route = createFileRoute('/')({
   loader: async (): Promise<{
-    monthlyStats: MonthlyExpenseSummary[]
-    recentExpenses: Expense[]
-    categories: Category[]
+    monthlyStats: Array<MonthlyExpenseSummary>
+    recentExpenses: Array<Expense>
+    categories: Array<Category>
   }> => {
     const [monthlyStats, recentExpenses, categories] = await Promise.all([
       getMonthlyExpenses(),

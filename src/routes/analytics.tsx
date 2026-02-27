@@ -2,10 +2,10 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { getRangeAnalytics } from '../lib/analytics'
-import type { AnalyticsRangeSummary } from '../lib/domain'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import PageShell from '../components/PageShell'
+import type { AnalyticsRangeSummary } from '../lib/domain'
 
 type AnalyticsSearch = {
   from?: string
@@ -63,7 +63,7 @@ function formatRangeLabel(range: AnalyticsRangeSummary): string {
 
 function AnalyticsPage() {
   const { analytics } = Route.useLoaderData()
-  const search = Route.useSearch() as AnalyticsSearch
+  const search = Route.useSearch()
   const router = useRouter()
 
   const [validationError, setValidationError] = useState<string | null>(null)

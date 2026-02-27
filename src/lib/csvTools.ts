@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 
-import type { Currency } from './domain'
 import { getAuthenticatedClient } from './serverClient'
+import type { Currency } from './domain'
 
 // ---------------------------------------------------------------------------
 // Export
@@ -23,7 +23,7 @@ export const exportExpensesCSV = createServerFn({ method: 'GET' }).handler(
 
     if (error) throw error
 
-    const rows = (data ?? []).map((row: any) => {
+    const rows = data.map((row: any) => {
       const date = new Date(row.created_at).toISOString().split('T')[0]
       const category = row.categories?.name ?? ''
       const description = (row.description ?? '').replace(/"/g, '""')
@@ -42,10 +42,10 @@ export const exportExpensesCSV = createServerFn({ method: 'GET' }).handler(
 export interface ImportResult {
   inserted: number
   skipped: number
-  errors: string[]
+  errors: Array<string>
 }
 
-const VALID_CURRENCIES: Currency[] = ['UAH', 'USD', 'EUR']
+const VALID_CURRENCIES: Array<Currency> = ['UAH', 'USD', 'EUR']
 
 /**
  * Parses a CSV string (same format as the export) and bulk-inserts valid rows.
@@ -68,7 +68,7 @@ export const importExpensesCSV = createServerFn({ method: 'POST' })
     if (catError) throw catError
 
     const categoryMap = new Map<string, string>()
-    for (const cat of catRows ?? []) {
+    for (const cat of catRows) {
       categoryMap.set(cat.name.toLowerCase(), cat.id)
     }
 
@@ -81,8 +81,8 @@ export const importExpensesCSV = createServerFn({ method: 'POST' })
       ? lines.slice(1)
       : lines
 
-    const toInsert: object[] = []
-    const errors: string[] = []
+    const toInsert: Array<object> = []
+    const errors: Array<string> = []
     let skipped = 0
 
     for (let i = 0; i < dataLines.length; i++) {

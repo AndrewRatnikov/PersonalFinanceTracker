@@ -1,15 +1,17 @@
 import { createServerFn } from '@tanstack/react-start'
 
-import type { CreateExpenseInput, Currency, Expense } from './domain'
 import { getAuthenticatedClient } from './serverClient'
+import type { CreateExpenseInput, Currency, Expense } from './domain'
 
 export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<Expense[]> => {
+  async (): Promise<Array<Expense>> => {
     const { supabase, user } = await getAuthenticatedClient()
 
     const { data, error } = await supabase
       .from('expenses')
-      .select('id, amount, currency, category_id, created_at, categories (id, name, icon)')
+      .select(
+        'id, amount, currency, category_id, created_at, categories (id, name, icon)',
+      )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(10)
@@ -18,7 +20,7 @@ export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
       throw error
     }
 
-    return (data ?? []).map((row: any) => ({
+    return data.map((row: any) => ({
       id: row.id,
       amount: Number(row.amount),
       currency: row.currency,
@@ -35,7 +37,7 @@ export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-const VALID_CURRENCIES: Currency[] = ['UAH', 'USD', 'EUR']
+const VALID_CURRENCIES: Array<Currency> = ['UAH', 'USD', 'EUR']
 
 export const createExpense = createServerFn({ method: 'POST' })
   .inputValidator((input: unknown): CreateExpenseInput => {
@@ -53,7 +55,10 @@ export const createExpense = createServerFn({ method: 'POST' })
       throw new Error('Amount must be a positive number')
     }
 
-    if (typeof currency !== 'string' || !VALID_CURRENCIES.includes(currency as Currency)) {
+    if (
+      typeof currency !== 'string' ||
+      !VALID_CURRENCIES.includes(currency as Currency)
+    ) {
       throw new Error('Unsupported currency')
     }
 
@@ -96,4 +101,3 @@ export const createExpense = createServerFn({ method: 'POST' })
       category: undefined,
     }
   })
-

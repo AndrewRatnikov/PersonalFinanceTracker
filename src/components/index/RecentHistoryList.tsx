@@ -1,11 +1,13 @@
-import type { Expense } from '../lib/domain'
+import type { Expense } from '../../lib/domain'
 
 interface RecentHistoryListProps {
-  expenses: Expense[]
+  expenses: Array<Expense>
 }
 
-export default function RecentHistoryList({ expenses }: RecentHistoryListProps) {
-  if (!expenses || expenses.length === 0) {
+export default function RecentHistoryList({
+  expenses,
+}: RecentHistoryListProps) {
+  if (expenses.length === 0) {
     return (
       <div className="text-center text-slate-400 py-8 bg-slate-800/40 rounded-2xl border border-slate-700/30">
         No recent expenses found.

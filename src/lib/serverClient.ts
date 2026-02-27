@@ -1,9 +1,8 @@
 'use server'
 
 import { getRequest, setCookie } from '@tanstack/react-start/server'
-import type { SupabaseClient, User } from '@supabase/supabase-js'
-
 import { createServerSupabaseClient } from './supabase'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 export interface AuthenticatedClient {
   supabase: SupabaseClient
@@ -16,14 +15,11 @@ export interface AuthenticatedClient {
 export const getAuthenticatedClient =
   async (): Promise<AuthenticatedClient> => {
     const req = getRequest()
-    if (!req) {
-      throw new Error('No request context found')
-    }
 
     const supabase = createServerSupabaseClient(
       req.headers.get('cookie') ?? '',
       (name, value, options) => {
-        setCookie(name, value, options as any)
+        setCookie(name, value, options)
       },
     )
 

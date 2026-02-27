@@ -59,8 +59,8 @@ export interface AnalyticsRangeSummary {
    * ISO datetime string for the inclusive range end.
    */
   to: string
-  categoryBreakdown: CategoryBreakdownItem[]
-  timeline: AnalyticsTimelinePoint[]
+  categoryBreakdown: Array<CategoryBreakdownItem>
+  timeline: Array<AnalyticsTimelinePoint>
 }
 
 export interface CreateExpenseInput {

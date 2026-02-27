@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { Download, Upload } from 'lucide-react'
 import { exportExpensesCSV, importExpensesCSV } from '../../lib/csvTools'
@@ -12,7 +12,7 @@ export function DataToolsTab() {
   const [importResult, setImportResult] = useState<{
     inserted: number
     skipped: number
-    errors: string[]
+    errors: Array<string>
   } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 

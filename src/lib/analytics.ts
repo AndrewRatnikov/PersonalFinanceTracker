@@ -1,15 +1,15 @@
 import { createServerFn } from '@tanstack/react-start'
 
+import { getAuthenticatedClient } from './serverClient'
 import type {
   AnalyticsRangeSummary,
   AnalyticsTimelinePoint,
   CategoryBreakdownItem,
   MonthlyExpenseSummary,
 } from './domain'
-import { getAuthenticatedClient } from './serverClient'
 
 export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<MonthlyExpenseSummary[]> => {
+  async (): Promise<Array<MonthlyExpenseSummary>> => {
     const { supabase, user } = await getAuthenticatedClient()
 
     // Date math: First day of 11 months ago, so we have 12 full months including current.
@@ -43,31 +43,29 @@ export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
     }
 
     // Add amounts to their respective month bucket
-    if (data) {
-      data.forEach((exp: any) => {
-        const expDate = new Date(exp.created_at)
-        const monthLabel = expDate.toLocaleString('en-US', { month: 'short' })
-        const key = `${expDate.getFullYear()}-${monthLabel}`
-        if (monthlyMap[key] !== undefined) {
-          monthlyMap[key] += Number(exp.amount)
-        } else {
-          monthlyMap[key] = Number(exp.amount)
-        }
-      })
-    }
+    data.forEach((exp: any) => {
+      const expDate = new Date(exp.created_at)
+      const monthLabel = expDate.toLocaleString('en-US', { month: 'short' })
+      const key = `${expDate.getFullYear()}-${monthLabel}`
+      if (key in monthlyMap) {
+        monthlyMap[key] += Number(exp.amount)
+      } else {
+        monthlyMap[key] = Number(exp.amount)
+      }
+    })
 
     // Format for Recharts
-    const chartData: MonthlyExpenseSummary[] = Object.entries(monthlyMap).map(
-      ([key, value]) => {
-        const [year, month] = key.split('-')
-        return {
-          month, // e.g. 'Jan'
-          year, // e.g. '2023'
-          name: month, // Label to show on X axis
-          total: value, // Total amount for that month
-        }
-      },
-    )
+    const chartData: Array<MonthlyExpenseSummary> = Object.entries(
+      monthlyMap,
+    ).map(([key, value]) => {
+      const [year, month] = key.split('-')
+      return {
+        month, // e.g. 'Jan'
+        year, // e.g. '2023'
+        name: month, // Label to show on X axis
+        total: value, // Total amount for that month
+      }
+    })
 
     return chartData
   },
@@ -136,7 +134,7 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
   })
   .handler(async ({ data }): Promise<AnalyticsRangeSummary> => {
     const { supabase, user } = await getAuthenticatedClient()
-    const range = normalizeRange(data ?? {})
+    const range = normalizeRange(data)
 
     const { data: rows, error } = await supabase
       .from('expenses')
@@ -154,41 +152,39 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     const categoryMap = new Map<string, CategoryBreakdownItem>()
     const timelineMap = new Map<string, number>()
 
-    if (rows) {
-      for (const row of rows as any[]) {
-        const amount = Number(row.amount)
-        if (!Number.isFinite(amount) || amount <= 0) continue
-        if (!row.category_id || !row.categories) continue
+    for (const row of rows as Array<any>) {
+      const amount = Number(row.amount)
+      if (!Number.isFinite(amount) || amount <= 0) continue
+      if (!row.category_id || !row.categories) continue
 
-        const categoryId = row.category_id as string
-        const existing = categoryMap.get(categoryId)
-        const name = row.categories.name as string
-        const icon = (row.categories.icon ?? null) as string | null
+      const categoryId = row.category_id as string
+      const existing = categoryMap.get(categoryId)
+      const name = row.categories.name as string
+      const icon = (row.categories.icon ?? null) as string | null
 
-        if (existing) {
-          existing.total += amount
-        } else {
-          categoryMap.set(categoryId, {
-            categoryId,
-            name,
-            icon,
-            total: amount,
-          })
-        }
-
-        const dateObj = new Date(row.created_at)
-        if (Number.isNaN(dateObj.getTime())) continue
-        const y = dateObj.getUTCFullYear()
-        const m = dateObj.getUTCMonth() + 1
-        const d = dateObj.getUTCDate()
-        const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(
-          2,
-          '0',
-        )}`
-
-        const prevTotal = timelineMap.get(key) ?? 0
-        timelineMap.set(key, prevTotal + amount)
+      if (existing) {
+        existing.total += amount
+      } else {
+        categoryMap.set(categoryId, {
+          categoryId,
+          name,
+          icon,
+          total: amount,
+        })
       }
+
+      const dateObj = new Date(row.created_at)
+      if (Number.isNaN(dateObj.getTime())) continue
+      const y = dateObj.getUTCFullYear()
+      const m = dateObj.getUTCMonth() + 1
+      const d = dateObj.getUTCDate()
+      const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(
+        2,
+        '0',
+      )}`
+
+      const prevTotal = timelineMap.get(key) ?? 0
+      timelineMap.set(key, prevTotal + amount)
     }
 
     const categoryBreakdown = Array.from(categoryMap.values()).sort(
@@ -196,9 +192,9 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     )
 
     const timelineKeys = Array.from(timelineMap.keys()).sort()
-    const timeline: AnalyticsTimelinePoint[] = timelineKeys.map((key) => {
+    const timeline: Array<AnalyticsTimelinePoint> = timelineKeys.map((key) => {
       const [year, month, day] = key.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1))
+      const dateObj = new Date(Date.UTC(year, month - 1, day))
       const label = dateObj.toLocaleDateString('en-US', {
         day: '2-digit',
         month: 'short',
@@ -217,4 +213,3 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
       timeline,
     }
   })
-
