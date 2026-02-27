@@ -5,6 +5,7 @@ import { getRangeAnalytics } from '../lib/analytics'
 import type { AnalyticsRangeSummary } from '../lib/domain'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
+import PageShell from '../components/PageShell'
 
 type AnalyticsSearch = {
   from?: string
@@ -129,8 +130,7 @@ function AnalyticsPage() {
     analytics.categoryBreakdown.length > 0 || analytics.timeline.length > 0
 
   return (
-    <div className="min-h-screen bg-slate-900 pb-20">
-      <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+    <PageShell>
         <section className="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -221,8 +221,7 @@ function AnalyticsPage() {
             </div>
           </section>
         )}
-      </div>
-    </div>
+    </PageShell>
   )
 }
 

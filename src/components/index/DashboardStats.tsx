@@ -7,7 +7,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 
-import type { MonthlyExpenseSummary } from '../lib/domain'
+import type { MonthlyExpenseSummary } from '../../lib/domain'
 
 interface DashboardStatsProps {
   data: MonthlyExpenseSummary[]
