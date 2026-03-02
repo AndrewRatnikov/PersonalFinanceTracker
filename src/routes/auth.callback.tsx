@@ -11,7 +11,7 @@ export const Route = createFileRoute('/auth/callback')({
 
     if (code) {
       // Execute the server function to swap the code for cookies
-      await exchangeAuthCode({ code })
+      await exchangeAuthCode({ data: { code } })
     }
 
     // Always redirect back to the app to clear the callback URL parameters
