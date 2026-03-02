@@ -3,20 +3,48 @@ import { getRequest, setCookie } from '@tanstack/react-start/server'
 import { createServerSupabaseClient } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
-export const getServerUser = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<User | null> => {
-    const req = getRequest()
+export interface UserProfile {
+  full_name: string
+  email: string
+  avatar_url: string | null
+}
 
-    const supabase = createServerSupabaseClient(
-      req.headers.get('cookie') ?? '',
-      (name, value, options) => {
-        setCookie(name, value, options)
-      },
-    )
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    return user
+// ---------------------------------------------------------------------------
+// Private helpers (not server functions — no network hop)
+// ---------------------------------------------------------------------------
+
+function getAuthenticatedClient() {
+  const req = getRequest()
+  return createServerSupabaseClient(
+    req.headers.get('cookie') ?? '',
+    (name, value, options) => setCookie(name, value, options),
+  )
+}
+
+async function getAuthenticatedUser(): Promise<User | null> {
+  const {
+    data: { user },
+  } = await getAuthenticatedClient().auth.getUser()
+  return user
+}
+
+// ---------------------------------------------------------------------------
+// Server Functions
+// ---------------------------------------------------------------------------
+
+export const getServerUser = createServerFn({ method: 'GET' }).handler(
+  (): Promise<User | null> => getAuthenticatedUser(),
+)
+
+export const getServerUserProfile = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<UserProfile | null> => {
+    const user = await getAuthenticatedUser()
+    if (!user) return null
+    return {
+      full_name: user.user_metadata?.full_name ?? '',
+      email: user.email ?? '',
+      avatar_url: user.user_metadata?.avatar_url ?? null,
+    }
   },
 )
 
@@ -39,14 +67,5 @@ export const exchangeAuthCode = createServerFn({ method: 'POST' })
     return { code }
   })
   .handler(async ({ data }): Promise<void> => {
-    const req = getRequest()
-
-    const supabase = createServerSupabaseClient(
-      req.headers.get('cookie') ?? '',
-      (name, value, options) => {
-        setCookie(name, value, options)
-      },
-    )
-
-    await supabase.auth.exchangeCodeForSession(data.code)
+    await getAuthenticatedClient().auth.exchangeCodeForSession(data.code)
   })

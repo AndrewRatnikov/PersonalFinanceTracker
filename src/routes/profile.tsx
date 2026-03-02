@@ -1,18 +1,18 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { LogOut, Mail, User2 } from 'lucide-react'
 
-import { getServerUser } from '../lib/auth'
+import { getServerUserProfile } from '../lib/auth'
+import type { UserProfile } from '../lib/auth'
 import { createBrowserSupabaseClient } from '../lib/supabase'
 import PageShell from '../components/PageShell'
-import type { User } from '@supabase/supabase-js'
 
 // ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------
 
 export const Route = createFileRoute('/profile')({
-  loader: async (): Promise<User | null> => {
-    return getServerUser()
+  loader: async (): Promise<UserProfile | null> => {
+    return getServerUserProfile()
   },
   component: ProfilePage,
 })
@@ -33,9 +33,9 @@ function ProfilePage() {
 
   if (!user) return null
 
-  const fullName: string = user.user_metadata?.full_name ?? 'Anonymous'
-  const email: string = user.email ?? ''
-  const avatarUrl: string | undefined = user.user_metadata?.avatar_url
+  const fullName: string = user.full_name
+  const email: string = user.email
+  const avatarUrl: string | null = user.avatar_url
 
   return (
     <PageShell>

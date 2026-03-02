@@ -266,7 +266,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 6.2. Server Function
 
-- [ ] Create `getServerUserProfile` server function in `src/lib/auth.ts` that returns:
+- [x] Create `getServerUserProfile` server function in `src/lib/auth.ts` that returns:
   - `full_name` — from `user.user_metadata.full_name` (set by Google OAuth).
   - `email` — from `user.email`.
   - `avatar_url` — from `user.user_metadata.avatar_url` (Google profile picture).
