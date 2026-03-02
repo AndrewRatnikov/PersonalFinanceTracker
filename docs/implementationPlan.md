@@ -253,3 +253,37 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 - [ ] User sees default categories on first visit.
 - [x] User can successfully add an expense and see it persisted in the DB.
 - [x] Navigation between Dashboard, Analytics, and Settings is functional.
+
+---
+
+## 6. Profile Page (Phase 4)
+
+### 6.1. Route
+
+- [ ] Create `src/routes/profile.tsx` using `createFileRoute('/profile')`.
+- [ ] Add a **Profile** link in the navigation (header or sidebar).
+- [ ] Protect the route via the existing root `beforeLoad` guard (already handled globally).
+
+### 6.2. Server Function
+
+- [ ] Create `getServerUserProfile` server function in `src/lib/auth.ts` that returns:
+  - `full_name` — from `user.user_metadata.full_name` (set by Google OAuth).
+  - `email` — from `user.email`.
+  - `avatar_url` — from `user.user_metadata.avatar_url` (Google profile picture).
+
+### 6.3. Component
+
+- [ ] Build `src/routes/profile.tsx` as a loader-driven page:
+  - Loader calls `getServerUserProfile()` to fetch data server-side (no flicker).
+  - Display avatar (`<img>`) with name and email below.
+  - Add a **Sign Out** button that calls `supabase.auth.signOut()` (browser-side) then redirects to `/login`.
+
+### 6.4. Sign-Out Logic
+
+```tsx
+const handleSignOut = async () => {
+  const supabase = createBrowserSupabaseClient()
+  await supabase.auth.signOut()
+  router.navigate({ to: '/login' })
+}
+```

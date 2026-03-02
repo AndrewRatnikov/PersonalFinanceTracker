@@ -87,9 +87,9 @@ Allows users to define their own labels.
 
 ### Phase 1: The Core (Week 1)
 
-- [ ] Set up TanStack Start project with Supabase & Google Auth.
-- [ ] Define file-based routes (Index, Analytics, Settings).
-- [ ] Build the "Add Expense" and "Add Category" forms using Server Functions.
+- [x] Set up TanStack Start project with Supabase & Google Auth.
+- [x] Define file-based routes (Index, Analytics, Settings).
+- [/] Build the "Add Expense" and "Add Category" forms using Server Functions.
 
 ### Phase 2: The Logic (Week 2)
 
@@ -99,6 +99,10 @@ Allows users to define their own labels.
 
 ### Phase 3: The Polish (Week 3)
 
-- [ ] Integrate Recharts (Donut & Bar).
+- [/] Integrate Recharts (Donut & Bar).
 - [ ] Configure `vite-plugin-pwa` for installation.
-- [ ] Build the CSV Import/Export tool.
+- [/] Build the CSV Import/Export tool.
+
+### Phase 4: The Extras (Week 4)
+
+- [ ] Build Profile page (display user avatar, name, email, and a sign-out button).
