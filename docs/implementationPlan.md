@@ -260,9 +260,9 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 6.1. Route
 
-- [ ] Create `src/routes/profile.tsx` using `createFileRoute('/profile')`.
-- [ ] Add a **Profile** link in the navigation (header or sidebar).
-- [ ] Protect the route via the existing root `beforeLoad` guard (already handled globally).
+- [x] Create `src/routes/profile.tsx` using `createFileRoute('/profile')`.
+- [x] Add a **Profile** link in the navigation (header or sidebar).
+- [x] Protect the route via the existing root `beforeLoad` guard (already handled globally).
 
 ### 6.2. Server Function
 
