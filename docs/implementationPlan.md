@@ -273,7 +273,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ### 6.3. Component
 
-- [ ] Build `src/routes/profile.tsx` as a loader-driven page:
+- [x] Build `src/routes/profile.tsx` as a loader-driven page:
   - Loader calls `getServerUserProfile()` to fetch data server-side (no flicker).
   - Display avatar (`<img>`) with name and email below.
   - Add a **Sign Out** button that calls `supabase.auth.signOut()` (browser-side) then redirects to `/login`.
@@ -287,3 +287,20 @@ const handleSignOut = async () => {
   router.navigate({ to: '/login' })
 }
 ```
+
+---
+
+## 7. 404 Not Found Page
+
+### 7.1. Route
+
+- [ ] Create `src/routes/404.tsx` (or `src/routes/$.tsx` for a catch-all) using `createFileRoute('/$')` or the TanStack Start `notFoundComponent` API.
+- [ ] Register it in `src/routes/__root.tsx` via the `notFoundComponent` option.
+
+### 7.2. Component
+
+- [ ] Build a `NotFoundPage` component that:
+  - Displays a clear "404 — Page Not Found" heading.
+  - Shows a short message (e.g., "The page you're looking for doesn't exist.").
+  - Provides a **Go Home** link/button that navigates to `/`.
+  - Reuses `PageShell` for consistent layout (header/nav).
