@@ -294,12 +294,12 @@ const handleSignOut = async () => {
 
 ### 7.1. Route
 
-- [ ] Create `src/routes/404.tsx` (or `src/routes/$.tsx` for a catch-all) using `createFileRoute('/$')` or the TanStack Start `notFoundComponent` API.
-- [ ] Register it in `src/routes/__root.tsx` via the `notFoundComponent` option.
+- [x] Create `src/routes/404.tsx` (or `src/routes/$.tsx` for a catch-all) using `createFileRoute('/$')` or the TanStack Start `notFoundComponent` API.
+- [x] Register it in `src/routes/__root.tsx` via the `notFoundComponent` option.
 
 ### 7.2. Component
 
-- [ ] Build a `NotFoundPage` component that:
+- [x] Build a `NotFoundPage` component that:
   - Displays a clear "404 — Page Not Found" heading.
   - Shows a short message (e.g., "The page you're looking for doesn't exist.").
   - Provides a **Go Home** link/button that navigates to `/`.

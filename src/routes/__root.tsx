@@ -9,6 +9,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import { getServerUser } from '../lib/auth'
 import Header from '../components/Header'
+import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
 import type { AuthContext } from '../lib/authContext'
@@ -53,6 +54,7 @@ export const Route = createRootRouteWithContext<AuthContext>()({
   }),
 
   shellComponent: RootDocument,
+  notFoundComponent: NotFoundPage,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
