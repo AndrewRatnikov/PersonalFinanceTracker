@@ -32,25 +32,27 @@ function SettingsPage() {
 
   return (
     <PageShell>
-      <h1 className="text-2xl font-bold text-white">Settings</h1>
+      <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
 
-      {/* Tab switcher */}
-      <div className="flex gap-2">
-        <TabButton
-          label="Categories"
-          icon={<Tag size={16} />}
-          active={activeTab === 'categories'}
-          onClick={() => setActiveTab('categories')}
-        />
-        <TabButton
-          label="Data Tools"
-          icon={<Database size={16} />}
-          active={activeTab === 'data'}
-          onClick={() => setActiveTab('data')}
-        />
+        {/* Tab switcher */}
+        <div className="flex gap-2">
+          <TabButton
+            label="Categories"
+            icon={<Tag size={16} />}
+            active={activeTab === 'categories'}
+            onClick={() => setActiveTab('categories')}
+          />
+          <TabButton
+            label="Data Tools"
+            icon={<Database size={16} />}
+            active={activeTab === 'data'}
+            onClick={() => setActiveTab('data')}
+          />
+        </div>
+
+        {activeTab === 'categories' ? <CategoriesTab /> : <DataToolsTab />}
       </div>
-
-      {activeTab === 'categories' ? <CategoriesTab /> : <DataToolsTab />}
     </PageShell>
   )
 }

@@ -45,23 +45,6 @@ export function CategoriesTab() {
         </div>
       )}
 
-      {/* Category list */}
-      <div className="flex flex-col gap-2">
-        {categories.length === 0 && (
-          <p className="text-slate-500 text-sm text-center py-6">
-            No categories yet. Add one below.
-          </p>
-        )}
-        {categories.map((cat) => (
-          <CategoryRow
-            key={cat.id}
-            category={cat}
-            onMutate={refresh}
-            onError={setError}
-          />
-        ))}
-      </div>
-
       {/* Add new category */}
       <div className="bg-slate-800/60 rounded-2xl p-4 border border-slate-700/40 flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
@@ -95,6 +78,23 @@ export function CategoriesTab() {
             <Plus size={20} />
           </button>
         </div>
+      </div>
+
+      {/* Category list */}
+      <div className="flex flex-col gap-2">
+        {categories.length === 0 && (
+          <p className="text-slate-500 text-sm text-center py-6">
+            No categories yet. Add one below.
+          </p>
+        )}
+        {categories.map((cat) => (
+          <CategoryRow
+            key={cat.id}
+            category={cat}
+            onMutate={refresh}
+            onError={setError}
+          />
+        ))}
       </div>
     </div>
   )

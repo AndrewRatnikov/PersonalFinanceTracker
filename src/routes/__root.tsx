@@ -13,6 +13,9 @@ import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
 import type { AuthContext } from '../lib/authContext'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
 
 export const Route = createRootRouteWithContext<AuthContext>()({
   beforeLoad: async ({ location }) => {
@@ -64,8 +67,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <Header />
-        {children}
+        <QueryClientProvider client={queryClient}>
+          <Header />
+          {children}
+        </QueryClientProvider>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

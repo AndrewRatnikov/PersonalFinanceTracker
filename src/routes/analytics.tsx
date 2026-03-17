@@ -133,90 +133,92 @@ function AnalyticsPage() {
 
   return (
     <PageShell>
-      <section className="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-4 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h1 className="text-lg font-semibold text-white">Analytics</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Showing expenses from {formatRangeLabel(analytics)}
-            </p>
+      <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <section className="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h1 className="text-lg font-semibold text-white">Analytics</h1>
+              <p className="text-xs text-slate-400 mt-1">
+                Showing expenses from {formatRangeLabel(analytics)}
+              </p>
+            </div>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+                onClick={() => applyPreset(7)}
+              >
+                7d
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+                onClick={() => applyPreset(30)}
+              >
+                30d
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+                onClick={() => applyPreset(90)}
+              >
+                90d
+              </button>
+            </div>
           </div>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
-              onClick={() => applyPreset(7)}
-            >
-              7d
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
-              onClick={() => applyPreset(30)}
-            >
-              30d
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
-              onClick={() => applyPreset(90)}
-            >
-              90d
-            </button>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 items-end">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-400">From</label>
-            <input
-              type="date"
-              value={fromValue}
-              max={toValue || undefined}
-              onChange={(e) => handleDateChange(e.target.value, toValue)}
-              className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-400">From</label>
+              <input
+                type="date"
+                value={fromValue}
+                max={toValue || undefined}
+                onChange={(e) => handleDateChange(e.target.value, toValue)}
+                className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-400">To</label>
+              <input
+                type="date"
+                value={toValue}
+                max={toDateInputValue(new Date().toISOString())}
+                onChange={(e) => handleDateChange(fromValue, e.target.value)}
+                className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-400">To</label>
-            <input
-              type="date"
-              value={toValue}
-              max={toDateInputValue(new Date().toISOString())}
-              onChange={(e) => handleDateChange(fromValue, e.target.value)}
-              className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-        </div>
 
-        {validationError && (
-          <p className="text-xs text-red-400 mt-1">{validationError}</p>
-        )}
-      </section>
-
-      {hasData ? (
-        <>
-          <section>
-            <h2 className="text-sm font-semibold text-slate-300 mb-2">
-              By Category
-            </h2>
-            <CategoryDonutChart data={analytics.categoryBreakdown} />
-          </section>
-
-          <section>
-            <h2 className="text-sm font-semibold text-slate-300 mb-2">
-              Over Time
-            </h2>
-            <TimelineBarChart data={analytics.timeline} />
-          </section>
-        </>
-      ) : (
-        <section className="mt-4">
-          <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
-            No expenses found in this period. Try expanding the date range.
-          </div>
+          {validationError && (
+            <p className="text-xs text-red-400 mt-1">{validationError}</p>
+          )}
         </section>
-      )}
+
+        {hasData ? (
+          <>
+            <section>
+              <h2 className="text-sm font-semibold text-slate-300 mb-2">
+                By Category
+              </h2>
+              <CategoryDonutChart data={analytics.categoryBreakdown} />
+            </section>
+
+            <section>
+              <h2 className="text-sm font-semibold text-slate-300 mb-2">
+                Over Time
+              </h2>
+              <TimelineBarChart data={analytics.timeline} />
+            </section>
+          </>
+        ) : (
+          <section className="mt-4">
+            <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
+              No expenses found in this period. Try expanding the date range.
+            </div>
+          </section>
+        )}
+      </div>
     </PageShell>
   )
 }

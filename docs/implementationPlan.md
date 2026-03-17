@@ -217,6 +217,7 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 - [x] **Cleanup**: Remove demo routes and experimental data files (`src/routes/demo/*`, `src/data/demo.*`).
 - [x] `src/routes/index.tsx`: Rewrite for the Daily Dashboard / Entry point.
 - [x] `src/routes/analytics.tsx`: Donut and Bar charts with date-range filters.
+- [ ] `src/routes/transactions.tsx`: Full table with pagination, filtering, delete, and edit capabilities.
 - [x] `src/routes/settings.tsx`: Category management and export/import tools.
 - [x] `src/routes/login.tsx`: Google Auth entry.
 
@@ -227,27 +228,54 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ---
 
-## 4. "Speed-Entry" Core Features
+## 4. Transactions Page (Phase 2)
 
-### 4.1. Server Functions for Mutations
+### 4.1. Route & Navigation
+- [x] Create `src/routes/transactions.tsx` using `createFileRoute('/transactions')`.
+- [x] Add a **Transactions** link in the main navigation (e.g., `src/components/Navigation.tsx`).
+- [x] Ensure the route is protected by the global root guard.
+
+### 4.2. Data Fetching (Server Functions)
+- [x] Create a server function (e.g., `getTransactionsPaginated` in `src/lib/transactions.ts`) that accepts:
+  - `pageIndex` (number)
+  - `pageSize` (number)
+  - `categoryId` (optional filter)
+  - `dateRange` (optional filter)
+- [x] The function should return the query results and the `totalCount` of expenses matching the filters to support pagination.
+
+### 4.3. UI Components
+- [x] **Table Component**: Display transactions with columns like Date, Category, Description, Amount.
+- [x] **Pagination Controls**: Add "Previous" and "Next" buttons, along with page indicators (e.g., "Page 1 of 5").
+- [x] **Filters**: 
+  - Add a category dropdown to filter by specific categories.
+  - (Optional) Add a date range picker for time-based filtering.
+- [x] **Row Actions**:
+  - Add **Edit** and **Delete** buttons to each row. 
+  - Connect these actions to corresponding mutation server functions (e.g., `deleteExpense`, `updateExpense`).
+
+---
+
+## 5. "Speed-Entry" Core Features
+
+### 5.1. Server Functions for Mutations
 
 - [x] `createExpense`: Validates input and inserts into Supabase.
 - [x] `createCategory`: Allows users to add custom labels.
 
-### 4.2. Forms & Validation
+### 5.2. Forms & Validation
 
 - [x] **Category Select**: A focusable, mobile-friendly category picker.
 - [x] **Amount Input**: A large, numeric-only input with currency selector (UAH/USD/EUR).
 - [ ] Implement Zod-backed form validation for both manual and "Command-Line" style entries.
 
-### 4.3. UX Polish
+### 5.3. UX Polish
 
 - [ ] Implement basic success/error toasts using a library like `sonner`.
 - [ ] Add the floating "Add" button (FAB) for mobile thumb accessibility.
 
 ---
 
-## 5. Success Criteria for Phase 1
+## 6. Success Criteria for Phase 1
 
 - [x] User can log in with Google.
 - [ ] User sees default categories on first visit.
@@ -256,9 +284,9 @@ This document outlines the detailed steps to implement the core of **MinimaSpend
 
 ---
 
-## 6. Profile Page (Phase 4)
+## 7. Profile Page (Phase 4)
 
-### 6.1. Route
+### 7.1. Route
 
 - [x] Create `src/routes/profile.tsx` using `createFileRoute('/profile')`.
 - [x] Add a **Profile** link in the navigation (header or sidebar).
@@ -290,9 +318,9 @@ const handleSignOut = async () => {
 
 ---
 
-## 7. 404 Not Found Page
+## 8. 404 Not Found Page
 
-### 7.1. Route
+### 8.1. Route
 
 - [x] Create `src/routes/404.tsx` (or `src/routes/$.tsx` for a catch-all) using `createFileRoute('/$')` or the TanStack Start `notFoundComponent` API.
 - [x] Register it in `src/routes/__root.tsx` via the `notFoundComponent` option.

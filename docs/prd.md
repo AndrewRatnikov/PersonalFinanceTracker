@@ -52,6 +52,7 @@ Allows users to define their own labels.
 
 - **Manual Input:** A "Speed-Entry" form (Amount -> Currency -> Category -> Save).
 - **Command-Line Entry:** Smart input that parses text like "50 coffee" into amount and category.
+- **Transactions Page:** A dedicated route (`/transactions`) showing all transactions in a data table with pagination and filters.
 - **Bulk Import/Export:** CSV upload/download to handle historical data and ensure portability.
 - **Category Manager:** A settings view to add, rename, or delete custom categories.
 
@@ -88,12 +89,12 @@ Allows users to define their own labels.
 ### Phase 1: The Core (Week 1)
 
 - [x] Set up TanStack Start project with Supabase & Google Auth.
-- [x] Define file-based routes (Index, Analytics, Settings).
+- [x] Define file-based routes (Index, Analytics, Transactions, Settings).
 - [/] Build the "Add Expense" and "Add Category" forms using Server Functions.
 
 ### Phase 2: The Logic (Week 2)
 
-- [ ] Build the History List with "Delete" and "Edit" capabilities.
+- [ ] Build the Transactions Page (full table with pagination, filtering, delete, and edit capabilities).
 - [ ] Implement Date-Range filter logic via Router Search Params (Zod validation).
 - [ ] Add basic currency switching (UAH/USD/EUR).
 
