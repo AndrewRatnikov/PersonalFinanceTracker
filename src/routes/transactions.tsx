@@ -10,6 +10,7 @@ import { getUserCategories } from '../lib/categories'
 import { Trash2, Edit2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import PageShell from '@/components/PageShell'
+import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 
 export const Route = createFileRoute('/transactions')({
   component: Transactions,
@@ -87,28 +88,11 @@ function Transactions() {
             Transactions
           </h2>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="category-filter"
-              className="text-sm font-medium text-gray-600 dark:text-gray-300"
-            >
-              Category:
-            </label>
-            <select
-              id="category-filter"
-              value={categoryId || 'all'}
-              onChange={handleCategoryFilterChange}
-              className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-shadow text-gray-900 dark:text-gray-100"
-            >
-              <option value="all">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <CategoryFilter
+            categories={categories}
+            value={categoryId}
+            onChange={handleCategoryFilterChange}
+          />
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden mb-6">
