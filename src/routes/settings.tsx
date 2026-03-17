@@ -9,10 +9,6 @@ import { DataToolsTab } from '../components/settings/DataToolsTab'
 import type { Category } from '../lib/domain'
 import PageShell from '@/components/PageShell'
 
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
-
 export const Route = createFileRoute('/settings')({
   loader: async (): Promise<{ categories: Array<Category> }> => {
     const categories = await getUserCategories()
@@ -20,10 +16,6 @@ export const Route = createFileRoute('/settings')({
   },
   component: SettingsPage,
 })
-
-// ---------------------------------------------------------------------------
-// Page shell
-// ---------------------------------------------------------------------------
 
 type Tab = 'categories' | 'data'
 
@@ -35,7 +27,6 @@ function SettingsPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
 
-        {/* Tab switcher */}
         <div className="flex gap-2">
           <TabButton
             label="Categories"

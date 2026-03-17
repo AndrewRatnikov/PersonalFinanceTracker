@@ -6,20 +6,12 @@ import type { UserProfile } from '../lib/auth'
 import { createBrowserSupabaseClient } from '../lib/supabase'
 import PageShell from '../components/PageShell'
 
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
-
 export const Route = createFileRoute('/profile')({
   loader: async (): Promise<UserProfile | null> => {
     return getServerUserProfile()
   },
   component: ProfilePage,
 })
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
 
 function ProfilePage() {
   const user = Route.useLoaderData()
@@ -42,7 +34,6 @@ function ProfilePage() {
       <h1 className="text-2xl font-bold text-white">Profile</h1>
 
       <div className="flex flex-col items-center gap-6 py-8">
-        {/* Avatar */}
         {avatarUrl ? (
           <img
             src={avatarUrl}
@@ -55,7 +46,6 @@ function ProfilePage() {
           </div>
         )}
 
-        {/* Info */}
         <div className="text-center">
           <p className="text-2xl font-semibold text-white">{fullName}</p>
           <p className="flex items-center gap-1.5 mt-1 text-slate-400 text-sm justify-center">
@@ -64,7 +54,6 @@ function ProfilePage() {
           </p>
         </div>
 
-        {/* Sign out */}
         <button
           onClick={handleSignOut}
           className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-400 font-medium transition-colors"
