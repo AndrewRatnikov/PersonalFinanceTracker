@@ -1,23 +1,22 @@
 import { createServerFn } from '@tanstack/react-start'
+import dayjs from 'dayjs'
 
 import { getAuthenticatedClient } from './serverClient'
+import { normalizeRange } from './analyticsUtils'
+import type { RangeInput } from './analyticsUtils'
 import type {
   AnalyticsRangeSummary,
   AnalyticsTimelinePoint,
   CategoryBreakdownItem,
   MonthlyExpenseSummary,
 } from './domain'
-import { normalizeRange, type RangeInput } from './analyticsUtils'
 
 export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
   async (): Promise<Array<MonthlyExpenseSummary>> => {
     const { supabase, user } = await getAuthenticatedClient()
 
     // Date math: First day of 11 months ago, so we have 12 full months including current.
-    const date = new Date()
-    date.setMonth(date.getMonth() - 11)
-    date.setDate(1)
-    date.setHours(0, 0, 0, 0)
+    const date = dayjs().subtract(11, 'month').startOf('month')
 
     // We fetch everything from that date forward
     const { data, error } = await supabase
@@ -35,19 +34,18 @@ export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
 
     // Initialize the last 12 months with 0
     for (let i = 11; i >= 0; i--) {
-      const d = new Date()
-      d.setMonth(d.getMonth() - i)
+      const d = dayjs().subtract(i, 'month')
       // Format as "Jan", "Feb", etc.
-      const monthLabel = d.toLocaleString('en-US', { month: 'short' })
-      const key = `${d.getFullYear()}-${monthLabel}`
+      const monthLabel = d.format('MMM')
+      const key = `${d.year()}-${monthLabel}`
       monthlyMap[key] = 0
     }
 
     // Add amounts to their respective month bucket
     data.forEach((exp: any) => {
-      const expDate = new Date(exp.created_at)
-      const monthLabel = expDate.toLocaleString('en-US', { month: 'short' })
-      const key = `${expDate.getFullYear()}-${monthLabel}`
+      const expDate = dayjs(exp.created_at)
+      const monthLabel = expDate.format('MMM')
+      const key = `${expDate.year()}-${monthLabel}`
       if (key in monthlyMap) {
         monthlyMap[key] += Number(exp.amount)
       } else {
@@ -123,15 +121,9 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
         })
       }
 
-      const dateObj = new Date(row.created_at)
-      if (Number.isNaN(dateObj.getTime())) continue
-      const y = dateObj.getUTCFullYear()
-      const m = dateObj.getUTCMonth() + 1
-      const d = dateObj.getUTCDate()
-      const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(
-        2,
-        '0',
-      )}`
+      const dateObj = dayjs(row.created_at)
+      if (!dateObj.isValid()) continue
+      const key = dateObj.toISOString().split('T')[0]
 
       const prevTotal = timelineMap.get(key) ?? 0
       timelineMap.set(key, prevTotal + amount)
@@ -143,12 +135,8 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
 
     const timelineKeys = Array.from(timelineMap.keys()).sort()
     const timeline: Array<AnalyticsTimelinePoint> = timelineKeys.map((key) => {
-      const [year, month, day] = key.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(year, month - 1, day))
-      const label = dateObj.toLocaleDateString('en-US', {
-        day: '2-digit',
-        month: 'short',
-      })
+      const dateObj = dayjs(key)
+      const label = dateObj.format('MMM DD')
       return {
         date: key,
         label,

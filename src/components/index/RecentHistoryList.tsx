@@ -1,3 +1,5 @@
+import dayjs from 'dayjs'
+
 import type { Expense } from '../../lib/domain'
 
 interface RecentHistoryListProps {
@@ -21,15 +23,9 @@ export default function RecentHistoryList({
         Recent History
       </h3>
       {expenses.map((expense) => {
-        const date = new Date(expense.createdAt)
-        const timeString = date.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-        const dateString = date.toLocaleDateString([], {
-          month: 'short',
-          day: 'numeric',
-        })
+        const date = dayjs(expense.createdAt)
+        const timeString = date.format('hh:mm A')
+        const dateString = date.format('MMM D')
 
         return (
           <div

@@ -1,7 +1,8 @@
-import { Loader2, Trash2, Edit2 } from 'lucide-react'
+import dayjs from 'dayjs'
+import { Edit2, Loader2, Trash2 } from 'lucide-react'
 
 interface TransactionsTableProps {
-  transactions: any[]
+  transactions: Array<any>
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
@@ -65,11 +66,7 @@ export function TransactionsTable({
                 className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
               >
                 <td className="p-4 pl-6 text-sm text-gray-600 dark:text-gray-300">
-                  {new Date(tx.createdAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
+                  {dayjs(tx.createdAt).format('MMM D, YYYY')}
                 </td>
                 <td className="p-4 text-sm font-medium text-gray-900 dark:text-white">
                   <div className="flex items-center gap-2">

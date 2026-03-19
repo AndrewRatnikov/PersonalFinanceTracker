@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { toDateInputValue, formatRangeLabel } from '../../lib/analyticsUtils'
+import dayjs from 'dayjs'
+import { formatRangeLabel, toDateInputValue } from '../../lib/analyticsUtils'
 
 import type { AnalyticsRangeSummary } from '../../lib/domain'
 import type { AnalyticsSearch } from '../../routes/analytics'
@@ -33,21 +34,20 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
       return
     }
 
-    const fromDate = new Date(nextFrom)
-    const toDate = new Date(nextTo)
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    const fromDate = dayjs(nextFrom)
+    const toDate = dayjs(nextTo)
+    if (!fromDate.isValid() || !toDate.isValid()) {
       setValidationError('Dates are invalid.')
       return
     }
 
-    if (fromDate > toDate) {
+    if (fromDate.isAfter(toDate)) {
       setValidationError('Start date must be before end date.')
       return
     }
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    if (toDate > today) {
+    const today = dayjs().startOf('day')
+    if (toDate.isAfter(today)) {
       setValidationError('End date cannot be in the future.')
       return
     }
@@ -63,10 +63,8 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
   }
 
   const applyPreset = (days: number) => {
-    const now = new Date()
-    const end = new Date(now)
-    const start = new Date(now)
-    start.setDate(start.getDate() - (days - 1))
+    const end = dayjs()
+    const start = dayjs().subtract(days - 1, 'day')
 
     const toStr = toDateInputValue(end.toISOString())
     const fromStr = toDateInputValue(start.toISOString())
@@ -123,7 +121,7 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
           <input
             type="date"
             value={toValue}
-            max={toDateInputValue(new Date().toISOString())}
+            max={toDateInputValue(dayjs().toISOString())}
             onChange={(e) => handleDateChange(fromValue, e.target.value)}
             className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />

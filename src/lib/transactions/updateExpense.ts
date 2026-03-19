@@ -1,6 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
+import dayjs from 'dayjs'
 import { getAuthenticatedClient } from '../serverClient'
 import type { Currency } from '../domain'
+
 
 export interface UpdateExpenseInput {
   id: string
@@ -22,7 +24,7 @@ export const updateExpense = createServerFn({ method: 'POST' })
     return {
       id: payload.id,
       amount: typeof payload.amount === 'number' ? payload.amount : undefined,
-      currency: typeof payload.currency === 'string' ? payload.currency as Currency : undefined,
+      currency: typeof payload.currency === 'string' ? payload.currency : undefined,
       categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
       description: typeof payload.description === 'string' ? payload.description : undefined,
     }
@@ -31,7 +33,7 @@ export const updateExpense = createServerFn({ method: 'POST' })
     const { supabase, user } = await getAuthenticatedClient()
     const { id, amount, currency, categoryId, description } = data
 
-    const updates: any = { updated_at: new Date().toISOString() }
+    const updates: any = { updated_at: dayjs().toISOString() }
     if (amount !== undefined) updates.amount = amount
     if (currency !== undefined) updates.currency = currency
     if (categoryId !== undefined) updates.category_id = categoryId

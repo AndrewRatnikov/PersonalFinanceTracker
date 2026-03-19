@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import dayjs from 'dayjs'
 
 import { getAuthenticatedClient } from './serverClient'
 import type { Currency } from './domain'
@@ -24,7 +25,7 @@ export const exportExpensesCSV = createServerFn({ method: 'GET' }).handler(
     if (error) throw error
 
     const rows = data.map((row: any) => {
-      const date = new Date(row.created_at).toISOString().split('T')[0]
+      const date = dayjs(row.created_at).toISOString().split('T')[0]
       const category = row.categories?.name ?? ''
       const description = (row.description ?? '').replace(/"/g, '""')
       return `"${date}","${row.amount}","${row.currency}","${category}","${description}"`
@@ -127,8 +128,8 @@ export const importExpensesCSV = createServerFn({ method: 'POST' })
       }
 
       const createdAt = dateStr
-        ? new Date(dateStr).toISOString()
-        : new Date().toISOString()
+        ? dayjs(dateStr).toISOString()
+        : dayjs().toISOString()
 
       toInsert.push({
         user_id: user.id,
