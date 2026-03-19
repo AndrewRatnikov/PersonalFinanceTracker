@@ -7,6 +7,7 @@ import type {
   CategoryBreakdownItem,
   MonthlyExpenseSummary,
 } from './domain'
+import { normalizeRange, type RangeInput } from './analyticsUtils'
 
 export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
   async (): Promise<Array<MonthlyExpenseSummary>> => {
@@ -71,57 +72,6 @@ export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-type RangeInput = {
-  from?: string
-  to?: string
-}
-
-function getDefaultRange(): { from: string; to: string } {
-  const now = new Date()
-  const to = new Date(now)
-  to.setHours(23, 59, 59, 999)
-
-  const from = new Date(now)
-  from.setDate(from.getDate() - 29)
-  from.setHours(0, 0, 0, 0)
-
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  }
-}
-
-function normalizeRange(input: RangeInput): { from: string; to: string } {
-  const fallback = getDefaultRange()
-
-  if (!input.from && !input.to) {
-    return fallback
-  }
-
-  let fromDate = input.from ? new Date(input.from) : new Date(fallback.from)
-  let toDate = input.to ? new Date(input.to) : new Date(fallback.to)
-
-  if (Number.isNaN(fromDate.getTime())) {
-    fromDate = new Date(fallback.from)
-  }
-  if (Number.isNaN(toDate.getTime())) {
-    toDate = new Date(fallback.to)
-  }
-
-  if (fromDate > toDate) {
-    const tmp = fromDate
-    fromDate = toDate
-    toDate = tmp
-  }
-
-  fromDate.setHours(0, 0, 0, 0)
-  toDate.setHours(23, 59, 59, 999)
-
-  return {
-    from: fromDate.toISOString(),
-    to: toDate.toISOString(),
-  }
-}
 
 export const getRangeAnalytics = createServerFn({ method: 'GET' })
   .inputValidator((input: RangeInput | undefined): RangeInput => {

@@ -6,7 +6,7 @@ import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import PageShell from '../components/PageShell'
 import type { AnalyticsRangeSummary } from '../lib/domain'
-
+import { toDateInputValue, formatRangeLabel } from '../lib/analyticsUtils'
 type AnalyticsSearch = {
   from?: string
   to?: string
@@ -36,32 +36,6 @@ export const Route = createFileRoute('/analytics')({
   component: AnalyticsPage,
 })
 
-function toDateInputValue(iso: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function formatRangeLabel(range: AnalyticsRangeSummary): string {
-  const from = new Date(range.from)
-  const to = new Date(range.to)
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return ''
-
-  const fromStr = from.toLocaleDateString('en-US', {
-    day: '2-digit',
-    month: 'short',
-  })
-  const toStr = to.toLocaleDateString('en-US', {
-    day: '2-digit',
-    month: 'short',
-  })
-
-  return `${fromStr} – ${toStr}`
-}
 
 function AnalyticsPage() {
   const { analytics } = Route.useLoaderData()
