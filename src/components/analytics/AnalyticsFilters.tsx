@@ -41,13 +41,12 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
       return
     }
 
-    if (fromDate.isAfter(toDate)) {
+    if (fromDate.isAfter(toDate, 'day')) {
       setValidationError('Start date must be before end date.')
       return
     }
 
-    const today = dayjs().startOf('day')
-    if (toDate.isAfter(today)) {
+    if (toDate.isAfter(dayjs(), 'day')) {
       setValidationError('End date cannot be in the future.')
       return
     }
