@@ -4,6 +4,17 @@ import { deleteCategory, updateCategory } from '../../lib/categories'
 import type { Category } from '../../lib/domain'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 interface CategoryRowProps {
   category: Category
@@ -16,7 +27,6 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const [editName, setEditName] = useState(category.name)
   const [editIcon, setEditIcon] = useState(category.icon ?? '')
   const [isPending, setIsPending] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const save = async () => {
     setIsPending(true)
@@ -40,7 +50,6 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
       onMutate()
     } catch (e: any) {
       onError(e?.message ?? 'Failed to delete category')
-      setDeleteConfirm(false)
     } finally {
       setIsPending(false)
     }
@@ -69,7 +78,7 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
           size="icon"
           onClick={save}
           disabled={isPending || !editName.trim()}
-          className="p-1 h-auto w-auto text-cyan-400 hover:text-cyan-300 hover:bg-transparent disabled:opacity-50"
+          className="h-8 w-8 text-cyan-400 hover:text-cyan-300 hover:bg-transparent disabled:opacity-50"
           aria-label="Save"
         >
           <Check size={18} />
@@ -78,7 +87,7 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
           variant="ghost"
           size="icon"
           onClick={() => setIsEditing(false)}
-          className="p-1 h-auto w-auto text-slate-500 hover:text-slate-300 hover:bg-transparent"
+          className="h-8 w-8 text-slate-500 hover:text-slate-300 hover:bg-transparent"
           aria-label="Cancel"
         >
           <X size={18} />
@@ -96,49 +105,49 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
       )}
       <span className="flex-1 text-white text-sm">{category.name}</span>
 
-      {deleteConfirm ? (
-        <div className="flex items-center gap-1 text-xs text-red-400">
-          <span>Delete?</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={remove}
-            disabled={isPending}
-            className="px-2 py-0.5 h-auto bg-red-900/60 hover:bg-red-800 rounded text-red-300 disabled:opacity-50"
-          >
-            Yes
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDeleteConfirm(false)}
-            className="px-2 py-0.5 h-auto bg-slate-700 hover:bg-slate-600 rounded text-slate-300"
-          >
-            No
-          </Button>
-        </div>
-      ) : (
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsEditing(true)}
-            className="p-1 h-auto w-auto text-slate-500 hover:text-cyan-400 hover:bg-transparent transition-colors"
-            aria-label="Rename category"
-          >
-            <Pencil size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleteConfirm(true)}
-            className="p-1 h-auto w-auto text-slate-500 hover:text-red-400 hover:bg-transparent transition-colors"
-            aria-label="Delete category"
-          >
-            <Trash2 size={16} />
-          </Button>
-        </div>
-      )}
+      <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsEditing(true)}
+          className="h-8 w-8 text-slate-500 hover:text-cyan-400 hover:bg-transparent transition-colors"
+          aria-label="Rename category"
+        >
+          <Pencil size={16} />
+        </Button>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-slate-500 hover:text-red-400 hover:bg-transparent transition-colors"
+              aria-label="Delete category"
+            >
+              <Trash2 size={16} />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+            <AlertDialogHeader >
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-400">
+                This will delete the category <strong>{category.name}</strong>. 
+                Any expenses using this category will become uncategorized.
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-slate-800 border-slate-700 text-white hover:bg-slate-700">Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={remove}
+                className="bg-red-600 hover:bg-red-700 text-white border-none"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   )
 }

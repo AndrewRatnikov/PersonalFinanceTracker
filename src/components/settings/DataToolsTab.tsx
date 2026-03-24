@@ -1,7 +1,10 @@
 import { useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { Download, Upload } from 'lucide-react'
-import { exportExpensesCSV, importExpensesCSV } from '../../lib/csvTools'
+import { exportExpensesCSV, importExpensesCSV } from '@/lib/csvTools'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export function DataToolsTab() {
   const router = useRouter()
@@ -61,80 +64,85 @@ export function DataToolsTab() {
   return (
     <div className="flex flex-col gap-4">
       {/* Export */}
-      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/40 flex flex-col gap-3">
-        <div>
-          <h3 className="text-white font-semibold mb-1">Export to CSV</h3>
-          <p className="text-slate-400 text-sm">
+      <Card className="bg-slate-800/60 border-slate-700/40">
+        <CardHeader>
+          <CardTitle className="text-white text-lg">Export to CSV</CardTitle>
+          <CardDescription className="text-slate-400">
             Download all your expenses as a spreadsheet-compatible CSV file.
-          </p>
-        </div>
-        <button
-          id="export-csv-btn"
-          onClick={handleExport}
-          disabled={exportPending}
-          className="self-start flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl transition-colors"
-        >
-          <Download size={16} />
-          {exportPending ? 'Preparing…' : 'Download CSV'}
-        </button>
-      </div>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            id="export-csv-btn"
+            onClick={handleExport}
+            disabled={exportPending}
+            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-600 text-white"
+          >
+            <Download size={16} />
+            {exportPending ? 'Preparing…' : 'Download CSV'}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Import */}
-      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/40 flex flex-col gap-3">
-        <div>
-          <h3 className="text-white font-semibold mb-1">Import from CSV</h3>
-          <p className="text-slate-400 text-sm">
+      <Card className="bg-slate-800/60 border-slate-700/40">
+        <CardHeader>
+          <CardTitle className="text-white text-lg">Import from CSV</CardTitle>
+          <CardDescription className="text-slate-400">
             Upload a CSV in the export format. Categories must already exist.
             Columns:{' '}
             <code className="text-cyan-400">
               date, amount, currency, category, description
             </code>
             .
-          </p>
-        </div>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <input
+            ref={fileInputRef}
+            id="import-csv-input"
+            type="file"
+            accept=".csv"
+            onChange={handleFileChange}
+            className="hidden"
+          />
 
-        <input
-          ref={fileInputRef}
-          id="import-csv-input"
-          type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="hidden"
-        />
+          <Button
+            id="import-csv-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importPending}
+            variant="secondary"
+            className="self-start flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white"
+          >
+            <Upload size={16} />
+            {importPending ? 'Importing…' : 'Choose CSV File'}
+          </Button>
 
-        <button
-          id="import-csv-btn"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importPending}
-          className="self-start flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl transition-colors"
-        >
-          <Upload size={16} />
-          {importPending ? 'Importing…' : 'Choose CSV File'}
-        </button>
+          {importError && (
+            <Alert variant="destructive" className="bg-red-900/40 border-red-700/50 text-red-300">
+              <AlertDescription>{importError}</AlertDescription>
+            </Alert>
+          )}
 
-        {importError && (
-          <div className="p-3 bg-red-900/40 border border-red-700/50 rounded-xl text-red-300 text-sm">
-            {importError}
-          </div>
-        )}
-
-        {importResult && (
-          <div className="p-3 bg-emerald-900/30 border border-emerald-700/40 rounded-xl text-sm flex flex-col gap-1">
-            <p className="text-emerald-300 font-medium">
-              ✓ {importResult.inserted} expense
-              {importResult.inserted !== 1 ? 's' : ''} imported
-              {importResult.skipped > 0 && `, ${importResult.skipped} skipped`}.
-            </p>
-            {importResult.errors.length > 0 && (
-              <ul className="text-slate-400 list-disc list-inside mt-1 space-y-0.5">
-                {importResult.errors.map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
+          {importResult && (
+            <Alert className="bg-emerald-900/30 border-emerald-700/40 text-emerald-300">
+              <AlertTitle className="flex items-center gap-2">
+                ✓ {importResult.inserted} expense{importResult.inserted !== 1 ? 's' : ''} imported
+                {importResult.skipped > 0 && `, ${importResult.skipped} skipped`}.
+              </AlertTitle>
+              {importResult.errors.length > 0 && (
+                <AlertDescription>
+                  <ul className="text-slate-400 list-disc list-inside mt-1 space-y-0.5">
+                    {importResult.errors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              )}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

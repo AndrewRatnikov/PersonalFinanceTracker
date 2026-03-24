@@ -7,7 +7,8 @@ import {
   YAxis,
 } from 'recharts'
 
-import type { MonthlyExpenseSummary } from '../../lib/domain'
+import type { MonthlyExpenseSummary } from '@/lib/domain'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 interface DashboardStatsProps {
   data: Array<MonthlyExpenseSummary>
@@ -22,21 +23,21 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
   const currentTotal = currentMonthData.total
 
   return (
-    <div className="w-full flex flex-col gap-6 py-4">
-      <div className="text-center">
-        <h2 className="text-sm font-medium text-slate-400 uppercase tracking-widest">
+    <Card className="w-full bg-slate-800/40 border-slate-700/50 overflow-hidden">
+      <CardHeader className="text-center pb-2">
+        <CardDescription className="text-sm font-medium text-slate-400 uppercase tracking-widest">
           Spent This Month ({currentMonthData.name})
-        </h2>
-        <div className="mt-2 text-5xl font-black text-white mix-blend-screen">
+        </CardDescription>
+        <CardTitle className="mt-2 text-5xl font-black text-white mix-blend-screen">
           {currentTotal} <span className="text-2xl text-cyan-500">UAH</span>
-        </div>
-      </div>
+        </CardTitle>
+      </CardHeader>
 
-      <div className="h-48 w-full mt-4">
+      <CardContent className="h-48 w-full p-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={data}
-            margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+            margin={{ top: 20, right: 20, left: -20, bottom: 0 }}
           >
             <XAxis
               dataKey="name"
@@ -61,7 +62,7 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
                 borderRadius: '8px',
                 color: '#fff',
               }}
-              formatter={(value: string | undefined) => [
+              formatter={(value: any) => [
                 `${value} UAH`,
                 'Spent',
               ]}
@@ -74,7 +75,7 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
             />
           </BarChart>
         </ResponsiveContainer>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   )
 }

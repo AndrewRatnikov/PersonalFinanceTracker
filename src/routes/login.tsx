@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { GoogleIcon } from '@/components/icons/GoogleIcon'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export const Route = createFileRoute('/login')({
   component: Login,
@@ -42,32 +44,36 @@ function Login() {
   }
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-sm">
-        <h1 className="mb-2 text-2xl font-bold text-gray-900">MinimaSpend</h1>
-        <p className="mb-8 text-sm text-gray-500">
-          Sign in to manage your core expenses instantly.
-        </p>
-
-        {authError && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
-            {authError}
-          </div>
-        )}
-
-        <Button
-          onClick={handleGoogleLogin}
-          disabled={isLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
-        >
-          {isLoading ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          ) : (
-            <GoogleIcon className="h-5 w-5" />
+    <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-slate-950">
+      <Card className="w-full max-w-sm border-none shadow-lg dark:bg-slate-900">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold text-gray-900 dark:text-white">MinimaSpend</CardTitle>
+          <CardDescription className="text-sm text-gray-500 dark:text-slate-400">
+            Sign in to manage your core expenses instantly.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {authError && (
+            <Alert variant="destructive" className="mb-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400">
+              <AlertDescription>{authError}</AlertDescription>
+            </Alert>
           )}
-          <span>Continue with Google</span>
-        </Button>
-      </div>
+
+          <Button
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            variant="default"
+            className="flex w-full items-center justify-center gap-3 rounded-xl bg-black dark:bg-white dark:text-black py-6 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-70"
+          >
+            {isLoading ? (
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <GoogleIcon className="h-5 w-5" />
+            )}
+            <span>Continue with Google</span>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
