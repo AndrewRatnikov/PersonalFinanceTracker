@@ -4,9 +4,11 @@ import { Plus } from 'lucide-react'
 import { createCategory } from '../../lib/categories'
 import { CategoryRow } from './CategoryRow'
 import type { Category } from '../../lib/domain'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export function CategoriesTab() {
-  // Use useLoaderData with 'from' to avoid circular dependency with Route object
   const { categories } = useLoaderData({ from: '/settings' })
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -40,9 +42,9 @@ export function CategoriesTab() {
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <div className="p-3 bg-red-900/40 border border-red-700/50 rounded-xl text-red-300 text-sm">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Add new category */}
@@ -51,32 +53,33 @@ export function CategoriesTab() {
           Add Category
         </h3>
         <div className="flex gap-2">
-          <input
+          <Input
             id="new-category-name"
             type="text"
             placeholder="Name (e.g. Coffee)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             maxLength={40}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            className="flex-1 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
           />
-          <input
+          <Input
             id="new-category-icon"
             type="text"
             placeholder="Icon (optional)"
             value={newIcon}
             onChange={(e) => setNewIcon(e.target.value)}
-            className="w-32 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            className="w-32 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
           />
-          <button
+          <Button
             id="add-category-btn"
+            type="button"
             onClick={handleAdd}
             disabled={isPending || !newName.trim()}
-            className="p-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white transition-colors"
+            className="p-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 rounded-xl text-white"
             aria-label="Add category"
           >
             <Plus size={20} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -87,7 +90,7 @@ export function CategoriesTab() {
             No categories yet. Add one below.
           </p>
         )}
-        {categories.map((cat) => (
+        {categories.map((cat: Category) => (
           <CategoryRow
             key={cat.id}
             category={cat}

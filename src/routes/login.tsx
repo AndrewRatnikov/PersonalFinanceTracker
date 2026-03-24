@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { createBrowserSupabaseClient } from '../lib/supabase'
-import { GoogleIcon } from '../components/icons/GoogleIcon'
+import { createBrowserSupabaseClient } from '@/lib/supabase'
+import { GoogleIcon } from '@/components/icons/GoogleIcon'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/login')({
   component: Login,
@@ -54,7 +55,7 @@ function Login() {
           </div>
         )}
 
-        <button
+        <Button
           onClick={handleGoogleLogin}
           disabled={isLoading}
           className="flex w-full items-center justify-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
@@ -65,7 +66,7 @@ function Login() {
             <GoogleIcon className="h-5 w-5" />
           )}
           <span>Continue with Google</span>
-        </button>
+        </Button>
       </div>
     </div>
   )

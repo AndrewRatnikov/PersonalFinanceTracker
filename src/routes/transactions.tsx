@@ -74,10 +74,8 @@ function Transactions() {
     alert(`Edit mode for transaction ${id} coming soon!`)
   }
 
-  const handleCategoryFilterChange = (
-    e: React.ChangeEvent<HTMLSelectElement>,
-  ) => {
-    setCategoryId(e.target.value === 'all' ? null : e.target.value)
+  const handleCategoryFilterChange = (value: string) => {
+    setCategoryId(value === 'all' ? null : value)
     setPageIndex(0) // Reset to first page when filtering
   }
 

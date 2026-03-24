@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { formatRangeLabel, toDateInputValue } from '../../lib/analyticsUtils'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 import type { AnalyticsRangeSummary } from '../../lib/domain'
 import type { AnalyticsSearch } from '../../routes/analytics'
@@ -80,49 +83,55 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
           </p>
         </div>
         <div className="flex gap-1">
-          <button
+          <Button
             type="button"
-            className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+            variant="outline"
+            size="sm"
+            className="px-2 py-1 h-auto text-xs border-slate-600 text-slate-200 bg-transparent hover:bg-slate-700 hover:text-slate-100"
             onClick={() => applyPreset(7)}
           >
             7d
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+            variant="outline"
+            size="sm"
+            className="px-2 py-1 h-auto text-xs border-slate-600 text-slate-200 bg-transparent hover:bg-slate-700 hover:text-slate-100"
             onClick={() => applyPreset(30)}
           >
             30d
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="px-2 py-1 text-xs rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+            variant="outline"
+            size="sm"
+            className="px-2 py-1 h-auto text-xs border-slate-600 text-slate-200 bg-transparent hover:bg-slate-700 hover:text-slate-100"
             onClick={() => applyPreset(90)}
           >
             90d
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 items-end">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-400">From</label>
-          <input
+          <Label className="text-xs font-medium text-slate-400">From</Label>
+          <Input
             type="date"
             value={fromValue}
             max={toValue || undefined}
             onChange={(e) => handleDateChange(e.target.value, toValue)}
-            className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="bg-slate-900/60 border-slate-700 text-white text-sm focus-visible:ring-cyan-500"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-400">To</label>
-          <input
+          <Label className="text-xs font-medium text-slate-400">To</Label>
+          <Input
             type="date"
             value={toValue}
             max={toDateInputValue(dayjs().toISOString())}
             onChange={(e) => handleDateChange(fromValue, e.target.value)}
-            className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="bg-slate-900/60 border-slate-700 text-white text-sm focus-visible:ring-cyan-500"
           />
         </div>
       </div>

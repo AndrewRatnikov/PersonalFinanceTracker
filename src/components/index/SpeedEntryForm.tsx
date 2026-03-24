@@ -1,6 +1,16 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
-import type { Category, CreateExpenseInput, Currency } from '../lib/domain'
+import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 
 interface SpeedEntryFormProps {
   categories: Array<Category>
@@ -15,14 +25,12 @@ export default function SpeedEntryForm({
 }: SpeedEntryFormProps) {
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UAH')
-  // Automatically select the first category if available
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!amount || !categoryId) return
     onSubmit({ amount: Number(amount), currency, categoryId })
-    // Reset form after submit
     setAmount('')
   }
 
@@ -32,85 +40,68 @@ export default function SpeedEntryForm({
       className="flex flex-col gap-4 bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50"
     >
       <div className="flex gap-4 items-end">
-        <label className="flex-1">
-          <span className="text-sm text-slate-400 mb-1 block">Amount</span>
-          <input
+        <div className="flex-1 flex flex-col gap-1">
+          <Label className="text-sm text-slate-400">Amount</Label>
+          <Input
             type="number"
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-3xl font-bold text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
+            className="bg-slate-900 border-slate-700 text-3xl font-bold text-white h-16 px-4 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
             placeholder="0.00"
             required
             disabled={isPending}
           />
-        </label>
+        </div>
 
-        <label className="w-28">
-          <span className="text-sm text-slate-400 mb-1 block">Currency</span>
-          <div className="relative">
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              disabled={isPending}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-xl font-bold text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 appearance-none cursor-pointer"
-            >
-              <option value="UAH">UAH</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-              <svg
-                className="fill-current h-4 w-4"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-              >
-                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-              </svg>
-            </div>
-          </div>
-        </label>
+        <div className="w-28 flex flex-col gap-1">
+          <Label className="text-sm text-slate-400">Currency</Label>
+          <Select
+            value={currency}
+            onValueChange={(v) => setCurrency(v as Currency)}
+            disabled={isPending}
+          >
+            <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-16 text-xl font-bold w-full focus:ring-cyan-500">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="UAH">UAH</SelectItem>
+              <SelectItem value="USD">USD</SelectItem>
+              <SelectItem value="EUR">EUR</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <label>
-        <span className="text-sm text-slate-400 mb-1 block">Category</span>
-        <div className="relative">
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            disabled={isPending}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-lg text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 appearance-none cursor-pointer"
-            required
-          >
-            <option value="" disabled>
-              Select a category
-            </option>
+      <div className="flex flex-col gap-1">
+        <Label className="text-sm text-slate-400">Category</Label>
+        <Select
+          value={categoryId}
+          onValueChange={setCategoryId}
+          disabled={isPending}
+          required
+        >
+          <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-14 text-lg w-full focus:ring-cyan-500">
+            <SelectValue placeholder="Select a category" />
+          </SelectTrigger>
+          <SelectContent>
             {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
+              <SelectItem key={cat.id} value={cat.id}>
                 {cat.icon ? `${cat.icon} ` : ''}
                 {cat.name}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
-            <svg
-              className="fill-current h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-            >
-              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-            </svg>
-          </div>
-        </div>
-      </label>
+          </SelectContent>
+        </Select>
+      </div>
 
-      <button
+      <Button
         type="submit"
         disabled={isPending}
-        className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl text-lg shadow-lg shadow-cyan-500/30 transition-all mt-2"
+        className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-bold py-4 h-14 rounded-xl text-lg shadow-lg shadow-cyan-500/30 mt-2"
       >
         {isPending ? 'Saving...' : 'Save Expense'}
-      </button>
+      </Button>
     </form>
   )
 }

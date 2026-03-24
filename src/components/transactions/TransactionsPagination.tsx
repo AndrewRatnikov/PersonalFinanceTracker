@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface TransactionsPaginationProps {
   pageIndex: number
@@ -31,23 +32,27 @@ export function TransactionsPagination({
         of <span className="font-semibold">{totalCount}</span> results
       </span>
       <div className="flex items-center gap-2">
-        <button
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => onPageChange(Math.max(0, pageIndex - 1))}
           disabled={pageIndex === 0}
-          className="p-1.5 rounded-md border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          className="h-8 w-8 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
         >
           <ChevronLeft className="w-5 h-5" />
-        </button>
+        </Button>
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           Page {pageIndex + 1} of {totalPages}
         </div>
-        <button
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => onPageChange(Math.min(totalPages - 1, pageIndex + 1))}
           disabled={pageIndex >= totalPages - 1}
-          className="p-1.5 rounded-md border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          className="h-8 w-8 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
         >
           <ChevronRight className="w-5 h-5" />
-        </button>
+        </Button>
       </div>
     </div>
   )
