@@ -47,7 +47,7 @@ export default function SpeedEntryForm({
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="bg-slate-900 border-slate-700 text-3xl font-bold text-white h-16 px-4 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
+            className="bg-slate-900 border-slate-700 text-3xl font-bold text-white h-9 px-4 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
             placeholder="0.00"
             required
             disabled={isPending}
@@ -61,7 +61,7 @@ export default function SpeedEntryForm({
             onValueChange={(v) => setCurrency(v as Currency)}
             disabled={isPending}
           >
-            <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-16 text-xl font-bold w-full focus:ring-cyan-500">
+            <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-xl font-bold w-full focus:ring-cyan-500">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -81,7 +81,7 @@ export default function SpeedEntryForm({
           disabled={isPending}
           required
         >
-          <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-14 text-lg w-full focus:ring-cyan-500">
+          <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-lg w-full focus:ring-cyan-500">
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
           <SelectContent>

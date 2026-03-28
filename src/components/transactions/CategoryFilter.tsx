@@ -30,11 +30,11 @@ export function CategoryFilter({
       <Select value={value || 'all'} onValueChange={onChange}>
         <SelectTrigger
           id="category-filter"
-          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 focus:ring-cyan-500 w-44"
+          className="bg-slate-900 dark:bg-gray-800 border-slate-700 dark:border-gray-700 text-white dark:text-gray-100 focus:ring-cyan-500 w-44"
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="bg-slate-900 text-white">
           <SelectItem value="all">All Categories</SelectItem>
           {categories.map((cat) => (
             <SelectItem key={cat.id} value={cat.id}>
