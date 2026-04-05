@@ -6,6 +6,7 @@ import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import PageShell from '../components/PageShell'
 import type { AnalyticsRangeSummary } from '../lib/domain'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
+import { Card, CardContent } from '@/components/ui/card'
 
 export type AnalyticsSearch = {
   from?: string
@@ -53,14 +54,14 @@ function AnalyticsPage() {
         {hasData ? (
           <>
             <section>
-              <h2 className="text-sm font-semibold text-slate-300 mb-2">
+              <h2 className="text-sm font-semibold mb-2">
                 By Category
               </h2>
               <CategoryDonutChart data={analytics.categoryBreakdown} />
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-slate-300 mb-2">
+              <h2 className="text-sm font-semibold mb-2">
                 Over Time
               </h2>
               <TimelineBarChart data={analytics.timeline} />
@@ -68,9 +69,11 @@ function AnalyticsPage() {
           </>
         ) : (
           <section className="mt-4">
-            <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
-              No expenses found in this period. Try expanding the date range.
-            </div>
+            <Card className="border-dashed bg-transparent">
+              <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
+                No data found for this period. Try expanding the range.
+              </CardContent>
+            </Card>
           </section>
         )}
       </div>

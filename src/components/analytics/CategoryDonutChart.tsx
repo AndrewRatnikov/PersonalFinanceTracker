@@ -6,10 +6,17 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts'
+import { Card, CardContent } from '@/components/ui/card'
+import type { CategoryBreakdownItem } from '@/lib/domain'
 
-import type { CategoryBreakdownItem } from '../../lib/domain'
-
-const COLORS = ['#06b6d4', '#22c55e', '#f97316', '#eab308', '#a855f7']
+const COLORS = [
+  'hsl(var(--primary))',
+  'hsl(var(--secondary-foreground))',
+  '#22c55e',
+  '#f97316',
+  '#a855f7',
+  '#ec4899',
+]
 
 interface Props {
   data: Array<CategoryBreakdownItem>
@@ -18,9 +25,11 @@ interface Props {
 export default function CategoryDonutChart({ data }: Props) {
   if (data.length === 0) {
     return (
-      <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
-        No expenses in this period.
-      </div>
+      <Card className="border-dashed bg-transparent h-64 flex items-center justify-center">
+        <CardContent className="text-muted-foreground text-sm">
+          No data found.
+        </CardContent>
+      </Card>
     )
   }
 
@@ -30,7 +39,7 @@ export default function CategoryDonutChart({ data }: Props) {
   }))
 
   return (
-    <div className="h-64 w-full bg-slate-800/40 rounded-2xl border border-slate-700/40 px-4 py-3">
+    <Card className="border-border bg-card/50 backdrop-blur-sm overflow-hidden h-64 py-4">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -39,32 +48,46 @@ export default function CategoryDonutChart({ data }: Props) {
             nameKey="name"
             innerRadius="55%"
             outerRadius="80%"
-            paddingAngle={3}
+            paddingAngle={4}
+            stroke="none"
           >
             {chartData.map((entry, index) => (
               <Cell
                 key={`cell-${entry.name}-${index}`}
                 fill={COLORS[index % COLORS.length]}
+                className="opacity-90 hover:opacity-100 transition-opacity outline-none"
               />
             ))}
           </Pie>
           <Tooltip
-            cursor={{ fill: '#334155', opacity: 0.4 }}
+            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
             contentStyle={{
-              backgroundColor: '#0f172a',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#e5e7eb',
+              backgroundColor: 'hsl(var(--popover))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+              color: 'hsl(var(--popover-foreground))',
+              fontSize: '12px',
             }}
-            formatter={(value: number, name: string) => [`${value} UAH`, name]}
+            itemStyle={{ fontWeight: 'bold', padding: '0 4px' }}
+            formatter={(value: any, name: any) => [
+              `${Number(value).toLocaleString()} UAH`,
+              name,
+            ]}
           />
           <Legend
             verticalAlign="bottom"
-            height={36}
-            wrapperStyle={{ fontSize: 11, color: '#cbd5f5' }}
+            height={40}
+            iconType="circle"
+            iconSize={8}
+            wrapperStyle={{
+              fontSize: '11px',
+              paddingTop: '10px',
+              color: 'hsl(var(--muted-foreground))',
+            }}
           />
         </PieChart>
       </ResponsiveContainer>
-    </div>
+    </Card>
   )
 }

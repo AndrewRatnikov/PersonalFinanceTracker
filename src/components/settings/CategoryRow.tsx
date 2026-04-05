@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface CategoryRowProps {
   category: Category
@@ -57,97 +58,100 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
 
   if (isEditing) {
     return (
-      <div className="bg-slate-800/60 border border-cyan-500/40 rounded-xl px-3 py-2 flex items-center gap-2">
-        <Input
-          autoFocus
-          type="text"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          maxLength={40}
-          className="flex-1 bg-transparent border-none text-white text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0"
-        />
-        <Input
-          type="text"
-          value={editIcon}
-          onChange={(e) => setEditIcon(e.target.value)}
-          placeholder="icon"
-          className="w-20 bg-transparent border-none text-slate-400 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0"
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={save}
-          disabled={isPending || !editName.trim()}
-          className="h-8 w-8 text-cyan-400 hover:text-cyan-300 hover:bg-transparent disabled:opacity-50"
-          aria-label="Save"
-        >
-          <Check size={18} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setIsEditing(false)}
-          className="h-8 w-8 text-slate-500 hover:text-slate-300 hover:bg-transparent"
-          aria-label="Cancel"
-        >
-          <X size={18} />
-        </Button>
-      </div>
+      <Card className="border-primary/50 bg-accent/20">
+        <CardContent className="px-3 py-2 flex items-center gap-2">
+          <Input
+            autoFocus
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            maxLength={40}
+            className="flex-1 bg-transparent border-none text-foreground text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0 font-medium"
+          />
+          <Input
+            type="text"
+            value={editIcon}
+            onChange={(e) => setEditIcon(e.target.value)}
+            placeholder="icon"
+            className="w-16 bg-transparent border-none text-muted-foreground text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0 text-center"
+          />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={save}
+              disabled={isPending || !editName.trim()}
+              className="h-8 w-8 text-primary hover:text-primary/80 hover:bg-transparent"
+            >
+              <Check size={16} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsEditing(false)}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-transparent"
+            >
+              <X size={16} />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl px-3 py-2 flex items-center gap-2 group">
-      {category.icon && (
-        <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-md text-slate-300 font-mono">
-          {category.icon}
-        </span>
-      )}
-      <span className="flex-1 text-white text-sm">{category.name}</span>
+    <Card className="border-border bg-card/40 transition-colors hover:bg-accent/30 group">
+      <CardContent className="px-3 py-2.5 flex items-center gap-3">
+        {category.icon && (
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-secondary/50 text-base shadow-sm">
+            {category.icon}
+          </div>
+        )}
+        <span className="flex-1 text-sm font-medium text-foreground">{category.name}</span>
 
-      <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setIsEditing(true)}
-          className="h-8 w-8 text-slate-500 hover:text-cyan-400 hover:bg-transparent transition-colors"
-          aria-label="Rename category"
-        >
-          <Pencil size={16} />
-        </Button>
+        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsEditing(true)}
+            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent transition-colors"
+            aria-label="Rename category"
+          >
+            <Pencil size={14} />
+          </Button>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-slate-500 hover:text-red-400 hover:bg-transparent transition-colors"
-              aria-label="Delete category"
-            >
-              <Trash2 size={16} />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
-            <AlertDialogHeader >
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription className="text-slate-400">
-                This will delete the category <strong>{category.name}</strong>. 
-                Any expenses using this category will become uncategorized.
-                This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel className="bg-slate-800 border-slate-700 text-white hover:bg-slate-700">Cancel</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={remove}
-                className="bg-red-600 hover:bg-red-700 text-white border-none"
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
+                aria-label="Delete category"
               >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </div>
+                <Trash2 size={14} />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Category</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete <strong>{category.name}</strong>? 
+                  Expenses in this category will become uncategorized.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={remove}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

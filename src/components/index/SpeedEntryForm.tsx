@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
 import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 
@@ -35,73 +36,88 @@ export default function SpeedEntryForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4 bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50"
-    >
-      <div className="flex gap-4 items-end">
-        <div className="flex-1 flex flex-col gap-1">
-          <Label className="text-sm text-slate-400">Amount</Label>
-          <Input
-            type="number"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="bg-slate-900 border-slate-700 text-3xl font-bold text-white h-9 px-4 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
-            placeholder="0.00"
-            required
-            disabled={isPending}
-          />
-        </div>
+    <Card className="border-border bg-card/50 backdrop-blur-sm">
+      <form onSubmit={handleSubmit}>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg font-semibold tracking-tight">Quick Add Expense</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex gap-4 items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="amount" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Amount
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="text-2xl font-bold h-12"
+                placeholder="0.00"
+                required
+                disabled={isPending}
+              />
+            </div>
 
-        <div className="w-28 flex flex-col gap-1">
-          <Label className="text-sm text-slate-400">Currency</Label>
-          <Select
-            value={currency}
-            onValueChange={(v) => setCurrency(v as Currency)}
+            <div className="w-32 space-y-2">
+              <Label htmlFor="currency" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Currency
+              </Label>
+              <Select
+                value={currency}
+                onValueChange={(v) => setCurrency(v as Currency)}
+                disabled={isPending}
+              >
+                <SelectTrigger id="currency" className="h-12 font-semibold">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UAH">UAH</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="category" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Category
+            </Label>
+            <Select
+              value={categoryId}
+              onValueChange={setCategoryId}
+              disabled={isPending}
+              required
+            >
+              <SelectTrigger id="category" className="h-11">
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    <div className="flex items-center gap-2">
+                      {cat.icon && <span className="text-base">{cat.icon}</span>}
+                      <span>{cat.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+
+        <CardFooter className="pt-2 pb-6">
+          <Button
+            type="submit"
             disabled={isPending}
+            className="w-full h-12 text-base font-bold shadow-sm"
           >
-            <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-xl font-bold w-full focus:ring-cyan-500">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UAH">UAH</SelectItem>
-              <SelectItem value="USD">USD</SelectItem>
-              <SelectItem value="EUR">EUR</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <Label className="text-sm text-slate-400">Category</Label>
-        <Select
-          value={categoryId}
-          onValueChange={setCategoryId}
-          disabled={isPending}
-          required
-        >
-          <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-lg w-full focus:ring-cyan-500">
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.icon ? `${cat.icon} ` : ''}
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Button
-        type="submit"
-        disabled={isPending}
-        className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-bold py-4 h-14 rounded-xl text-lg shadow-lg shadow-cyan-500/30 mt-2"
-      >
-        {isPending ? 'Saving...' : 'Save Expense'}
-      </Button>
-    </form>
+            {isPending ? 'Saving...' : 'Save Expense'}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
   )
 }

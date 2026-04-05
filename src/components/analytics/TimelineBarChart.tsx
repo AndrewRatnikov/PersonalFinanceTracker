@@ -6,8 +6,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-
-import type { AnalyticsTimelinePoint } from '../../lib/domain'
+import { Card, CardContent } from '@/components/ui/card'
+import type { AnalyticsTimelinePoint } from '@/lib/domain'
 
 interface Props {
   data: Array<AnalyticsTimelinePoint>
@@ -16,53 +16,60 @@ interface Props {
 export default function TimelineBarChart({ data }: Props) {
   if (data.length === 0) {
     return (
-      <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/60 text-center text-slate-400 text-sm">
-        No daily activity in this period.
-      </div>
+      <Card className="border-dashed bg-transparent h-56 flex items-center justify-center">
+        <CardContent className="text-muted-foreground text-sm">
+          No data found.
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="h-56 w-full bg-slate-800/40 rounded-2xl border border-slate-700/40 px-4 py-3">
+    <Card className="border-border bg-card/50 backdrop-blur-sm overflow-hidden h-56 py-4">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}
-          margin={{ top: 4, right: 0, left: -20, bottom: 0 }}
+          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
         >
           <XAxis
             dataKey="label"
-            stroke="#64748b"
+            stroke="hsl(var(--muted-foreground))"
             fontSize={11}
             tickLine={false}
             axisLine={false}
             dy={10}
           />
           <YAxis
-            stroke="#64748b"
+            stroke="hsl(var(--muted-foreground))"
             fontSize={11}
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => `${value}`}
           />
           <Tooltip
-            cursor={{ fill: '#334155', opacity: 0.4 }}
+            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
             contentStyle={{
-              backgroundColor: '#0f172a',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#e5e7eb',
+              backgroundColor: 'hsl(var(--popover))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+              color: 'hsl(var(--popover-foreground))',
+              fontSize: '12px',
             }}
+            itemStyle={{ fontWeight: 'bold', padding: '0 4px' }}
+            labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
             labelFormatter={(label: any) => `Date: ${label}`}
-            formatter={(value: any) => [`${value} UAH`, 'Spent']}
+            formatter={(value: any) => [`${Number(value).toLocaleString()} UAH`, 'Spent']}
           />
           <Bar
             dataKey="total"
-            fill="#06b6d4"
+            fill="hsl(var(--primary))"
             radius={[4, 4, 0, 0]}
-            maxBarSize={40}
+            maxBarSize={35}
+            className="opacity-90 hover:opacity-100 transition-opacity"
           />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </Card>
   )
 }

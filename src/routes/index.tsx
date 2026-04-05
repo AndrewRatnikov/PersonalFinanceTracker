@@ -14,6 +14,7 @@ import DashboardStats from '@/components/index/DashboardStats'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import RecentHistoryList from '@/components/index/RecentHistoryList'
 import PageShell from '@/components/PageShell'
+import { Card, CardContent } from '@/components/ui/card'
 
 export const Route = createFileRoute('/')({
   loader: async (): Promise<{
@@ -63,7 +64,7 @@ function Dashboard() {
         </section>
 
         <section>
-          <h2 className="text-xl font-bold text-white mb-4">Quick Add</h2>
+          <h2 className="text-xl font-bold mb-4">Quick Add</h2>
           {categories.length > 0 ? (
             <SpeedEntryForm
               categories={categories}
@@ -71,9 +72,11 @@ function Dashboard() {
               isPending={isPending}
             />
           ) : (
-            <div className="p-6 bg-slate-800/40 rounded-2xl border border-dashed border-slate-700/50 text-center text-slate-400">
-              No categories found. Please create some categories first.
-            </div>
+            <Card className="border-dashed bg-transparent">
+              <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
+                No categories found. Please create some categories first.
+              </CardContent>
+            </Card>
           )}
         </section>
 

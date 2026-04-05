@@ -62,12 +62,12 @@ export function DataToolsTab() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Export */}
-      <Card className="bg-slate-800/60 border-slate-700/40">
+      <Card className="bg-card/50 border-border backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-white text-lg">Export to CSV</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardTitle className="text-lg">Export to CSV</CardTitle>
+          <CardDescription>
             Download all your expenses as a spreadsheet-compatible CSV file.
           </CardDescription>
         </CardHeader>
@@ -76,7 +76,7 @@ export function DataToolsTab() {
             id="export-csv-btn"
             onClick={handleExport}
             disabled={exportPending}
-            className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-600 text-white"
+            className="flex items-center gap-2"
           >
             <Download size={16} />
             {exportPending ? 'Preparing…' : 'Download CSV'}
@@ -85,13 +85,13 @@ export function DataToolsTab() {
       </Card>
 
       {/* Import */}
-      <Card className="bg-slate-800/60 border-slate-700/40">
+      <Card className="bg-card/50 border-border backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-white text-lg">Import from CSV</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardTitle className="text-lg">Import from CSV</CardTitle>
+          <CardDescription>
             Upload a CSV in the export format. Categories must already exist.
             Columns:{' '}
-            <code className="text-cyan-400">
+            <code className="text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded text-[11px]">
               date, amount, currency, category, description
             </code>
             .
@@ -112,27 +112,27 @@ export function DataToolsTab() {
             onClick={() => fileInputRef.current?.click()}
             disabled={importPending}
             variant="secondary"
-            className="self-start flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white"
+            className="self-start flex items-center gap-2"
           >
             <Upload size={16} />
             {importPending ? 'Importing…' : 'Choose CSV File'}
           </Button>
 
           {importError && (
-            <Alert variant="destructive" className="bg-red-900/40 border-red-700/50 text-red-300">
+            <Alert variant="destructive" className="bg-destructive/10">
               <AlertDescription>{importError}</AlertDescription>
             </Alert>
           )}
 
           {importResult && (
-            <Alert className="bg-emerald-900/30 border-emerald-700/40 text-emerald-300">
-              <AlertTitle className="flex items-center gap-2">
+            <Alert className="bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+              <AlertTitle className="flex items-center gap-2 text-sm">
                 ✓ {importResult.inserted} expense{importResult.inserted !== 1 ? 's' : ''} imported
                 {importResult.skipped > 0 && `, ${importResult.skipped} skipped`}.
               </AlertTitle>
               {importResult.errors.length > 0 && (
                 <AlertDescription>
-                  <ul className="text-slate-400 list-disc list-inside mt-1 space-y-0.5">
+                  <ul className="text-muted-foreground text-xs list-disc list-inside mt-2 space-y-1">
                     {importResult.errors.map((err, i) => (
                       <li key={i}>{err}</li>
                     ))}

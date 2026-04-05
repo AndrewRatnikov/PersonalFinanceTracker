@@ -5,5 +5,9 @@ interface PageShellProps {
 }
 
 export default function PageShell({ children }: PageShellProps) {
-  return <div className="min-h-screen bg-slate-900 pb-20">{children}</div>
+  return (
+    <div className="min-h-screen bg-background text-foreground pb-20 selection:bg-primary/20">
+      {children}
+    </div>
+  )
 }
