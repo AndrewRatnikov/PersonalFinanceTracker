@@ -19,17 +19,17 @@ export function TransactionsPagination({
   if (totalPages <= 1) return null
 
   return (
-    <div className="flex items-center justify-between p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-      <span className="text-sm text-gray-600 dark:text-gray-400">
+    <div className="flex items-center justify-between p-4 border-t bg-muted/20">
+      <span className="text-sm text-muted-foreground">
         Showing{' '}
-        <span className="font-semibold">
+        <span className="font-medium text-foreground">
           {pageIndex * pageSize + 1}
         </span>{' '}
         to{' '}
-        <span className="font-semibold">
+        <span className="font-medium text-foreground">
           {Math.min((pageIndex + 1) * pageSize, totalCount)}
         </span>{' '}
-        of <span className="font-semibold">{totalCount}</span> results
+        of <span className="font-medium text-foreground">{totalCount}</span> results
       </span>
       <div className="flex items-center gap-2">
         <Button
@@ -37,11 +37,11 @@ export function TransactionsPagination({
           size="icon"
           onClick={() => onPageChange(Math.max(0, pageIndex - 1))}
           disabled={pageIndex === 0}
-          className="h-8 w-8 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="h-8 w-8"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ChevronLeft className="w-4 h-4" />
         </Button>
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <div className="text-sm font-medium">
           Page {pageIndex + 1} of {totalPages}
         </div>
         <Button
@@ -49,9 +49,9 @@ export function TransactionsPagination({
           size="icon"
           onClick={() => onPageChange(Math.min(totalPages - 1, pageIndex + 1))}
           disabled={pageIndex >= totalPages - 1}
-          className="h-8 w-8 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="h-8 w-8"
         >
-          <ChevronRight className="w-5 h-5" />
+          <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

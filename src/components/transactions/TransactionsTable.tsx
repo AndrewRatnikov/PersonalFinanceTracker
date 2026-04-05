@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { Edit2, Loader2, Trash2 } from 'lucide-react'
+import { Edit2, Loader2, Trash2, Search } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -10,6 +10,17 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 interface TransactionsTableProps {
   transactions: Array<any>
@@ -37,38 +48,41 @@ export function TransactionsTable({
   return (
     <Table>
       <TableHeader>
-        <TableRow className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/50">
-          <TableHead className="pl-6 text-gray-500 dark:text-gray-400 font-semibold">Date</TableHead>
-          <TableHead className="text-gray-500 dark:text-gray-400 font-semibold">Category</TableHead>
-          <TableHead className="hidden md:table-cell text-gray-500 dark:text-gray-400 font-semibold">Description</TableHead>
-          <TableHead className="text-right text-gray-500 dark:text-gray-400 font-semibold">Amount</TableHead>
-          <TableHead className="pr-6 text-right text-gray-500 dark:text-gray-400 font-semibold">Actions</TableHead>
+        <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
+          <TableHead className="pl-6 font-semibold">Date</TableHead>
+          <TableHead className="font-semibold">Category</TableHead>
+          <TableHead className="hidden md:table-cell font-semibold">Description</TableHead>
+          <TableHead className="text-right font-semibold">Amount</TableHead>
+          <TableHead className="pr-6 text-right font-semibold">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {isLoading ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-8 text-center text-gray-500">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto text-cyan-500" />
+            <TableCell colSpan={5} className="p-12 text-center text-muted-foreground">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
             </TableCell>
           </TableRow>
         ) : isError ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-8 text-center text-red-500">
-              Failed to load transactions.
+            <TableCell colSpan={5} className="p-12 text-center text-destructive">
+              Failed to load transactions. Please try again later.
             </TableCell>
           </TableRow>
         ) : transactions.length === 0 ? (
           <TableRow>
             <TableCell
               colSpan={5}
-              className="p-12 text-center text-gray-500 dark:text-gray-400"
+              className="p-16 text-center text-muted-foreground"
             >
-              <div className="flex flex-col items-center justify-center space-y-3">
-                <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-full">
-                  <Trash2 className="w-6 h-6 text-gray-400" />
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="p-4 bg-muted rounded-full">
+                  <Search className="w-8 h-8 text-muted-foreground opacity-50" />
                 </div>
-                <p>No transactions found.</p>
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">No transactions found</p>
+                  <p className="text-sm">Try adjusting your filters or search query.</p>
+                </div>
               </div>
             </TableCell>
           </TableRow>
@@ -76,52 +90,73 @@ export function TransactionsTable({
           transactions.map((tx) => (
             <TableRow
               key={tx.id}
-              className="hover:bg-gray-50 dark:hover:bg-gray-700/50 group"
+              className="hover:bg-muted/30 transition-colors group"
             >
-              <TableCell className="pl-6 text-sm text-gray-600 dark:text-gray-300">
+              <TableCell className="pl-6 text-sm text-muted-foreground">
                 {dayjs(tx.createdAt).format('MMM D, YYYY')}
               </TableCell>
-              <TableCell className="text-sm font-medium text-gray-900 dark:text-white">
+              <TableCell className="text-sm font-medium">
                 {tx.category ? (
                   <Badge
                     variant="secondary"
-                    className="gap-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="gap-1.5 font-medium"
                   >
                     {tx.category.icon && <span>{tx.category.icon}</span>}
                     {tx.category.name}
                   </Badge>
                 ) : (
-                  <span className="text-gray-400 italic">Uncategorized</span>
+                  <span className="text-muted-foreground italic text-xs">Uncategorized</span>
                 )}
               </TableCell>
-              <TableCell className="hidden md:table-cell text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
-                {tx.description || '-'}
+              <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[240px]">
+                {tx.description || <span className="opacity-30">-</span>}
               </TableCell>
-              <TableCell className="text-sm font-bold text-gray-900 dark:text-white text-right">
+              <TableCell className="text-sm font-bold text-right tabular-nums">
                 {CURRENCY_SYMBOL[tx.currency] ?? tx.currency}
                 {tx.amount.toFixed(2)}
               </TableCell>
               <TableCell className="pr-6 text-right">
-                <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => onEdit(tx.id)}
-                    className="h-8 w-8 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-900/30"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                     title="Edit transaction"
                   >
                     <Edit2 className="w-4 h-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onDelete(tx.id)}
-                    disabled={isDeleting}
-                    className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
-                    title="Delete transaction"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={isDeleting}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        title="Delete transaction"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete this transaction from your history. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => onDelete(tx.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </TableCell>
             </TableRow>

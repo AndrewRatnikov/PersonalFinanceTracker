@@ -44,17 +44,17 @@ function Login() {
   }
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-slate-950">
-      <Card className="w-full max-w-sm border-none shadow-lg dark:bg-slate-900">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-gray-900 dark:text-white">MinimaSpend</CardTitle>
-          <CardDescription className="text-sm text-gray-500 dark:text-slate-400">
+    <div className="flex h-screen w-screen items-center justify-center bg-background">
+      <Card className="w-full max-w-sm border shadow-xl">
+        <CardHeader className="text-center space-y-2">
+          <CardTitle className="text-3xl font-bold tracking-tight">MinimaSpend</CardTitle>
+          <CardDescription>
             Sign in to manage your core expenses instantly.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           {authError && (
-            <Alert variant="destructive" className="mb-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400">
+            <Alert variant="destructive" className="mb-6">
               <AlertDescription>{authError}</AlertDescription>
             </Alert>
           )}
@@ -62,16 +62,21 @@ function Login() {
           <Button
             onClick={handleGoogleLogin}
             disabled={isLoading}
-            variant="default"
-            className="flex w-full items-center justify-center gap-3 rounded-xl bg-black dark:bg-white dark:text-black py-6 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-70"
+            variant="outline"
+            size="lg"
+            className="w-full gap-3 font-semibold h-12 shadow-sm transition-all hover:bg-accent"
           >
             {isLoading ? (
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             ) : (
               <GoogleIcon className="h-5 w-5" />
             )}
             <span>Continue with Google</span>
           </Button>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            By signing in, you agree to our Terms and Privacy Policy.
+          </p>
         </CardContent>
       </Card>
     </div>

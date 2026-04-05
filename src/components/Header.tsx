@@ -24,52 +24,54 @@ export default function Header() {
   const user = auth?.user
 
   return (
-    <header className="p-4 flex items-center bg-gray-800 text-white shadow-lg">
-      {user ? (
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-gray-700 hover:text-white"
-              aria-label="Open menu"
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
+      <div className="flex h-16 items-center px-4 md:px-8 max-w-6xl mx-auto">
+        {user ? (
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="mr-2 h-9 w-9 text-muted-foreground hover:bg-accent"
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="w-80 flex flex-col p-0"
             >
-              <Menu size={24} />
-            </Button>
-          </SheetTrigger>
-          <SheetContent
-            side="left"
-            className="w-80 bg-gray-900 text-white border-gray-700 p-0 flex flex-col"
-          >
-            <SheetHeader className="p-4 border-b border-gray-700">
-              <SheetTitle className="text-white text-xl font-bold">
-                Navigation
-              </SheetTitle>
-            </SheetHeader>
+              <SheetHeader className="p-6 border-b">
+                <SheetTitle className="text-xl font-bold">
+                  Navigation
+                </SheetTitle>
+              </SheetHeader>
 
-            <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
-              {NAV_LINKS.map(({ to, icon: Icon, label }) => (
-                <SheetClose key={to} asChild>
-                  <Link
-                    to={to}
-                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-800 transition-colors text-white"
-                    activeProps={{
-                      className:
-                        'flex items-center gap-3 p-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 transition-colors text-white',
-                    }}
-                  >
-                    <Icon size={20} />
-                    <span className="font-medium">{label}</span>
-                  </Link>
-                </SheetClose>
-              ))}
-            </nav>
-          </SheetContent>
-        </Sheet>
-      ) : null}
-      <h1 className="ml-4 text-xl font-semibold">
-        <Link to="/">MinimaSpend</Link>
-      </h1>
+              <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
+                {NAV_LINKS.map(({ to, icon: Icon, label }) => (
+                  <SheetClose key={to} asChild>
+                    <Link
+                      to={to}
+                      className="flex items-center gap-3 p-3 rounded-md hover:bg-accent transition-colors text-foreground"
+                      activeProps={{
+                        className:
+                          'flex items-center gap-3 p-3 rounded-md bg-primary text-primary-foreground font-medium',
+                      }}
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span>{label}</span>
+                    </Link>
+                  </SheetClose>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        ) : null}
+        <h1 className="text-xl font-bold tracking-tight">
+          <Link to="/" className="hover:text-primary transition-colors">MinimaSpend</Link>
+        </h1>
+      </div>
     </header>
   )
 }

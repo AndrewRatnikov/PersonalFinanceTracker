@@ -12,6 +12,7 @@ import PageShell from '@/components/PageShell'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 import { TransactionsPagination } from '@/components/transactions/TransactionsPagination'
+import { Card } from '@/components/ui/card'
 
 export const Route = createFileRoute('/transactions')({
   component: Transactions,
@@ -64,14 +65,11 @@ function Transactions() {
   })
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this transaction?')) {
-      deleteMutation.mutate(id)
-    }
+    deleteMutation.mutate(id)
   }
 
   const handleEdit = (id: string) => {
-    // Edit functionality will be implemented soon
-    alert(`Edit mode for transaction ${id} coming soon!`)
+    toast.info(`Edit mode for transaction ${id} coming soon!`)
   }
 
   const handleCategoryFilterChange = (value: string) => {
@@ -82,10 +80,15 @@ function Transactions() {
   return (
     <PageShell>
       <div className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-            Transactions
-          </h2>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">
+              Transactions
+            </h2>
+            <p className="text-muted-foreground">
+              Manage and review your recent spending history.
+            </p>
+          </div>
 
           <CategoryFilter
             categories={categories}
@@ -94,7 +97,7 @@ function Transactions() {
           />
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden mb-6">
+        <Card className="overflow-hidden border shadow-sm">
           <TransactionsTable
             transactions={transactions}
             isLoading={isLoading}
@@ -104,7 +107,7 @@ function Transactions() {
             onDelete={handleDelete}
           />
 
-          {!isLoading && (
+          {!isLoading && !isError && transactions.length > 0 && (
             <TransactionsPagination
               pageIndex={pageIndex}
               pageSize={pageSize}
@@ -113,7 +116,7 @@ function Transactions() {
               onPageChange={setPageIndex}
             />
           )}
-        </div>
+        </Card>
       </div>
     </PageShell>
   )

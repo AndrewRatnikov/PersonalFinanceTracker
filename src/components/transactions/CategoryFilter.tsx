@@ -20,25 +20,28 @@ export function CategoryFilter({
   onChange,
 }: CategoryFilterProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       <Label
         htmlFor="category-filter"
-        className="text-sm font-medium text-gray-600 dark:text-gray-300"
+        className="text-sm font-medium text-muted-foreground whitespace-nowrap"
       >
-        Category:
+        Filter by:
       </Label>
       <Select value={value || 'all'} onValueChange={onChange}>
         <SelectTrigger
           id="category-filter"
-          className="bg-slate-900 dark:bg-gray-800 border-slate-700 dark:border-gray-700 text-white dark:text-gray-100 focus:ring-cyan-500 w-44"
+          className="w-[180px] h-9"
         >
-          <SelectValue />
+          <SelectValue placeholder="All Categories" />
         </SelectTrigger>
-        <SelectContent className="bg-slate-900 text-white">
+        <SelectContent>
           <SelectItem value="all">All Categories</SelectItem>
           {categories.map((cat) => (
             <SelectItem key={cat.id} value={cat.id}>
-              {cat.icon} {cat.name}
+              <div className="flex items-center gap-2">
+                {cat.icon && <span className="w-4 text-center">{cat.icon}</span>}
+                <span>{cat.name}</span>
+              </div>
             </SelectItem>
           ))}
         </SelectContent>

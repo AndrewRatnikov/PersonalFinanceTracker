@@ -20,30 +20,28 @@ function SettingsPage() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
 
         <Tabs defaultValue="categories" className="w-full">
-          <TabsList className="bg-slate-900 border border-slate-700">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger 
               value="categories" 
-              className="data-[state=active]:bg-cyan-500 data-[state=active]:text-white text-slate-400"
             >
               <Tag size={16} className="mr-2" />
               Categories
             </TabsTrigger>
             <TabsTrigger 
               value="data" 
-              className="data-[state=active]:bg-cyan-500 data-[state=active]:text-white text-slate-400"
             >
               <Database size={16} className="mr-2" />
               Data Tools
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="categories" className="mt-8">
+          <TabsContent value="categories" className="mt-6">
             <CategoriesTab />
           </TabsContent>
-          <TabsContent value="data" className="mt-8">
+          <TabsContent value="data" className="mt-6">
             <DataToolsTab />
           </TabsContent>
         </Tabs>

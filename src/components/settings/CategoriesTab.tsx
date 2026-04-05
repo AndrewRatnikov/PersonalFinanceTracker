@@ -43,15 +43,15 @@ export function CategoriesTab() {
   return (
     <div className="flex flex-col gap-6">
       {error && (
-        <Alert variant="destructive" className="bg-red-900/40 border-red-700/50 text-red-300">
+        <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {/* Add new category */}
-      <Card className="bg-slate-800/60 border-slate-700/40">
+      <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Add Category
           </CardTitle>
         </CardHeader>
@@ -64,7 +64,7 @@ export function CategoriesTab() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               maxLength={40}
-              className="flex-1 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
+              className="flex-1"
             />
             <Input
               id="new-category-icon"
@@ -72,27 +72,27 @@ export function CategoriesTab() {
               placeholder="Icon (optional)"
               value={newIcon}
               onChange={(e) => setNewIcon(e.target.value)}
-              className="w-32 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
+              className="w-32"
             />
             <Button
               id="add-category-btn"
               type="button"
               onClick={handleAdd}
               disabled={isPending || !newName.trim()}
-              className="px-3 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white"
+              className="px-3"
               aria-label="Add category"
             >
-              <Plus size={20} />
+              <Plus className="w-5 h-5" />
             </Button>
           </div>
         </CardContent>
       </Card>
 
       {/* Category list */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         {categories.length === 0 && (
-          <p className="text-slate-500 text-sm text-center py-6">
-            No categories yet. Add one above.
+          <p className="text-muted-foreground text-sm text-center py-10 italic">
+            No categories yet. Add one above to get started.
           </p>
         )}
         {categories.map((cat: Category) => (
