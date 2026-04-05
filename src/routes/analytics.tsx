@@ -24,13 +24,10 @@ export const Route = createFileRoute('/analytics')({
     }
     return result
   },
+  loaderDeps: ({ search: { from, to } }) => ({ from, to }),
   loader: async ({
-    location,
+    deps: { from, to },
   }): Promise<{ analytics: AnalyticsRangeSummary }> => {
-    const url = new URL(location.href, 'http://localhost')
-    const from = url.searchParams.get('from') || undefined
-    const to = url.searchParams.get('to') || undefined
-
     const analytics = await (getRangeAnalytics as any)({ from, to })
     return { analytics }
   },
