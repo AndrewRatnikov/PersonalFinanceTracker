@@ -45,7 +45,7 @@ function Dashboard() {
     setIsPending(true)
     try {
       // Execute the server function to insert the record
-      await createExpense(data)
+      await createExpense({ data })
       // Invalidate the router to trigger a re-fetch of the loader data
       await router.invalidate()
     } catch (error) {
