@@ -1,109 +1,167 @@
-# PRD: MinimaSpend (Expense Tracker PWA)
+# PRD: MinimaSpend
 
-## 1. Executive Summary
+## 1. Product Summary
 
-MinimaSpend is a minimalist, mobile-first Progressive Web App (PWA) built for developers who want a frictionless way to track spending. The app focuses on "flexible time-traveling" analytics, allowing users to view summaries across any custom timeframe.
+MinimaSpend is a minimalist, mobile-first PWA for personal expense and income tracking. The core value proposition is a frictionless entry flow, flexible date-range analytics, and full data ownership — no bank sync, no subscriptions, no noise.
 
-## 2. Technical Stack (The "Free-Tier" Stack)
+Target user: a developer or power user who wants a simple, self-contained tracker with offline access and privacy-first local storage.
+
+---
+
+## 2. Tech Stack
 
 - **Framework:** TanStack Start (React + TanStack Router + Vite)
-- **Styling:** Tailwind CSS (Minimalist/Dark Mode support)
-- **Backend/Auth:** Supabase (via Server Functions + Google OAuth)
-- **Data Management:** TanStack Query (Integrated with TanStack Start)
+- **Styling:** Tailwind CSS + Shadcn UI
+- **Backend/Auth:** Supabase (Server Functions + Google OAuth)
+- **Data:** TanStack Query
 - **Charts:** Recharts
-- **Deployment:** Vercel (using the `vercel` adapter) + Supabase (DB)
+- **PWA:** `vite-plugin-pwa` (Workbox)
+- **Deployment:** Vercel + Supabase
 
 ---
 
-## 3. Data Model (PostgreSQL)
+## 3. Data Model
 
-### 3.1. Categories Table
+### `categories`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| user_id | UUID FK | `auth.users` |
+| name | Text | |
+| icon | Text | Lucide icon name, optional |
+| created_at | Timestamptz | |
 
-Allows users to define their own labels.
+### `expenses`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| user_id | UUID FK | `auth.users` |
+| category_id | UUID FK | `categories` |
+| amount | Numeric | |
+| currency | Enum | UAH, USD, EUR |
+| description | Text | optional |
+| is_recurring | Boolean | default false |
+| created_at | Timestamptz | |
+| updated_at | Timestamptz | auto-updated via trigger |
 
-- `id`: UUID (PK)
-- `user_id`: UUID (FK to Auth)
-- `name`: String (e.g., "Coffee", "Server Costs")
-- `icon`: String (optional Lucide icon name)
-- `created_at`: Timestamp
+### `income` _(new)_
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| user_id | UUID FK | `auth.users` |
+| source | Text | e.g. "Salary", "Freelance" |
+| amount | Numeric | |
+| currency | Enum | UAH, USD, EUR |
+| description | Text | optional |
+| created_at | Timestamptz | |
 
-### 3.2. Expenses Table
+### `budgets` _(new)_
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID PK | |
+| user_id | UUID FK | `auth.users` |
+| category_id | UUID FK | `categories` |
+| monthly_limit | Numeric | |
+| currency | Enum | UAH, USD, EUR |
+| created_at | Timestamptz | |
 
-- `id`: UUID (PK)
-- `user_id`: UUID (FK to Auth)
-- `category_id`: UUID (FK to Categories)
-- `amount`: Numeric (Decimal)
-- `currency`: String (Enum: UAH, USD, EUR)
-- `description`: Text (Optional)
-- `is_recurring`: Boolean (For subscriptions)
-- `created_at`: Timestamp (Used for flexible filtering)
-- `updated_at`: Timestamp
+All tables use Supabase RLS — users can only access their own rows.
 
 ---
 
-## 4. Functional Requirements
+## 4. Features
 
 ### 4.1. Authentication
+- Google OAuth only. No email/password.
+- On first login, auto-provision default categories: Food, Transport, Rent, Coffee, Entertainment, Server Costs.
 
-- **Google Login:** Primary and only entry point.
-- **Auto-Provisioning:** On first login, create a set of default categories (e.g., Food, Transport) so the user isn't starting with a blank slate.
+### 4.2. Expense Entry
+- Speed-entry form: Amount → Currency → Category → Description (optional) → Save.
+- Recurring flag for subscriptions.
 
-### 4.2. Expense & Category Entry
+### 4.3. Transactions Page
+- Full table with date, category, description, amount columns.
+- Pagination (server-side).
+- Filter by category.
+- Inline edit and delete per row.
 
-- **Manual Input:** A "Speed-Entry" form (Amount -> Currency -> Category -> Save).
-- **Command-Line Entry:** Smart input that parses text like "50 coffee" into amount and category.
-- **Transactions Page:** A dedicated route (`/transactions`) showing all transactions in a data table with pagination and filters.
-- **Bulk Import/Export:** CSV upload/download to handle historical data and ensure portability.
-- **Category Manager:** A settings view to add, rename, or delete custom categories.
+### 4.4. Income Tracking _(new)_
+- Dedicated income entry form: Amount → Currency → Source → Description (optional) → Save.
+- Income history table (similar to Transactions).
+- Income is displayed in Analytics as a contrast to expenses.
 
-### 4.3. Flexible Analytics Engine
+### 4.5. Budgets _(new)_
+- Set a monthly spending limit per category.
+- Analytics page shows Budget vs. Actual bar chart.
+- Visual indicator (progress bar or color) when a category is nearing or over budget.
 
-- **Custom Time-Frame Selector:** A date-range picker that overrides the "Monthly" default.
-  - _Implementation:_ Uses TanStack Router Search Params for persistent, sharable URLs.
-- **Smart Summaries:**
-  - Total Spent calculation for the active range.
-  - Automated currency conversion via MonoBank/NBU API (display all values in a selected "Primary" currency).
-- **Visualizations:**
-  - **Donut Chart:** Expense distribution by `category_id`.
-  - **Bar Chart:** Chronological spending. (Logic: Group by day if range < 2 months; group by month if range > 2 months).
+### 4.6. Analytics
+- Date-range picker persisted in URL search params (TanStack Router).
+- **Donut chart:** expense distribution by category.
+- **Bar chart:** chronological spending (daily if range < 2 months, monthly otherwise).
+- **Budget vs. Actual bar chart:** side-by-side comparison per category _(after budgets are added)_.
+- Total spent and total income for the selected range.
 
-### 4.4. Mobile & PWA
+### 4.7. Settings
+- Category manager: add, rename, delete.
+- Budget manager: set/edit monthly limits per category.
+- CSV export (all expenses) and CSV import (bulk upload).
 
-- **App-like Feel:** No browser address bar (via `manifest.json`).
-- **Offline Cache:** Allow the user to see their balance/recent history even without a connection.
+### 4.8. PWA + Offline Cache _(new)_
+- `manifest.json` for installable app (no browser chrome).
+- Workbox service worker caches the shell + recent data so the app loads and is usable offline.
+- Offline state shows the last-synced data clearly labeled as cached.
+
+### 4.9. Encrypted Local State _(new)_
+- Sensitive data written to `localStorage` / `IndexedDB` (for offline cache) is encrypted at rest using the Web Crypto API (AES-GCM).
+- Encryption key is derived from the user's Supabase session token so no separate passphrase is needed.
+- On session expiry or sign-out, the local cache is wiped.
+
+### 4.10. Profile
+- Displays Google avatar, name, email.
+- Sign-out button.
 
 ---
 
-## 5. UI/UX Principles (Minimalist)
-
-- **Zero Friction:** The "Add Expense" button should be reachable by the thumb.
-- **Typography-First:** Use high-contrast fonts and whitespace rather than heavy borders or cards.
-- **Developer-First:** Keyboard shortcuts (e.g., `Cmd+K`) for desktop efficiency.
-- **Tactile Feedback:** Haptic vibrations on save for the PWA experience.
-- **Color Palette:** Monochromatic with one accent color (e.g., Electric Blue or Mint Green).
+## 5. Out of Scope
+- Bank synchronization or open banking APIs.
+- Multi-currency auto-conversion (MonoBank/NBU).
+- AI-powered features (forecasting, auto-categorization).
+- Smart text parsing ("50 coffee").
+- Keyboard shortcuts / command palette.
+- Haptic feedback.
+- Net worth tracking or Sankey diagrams.
 
 ---
 
-## 6. Implementation Roadmap
+## 6. Roadmap
 
-### Phase 1: The Core (Week 1)
+### Done
+- [x] Google OAuth + route guards
+- [x] Expense entry (SpeedEntry form)
+- [x] Category management (create, rename, delete)
+- [x] Transactions page (paginated table, edit, delete)
+- [x] Analytics (donut chart, bar chart, date-range filter)
+- [x] CSV import/export
+- [x] Profile page
+- [x] 404 page
 
-- [x] Set up TanStack Start project with Supabase & Google Auth.
-- [x] Define file-based routes (Index, Analytics, Transactions, Settings).
-- [/] Build the "Add Expense" and "Add Category" forms using Server Functions.
+### Phase 2 — Data Completeness
+- [ ] Default category provisioning on first login
+- [ ] Income tracking (table, entry form, analytics integration)
+- [ ] Budget system (set limits, budget vs. actual chart)
+- [ ] Zod-backed form validation + `sonner` toast notifications
 
-### Phase 2: The Logic (Week 2)
+### Phase 3 — PWA & Privacy
+- [ ] `vite-plugin-pwa` setup + `manifest.json`
+- [ ] Workbox offline cache strategy (shell + recent data)
+- [ ] Encrypted local state (Web Crypto API, AES-GCM, session-derived key)
+- [ ] Cache wipe on sign-out
 
-- [ ] Build the Transactions Page (full table with pagination, filtering, delete, and edit capabilities).
-- [ ] Implement Date-Range filter logic via Router Search Params (Zod validation).
-- [ ] Add basic currency switching (UAH/USD/EUR).
+---
 
-### Phase 3: The Polish (Week 3)
-
-- [/] Integrate Recharts (Donut & Bar).
-- [ ] Configure `vite-plugin-pwa` for installation.
-- [/] Build the CSV Import/Export tool.
-
-### Phase 4: The Extras (Week 4)
-
-- [ ] Build Profile page (display user avatar, name, email, and a sign-out button).
+## 7. UI Principles
+- Mobile-first. Thumb-reachable primary actions.
+- Typography and whitespace over heavy borders or cards.
+- Monochromatic palette with a single accent color.
+- No modals for destructive actions — inline confirmation only.
