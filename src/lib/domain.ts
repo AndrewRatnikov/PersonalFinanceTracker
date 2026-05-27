@@ -11,6 +11,7 @@ export interface Expense {
   amount: number
   currency: Currency
   categoryId: string
+  description?: string | null
   createdAt: string
   category?: Category
 }
@@ -67,6 +68,7 @@ export interface CreateExpenseInput {
   amount: number
   currency: Currency
   categoryId: string
+  description?: string
 }
 
 export interface CreateCategoryInput {

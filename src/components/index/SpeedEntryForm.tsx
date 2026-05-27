@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 
 import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 
@@ -27,49 +27,62 @@ export default function SpeedEntryForm({
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UAH')
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
+  const [description, setDescription] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!amount || !categoryId) return
-    onSubmit({ amount: Number(amount), currency, categoryId })
+    onSubmit({
+      amount: Number(amount),
+      currency,
+      categoryId,
+      description: description.trim() || undefined,
+    })
     setAmount('')
+    setDescription('')
   }
 
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm">
       <form onSubmit={handleSubmit}>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold tracking-tight">Quick Add Expense</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          <div className="flex gap-4 items-end">
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="amount" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Amount
-              </Label>
-              <Input
+        <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+
+          {/* Amount + Currency — unified inline input */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="amount"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
+              Amount
+            </Label>
+            <div className="flex items-center h-12 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden">
+              <input
                 id="amount"
                 type="number"
                 step="0.01"
+                min="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="text-2xl font-bold h-12"
                 placeholder="0.00"
                 required
                 disabled={isPending}
+                className="flex-1 h-full bg-transparent px-3 text-2xl font-bold outline-none
+                  [appearance:textfield]
+                  [&::-webkit-outer-spin-button]:appearance-none
+                  [&::-webkit-inner-spin-button]:appearance-none"
               />
-            </div>
-
-            <div className="w-32 space-y-2">
-              <Label htmlFor="currency" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Currency
-              </Label>
+              <div className="w-px h-6 bg-border flex-shrink-0" />
               <Select
                 value={currency}
                 onValueChange={(v) => setCurrency(v as Currency)}
                 disabled={isPending}
               >
-                <SelectTrigger id="currency" className="h-12 font-semibold">
+                <SelectTrigger
+                  id="currency"
+                  className="w-[88px] h-full border-0 shadow-none rounded-none
+                    focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0
+                    font-semibold bg-transparent"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -81,8 +94,12 @@ export default function SpeedEntryForm({
             </div>
           </div>
 
+          {/* Category */}
           <div className="space-y-2">
-            <Label htmlFor="category" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <Label
+              htmlFor="category"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
               Category
             </Label>
             <Select
@@ -106,17 +123,37 @@ export default function SpeedEntryForm({
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
 
-        <CardFooter className="pt-2 pb-6">
+          {/* Description — optional */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="description"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
+              Description{' '}
+              <span className="normal-case font-normal opacity-50">(optional)</span>
+            </Label>
+            <Input
+              id="description"
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. coffee with team"
+              maxLength={120}
+              disabled={isPending}
+            />
+          </div>
+
+          {/* Submit */}
           <Button
             type="submit"
             disabled={isPending}
-            className="w-full h-12 text-base font-bold shadow-sm"
+            className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
           >
-            {isPending ? 'Saving...' : 'Save Expense'}
+            {isPending ? 'Saving…' : 'Save Expense'}
           </Button>
-        </CardFooter>
+
+        </CardContent>
       </form>
     </Card>
   )

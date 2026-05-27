@@ -10,7 +10,7 @@ export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
     const { data, error } = await supabase
       .from('expenses')
       .select(
-        'id, amount, currency, category_id, created_at, categories (id, name, icon)',
+        'id, amount, currency, category_id, description, created_at, categories (id, name, icon)',
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
@@ -25,6 +25,7 @@ export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
       amount: Number(row.amount),
       currency: row.currency,
       categoryId: row.category_id,
+      description: row.description ?? null,
       createdAt: row.created_at,
       category: row.categories
         ? {
@@ -45,10 +46,11 @@ export const createExpense = createServerFn({ method: 'POST' })
       throw new Error('Invalid expense payload')
     }
 
-    const { amount, currency, categoryId } = input as {
+    const { amount, currency, categoryId, description } = input as {
       amount?: unknown
       currency?: unknown
       categoryId?: unknown
+      description?: unknown
     }
 
     if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
@@ -66,15 +68,25 @@ export const createExpense = createServerFn({ method: 'POST' })
       throw new Error('categoryId is required')
     }
 
+    const trimmedDescription =
+      typeof description === 'string' && description.trim()
+        ? description.trim()
+        : undefined
+
+    if (trimmedDescription && trimmedDescription.length > 120) {
+      throw new Error('Description must be 120 characters or fewer')
+    }
+
     return {
       amount,
       currency: currency as Currency,
       categoryId,
+      description: trimmedDescription,
     }
   })
   .handler(async ({ data }): Promise<Expense> => {
     const { supabase, user } = await getAuthenticatedClient()
-    const { amount, currency, categoryId } = data
+    const { amount, currency, categoryId, description } = data
 
     const { data: inserted, error } = await supabase
       .from('expenses')
@@ -83,9 +95,10 @@ export const createExpense = createServerFn({ method: 'POST' })
         amount,
         currency,
         category_id: categoryId,
+        description: description ?? null,
         is_recurring: false,
       })
-      .select('id, amount, currency, category_id, created_at')
+      .select('id, amount, currency, category_id, description, created_at')
       .single()
 
     if (error) {
@@ -97,6 +110,7 @@ export const createExpense = createServerFn({ method: 'POST' })
       amount: Number(inserted.amount),
       currency: inserted.currency,
       categoryId: inserted.category_id,
+      description: inserted.description ?? null,
       createdAt: inserted.created_at,
       category: undefined,
     }
