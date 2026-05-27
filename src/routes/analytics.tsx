@@ -28,7 +28,7 @@ export const Route = createFileRoute('/analytics')({
   loader: async ({
     deps: { from, to },
   }): Promise<{ analytics: AnalyticsRangeSummary }> => {
-    const analytics = await (getRangeAnalytics as any)({ from, to })
+    const analytics = await getRangeAnalytics({ data: { from, to } })
     return { analytics }
   },
   component: AnalyticsPage,
@@ -38,7 +38,6 @@ export const Route = createFileRoute('/analytics')({
 function AnalyticsPage() {
   const { analytics } = Route.useLoaderData()
   const search = Route.useSearch()
-
 
   const hasData =
     analytics.categoryBreakdown.length > 0 || analytics.timeline.length > 0
