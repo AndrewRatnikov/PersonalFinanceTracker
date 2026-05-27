@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { GoogleIcon } from '@/components/icons/GoogleIcon'
 import { Button } from '@/components/ui/button'
@@ -67,7 +68,7 @@ function Login() {
             className="w-full gap-3 font-semibold h-12 shadow-sm transition-all hover:bg-accent"
           >
             {isLoading ? (
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <GoogleIcon className="h-5 w-5" />
             )}

@@ -1,5 +1,10 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
 
 interface TransactionsPaginationProps {
   pageIndex: number
@@ -18,6 +23,9 @@ export function TransactionsPagination({
 }: TransactionsPaginationProps) {
   if (totalPages <= 1) return null
 
+  const isPrevDisabled = pageIndex === 0
+  const isNextDisabled = pageIndex >= totalPages - 1
+
   return (
     <div className="flex items-center justify-between p-4 border-t bg-muted/20">
       <span className="text-sm text-muted-foreground">
@@ -31,29 +39,38 @@ export function TransactionsPagination({
         </span>{' '}
         of <span className="font-medium text-foreground">{totalCount}</span> results
       </span>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => onPageChange(Math.max(0, pageIndex - 1))}
-          disabled={pageIndex === 0}
-          className="h-8 w-8"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </Button>
-        <div className="text-sm font-medium">
-          Page {pageIndex + 1} of {totalPages}
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => onPageChange(Math.min(totalPages - 1, pageIndex + 1))}
-          disabled={pageIndex >= totalPages - 1}
-          className="h-8 w-8"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </Button>
-      </div>
+
+      <Pagination className="w-auto mx-0">
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              href="#"
+              onClick={(e) => {
+                e.preventDefault()
+                if (!isPrevDisabled) onPageChange(pageIndex - 1)
+              }}
+              aria-disabled={isPrevDisabled}
+              className={isPrevDisabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+            />
+          </PaginationItem>
+          <PaginationItem>
+            <span className="text-sm font-medium px-3 tabular-nums">
+              {pageIndex + 1} / {totalPages}
+            </span>
+          </PaginationItem>
+          <PaginationItem>
+            <PaginationNext
+              href="#"
+              onClick={(e) => {
+                e.preventDefault()
+                if (!isNextDisabled) onPageChange(pageIndex + 1)
+              }}
+              aria-disabled={isNextDisabled}
+              className={isNextDisabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
     </div>
   )
 }
