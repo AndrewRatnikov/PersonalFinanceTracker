@@ -63,15 +63,15 @@ _No income table, route, form, or analytics integration exists yet._
 - [x] `deleteIncome({ data: id })` — deletes by id scoped to `user_id`
 - [x] `getIncomeTotalForRange({ from, to })` — returns a single `number`; used by analytics
 
-### 3.4 Route — `src/routes/income.tsx` (new file)
-- [ ] Mirror the structure of `src/routes/transactions.tsx`:
+### 3.4 Route — `src/routes/income.tsx` (new file) ✅
+- [x] Mirror the structure of `src/routes/transactions.tsx`:
   - TanStack Query for paginated fetch (`useQuery` with `['income', queryInput]` key)
   - Delete mutation with `toast.success` / `toast.error`
-- [ ] "Add Income" form inline at the top of the page (no separate route needed):
+- [x] "Add Income" form inline at the top of the page (no separate route needed):
   - Fields: Amount + Currency (same combined input as `SpeedEntryForm`), Source (text input, required), Description (optional)
   - Validate with `createIncomeSchema` — show inline errors, same pattern as `SpeedEntryForm`
   - On success: invalidate query + `toast.success('Income saved')`
-- [ ] Income history table below the form:
+- [x] Income history table below the form:
   - Columns: Date, Source, Description, Amount
   - Pagination controls (reuse `TransactionsPagination`)
   - Delete button per row with `AlertDialog` confirmation (reuse pattern from `TransactionsTable`)
