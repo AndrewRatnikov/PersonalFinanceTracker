@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import dayjs from 'dayjs'
 
 import { getAuthenticatedClient } from './serverClient'
+import { CURRENCIES } from './domain'
 import type { Currency } from './domain'
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,6 @@ export interface ImportResult {
   errors: Array<string>
 }
 
-const VALID_CURRENCIES: Array<Currency> = ['UAH', 'USD', 'EUR']
 
 /**
  * Parses a CSV string (same format as the export) and bulk-inserts valid rows.
@@ -114,7 +114,7 @@ export const importExpensesCSV = createServerFn({ method: 'POST' })
         continue
       }
 
-      if (!VALID_CURRENCIES.includes(currency as Currency)) {
+      if (!CURRENCIES.includes(currency as Currency)) {
         errors.push(`Row ${i + 2}: invalid currency "${currency}"`)
         skipped++
         continue

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const CURRENCIES = ['UAH', 'USD', 'EUR'] as const
+import { CURRENCIES } from './domain'
 
 export const createIncomeSchema = z.object({
   source: z.string().min(1, 'Source is required'),

@@ -57,11 +57,11 @@ _No income table, route, form, or analytics integration exists yet._
   - `CreateIncomeInput`: `source`, `amount`, `currency`, `description?`
 - [x] Add `createIncomeSchema` to `src/lib/schemas.ts` (amount positive; source min 1 char)
 
-### 3.3 Server functions — `src/lib/income.ts` (new file)
-- [ ] `getIncomePaginated({ pageIndex, pageSize })` — mirrors `getTransactionsPaginated`; returns `{ income, totalCount }`
-- [ ] `createIncome({ data })` — validates with `inputValidator`, inserts row, returns `IncomeEntry`
-- [ ] `deleteIncome({ data: id })` — deletes by id scoped to `user_id`
-- [ ] `getIncomeTotalForRange({ from, to })` — returns a single `number`; used by analytics
+### 3.3 Server functions — `src/lib/income.ts` (new file) ✅
+- [x] `getIncomePaginated({ pageIndex, pageSize })` — mirrors `getTransactionsPaginated`; returns `{ income, totalCount }`
+- [x] `createIncome({ data })` — validates with `inputValidator`, inserts row, returns `IncomeEntry`
+- [x] `deleteIncome({ data: id })` — deletes by id scoped to `user_id`
+- [x] `getIncomeTotalForRange({ from, to })` — returns a single `number`; used by analytics
 
 ### 3.4 Route — `src/routes/income.tsx` (new file)
 - [ ] Mirror the structure of `src/routes/transactions.tsx`:

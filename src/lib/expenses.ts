@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 
 import { getAuthenticatedClient } from './serverClient'
+import { CURRENCIES } from './domain'
 import type { CreateExpenseInput, Currency, Expense } from './domain'
 
 export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
@@ -38,8 +39,6 @@ export const getRecentExpenses = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-const VALID_CURRENCIES: Array<Currency> = ['UAH', 'USD', 'EUR']
-
 export const createExpense = createServerFn({ method: 'POST' })
   .inputValidator((input: unknown): CreateExpenseInput => {
     if (typeof input !== 'object' || input === null) {
@@ -59,7 +58,7 @@ export const createExpense = createServerFn({ method: 'POST' })
 
     if (
       typeof currency !== 'string' ||
-      !VALID_CURRENCIES.includes(currency as Currency)
+      !CURRENCIES.includes(currency as Currency)
     ) {
       throw new Error('Unsupported currency')
     }
