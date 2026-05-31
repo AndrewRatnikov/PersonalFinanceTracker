@@ -71,6 +71,22 @@ export interface CreateExpenseInput {
   description?: string
 }
 
+export interface IncomeEntry {
+  id: string
+  source: string
+  amount: number
+  currency: Currency
+  description?: string | null
+  createdAt: string
+}
+
+export interface CreateIncomeInput {
+  source: string
+  amount: number
+  currency: Currency
+  description?: string
+}
+
 export interface CreateCategoryInput {
   name: string
   icon?: string | null

@@ -31,8 +31,8 @@ _New users land with no categories, which breaks expense entry immediately._
 ## 3. Income tracking
 _No income table, route, form, or analytics integration exists yet._
 
-### 3.1 Database
-- [ ] Run migration in Supabase SQL Editor:
+### 3.1 Database ✅
+- [x] Run migration in Supabase SQL Editor:
   ```sql
   create table public.income (
     id uuid primary key default gen_random_uuid(),
@@ -49,13 +49,13 @@ _No income table, route, form, or analytics integration exists yet._
   create policy "Users can update their own income" on public.income for update using (auth.uid() = user_id);
   create policy "Users can delete their own income" on public.income for delete using (auth.uid() = user_id);
   ```
-- [ ] Add `income` table schema to `docs/db.md`
+- [x] Add `income` table schema to `docs/db.md`
 
-### 3.2 Domain & validation
-- [ ] Add `IncomeEntry` and `CreateIncomeInput` types to `src/lib/domain.ts`
+### 3.2 Domain & validation ✅
+- [x] Add `IncomeEntry` and `CreateIncomeInput` types to `src/lib/domain.ts`
   - `IncomeEntry`: `id`, `source`, `amount`, `currency`, `description`, `createdAt`
   - `CreateIncomeInput`: `source`, `amount`, `currency`, `description?`
-- [ ] Add `createIncomeSchema` to `src/lib/schemas.ts` (amount positive; source min 1 char)
+- [x] Add `createIncomeSchema` to `src/lib/schemas.ts` (amount positive; source min 1 char)
 
 ### 3.3 Server functions — `src/lib/income.ts` (new file)
 - [ ] `getIncomePaginated({ pageIndex, pageSize })` — mirrors `getTransactionsPaginated`; returns `{ income, totalCount }`

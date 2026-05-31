@@ -107,3 +107,22 @@ On first login, the application should auto-provision a set of default categorie
 - Coffee
 - Server Costs
 - Entertainment
+
+## 5. Income Table
+
+```sql
+  create table public.income (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+    source text not null,
+    amount numeric not null,
+    currency text not null check (currency in ('UAH', 'USD', 'EUR')) default 'UAH',
+    description text,
+    created_at timestamptz not null default now()
+  );
+  alter table public.income enable row level security;
+  create policy "Users can view their own income" on public.income for select using (auth.uid() = user_id);
+  create policy "Users can insert their own income" on public.income for insert with check (auth.uid() = user_id);
+  create policy "Users can update their own income" on public.income for update using (auth.uid() = user_id);
+  create policy "Users can delete their own income" on public.income for delete using (auth.uid() = user_id);
+```
