@@ -31,15 +31,58 @@ _New users land with no categories, which breaks expense entry immediately._
 ## 3. Income tracking
 _No income table, route, form, or analytics integration exists yet._
 
-- [ ] Run `income` table migration in Supabase (see `docs/db.md` for schema)
-- [ ] Add RLS policies (same pattern as `expenses`)
-- [ ] Add `src/lib/income.ts` with `createIncome` and `getIncomeForRange` server functions
-- [ ] Add `IncomeEntry` type to `src/lib/domain.ts`
-- [ ] Create `src/routes/income.tsx` — paginated income history table (mirrors Transactions page)
-- [ ] Add income entry form (Amount → Currency → Source → Description → Save)
-- [ ] Add "Income" link to `src/components/Header.tsx`
-- [ ] Extend analytics loader to include `totalIncome` for the selected range
-- [ ] Show "Total Income" stat alongside "Total Spent" on the Analytics page
+### 3.1 Database
+- [ ] Run migration in Supabase SQL Editor:
+  ```sql
+  create table public.income (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+    source text not null,
+    amount numeric not null,
+    currency text not null check (currency in ('UAH', 'USD', 'EUR')) default 'UAH',
+    description text,
+    created_at timestamptz not null default now()
+  );
+  alter table public.income enable row level security;
+  create policy "Users can view their own income" on public.income for select using (auth.uid() = user_id);
+  create policy "Users can insert their own income" on public.income for insert with check (auth.uid() = user_id);
+  create policy "Users can update their own income" on public.income for update using (auth.uid() = user_id);
+  create policy "Users can delete their own income" on public.income for delete using (auth.uid() = user_id);
+  ```
+- [ ] Add `income` table schema to `docs/db.md`
+
+### 3.2 Domain & validation
+- [ ] Add `IncomeEntry` and `CreateIncomeInput` types to `src/lib/domain.ts`
+  - `IncomeEntry`: `id`, `source`, `amount`, `currency`, `description`, `createdAt`
+  - `CreateIncomeInput`: `source`, `amount`, `currency`, `description?`
+- [ ] Add `createIncomeSchema` to `src/lib/schemas.ts` (amount positive; source min 1 char)
+
+### 3.3 Server functions — `src/lib/income.ts` (new file)
+- [ ] `getIncomePaginated({ pageIndex, pageSize })` — mirrors `getTransactionsPaginated`; returns `{ income, totalCount }`
+- [ ] `createIncome({ data })` — validates with `inputValidator`, inserts row, returns `IncomeEntry`
+- [ ] `deleteIncome({ data: id })` — deletes by id scoped to `user_id`
+- [ ] `getIncomeTotalForRange({ from, to })` — returns a single `number`; used by analytics
+
+### 3.4 Route — `src/routes/income.tsx` (new file)
+- [ ] Mirror the structure of `src/routes/transactions.tsx`:
+  - TanStack Query for paginated fetch (`useQuery` with `['income', queryInput]` key)
+  - Delete mutation with `toast.success` / `toast.error`
+- [ ] "Add Income" form inline at the top of the page (no separate route needed):
+  - Fields: Amount + Currency (same combined input as `SpeedEntryForm`), Source (text input, required), Description (optional)
+  - Validate with `createIncomeSchema` — show inline errors, same pattern as `SpeedEntryForm`
+  - On success: invalidate query + `toast.success('Income saved')`
+- [ ] Income history table below the form:
+  - Columns: Date, Source, Description, Amount
+  - Pagination controls (reuse `TransactionsPagination`)
+  - Delete button per row with `AlertDialog` confirmation (reuse pattern from `TransactionsTable`)
+
+### 3.5 Navigation
+- [ ] Add `{ to: '/income', icon: TrendingUp, label: 'Income' }` to `NAV_LINKS` in `src/components/Header.tsx` — insert between Transactions and Settings
+
+### 3.6 Analytics integration
+- [ ] Extend `getRangeAnalytics` in `src/lib/analytics.ts` to also call `getIncomeTotalForRange` and include `totalIncome: number` in `AnalyticsRangeSummary`
+- [ ] Add `totalIncome` field to `AnalyticsRangeSummary` in `src/lib/domain.ts`
+- [ ] Show "Total Income" stat card on the Analytics page alongside the existing "Total Spent" card
 
 ---
 
