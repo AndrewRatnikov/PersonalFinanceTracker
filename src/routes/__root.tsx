@@ -8,6 +8,8 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import { getServerUser } from '../lib/auth'
+import { provisionDefaultCategories } from '../lib/categories'
+import { getLocalStore, setLocalStore } from '../lib/localStore'
 import Header from '../components/Header'
 import NotFoundPage from '../components/NotFoundPage'
 
@@ -31,6 +33,14 @@ export const Route = createRootRouteWithContext<AuthContext>()({
       !location.pathname.startsWith('/auth/callback')
     ) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
+    }
+
+    if (user) {
+      const alreadyProvisioned = getLocalStore(user.id, 'categoriesProvisioned')
+      if (!alreadyProvisioned) {
+        await provisionDefaultCategories()
+        setLocalStore(user.id, 'categoriesProvisioned', true)
+      }
     }
 
     // Return the updated context to propagate the user down to child routes.

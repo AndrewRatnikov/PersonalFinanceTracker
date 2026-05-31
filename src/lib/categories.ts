@@ -8,6 +8,44 @@ import type {
 } from './domain'
 
 // ---------------------------------------------------------------------------
+// Default categories
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CATEGORIES: Array<{ name: string; icon: string }> = [
+  { name: 'Food', icon: '🍔' },
+  { name: 'Transport', icon: '🚌' },
+  { name: 'Rent', icon: '🏠' },
+  { name: 'Coffee', icon: '☕' },
+  { name: 'Entertainment', icon: '🎬' },
+  { name: 'Server Costs', icon: '🖥️' },
+]
+
+export const provisionDefaultCategories = createServerFn({
+  method: 'POST',
+}).handler(async (): Promise<void> => {
+  const { supabase, user } = await getAuthenticatedClient()
+
+  const { count, error: countError } = await supabase
+    .from('categories')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+
+  if (countError) throw countError
+
+  if ((count ?? 0) > 0) return
+
+  const { error } = await supabase.from('categories').insert(
+    DEFAULT_CATEGORIES.map((c) => ({
+      user_id: user.id,
+      name: c.name,
+      icon: c.icon,
+    })),
+  )
+
+  if (error) throw error
+})
+
+// ---------------------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------------------
 

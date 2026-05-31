@@ -18,13 +18,13 @@ _Unvalidated inputs currently reach the DB or throw unhandled errors._
 
 ---
 
-## 2. Default category provisioning on first login
+## 2. Default category provisioning on first login ✅
 _New users land with no categories, which breaks expense entry immediately._
 
-- [ ] Add a `provisionDefaultCategories` server function in `src/lib/categories.ts`
+- [x] Add `provisionDefaultCategories` server function in `src/lib/categories.ts`
   - Checks whether the user already has any categories
-  - If none, bulk-inserts: Food, Transport, Rent, Coffee, Entertainment, Server Costs
-- [ ] Call it inside the `beforeLoad` of `src/routes/__root.tsx` after `getServerUser` resolves (only when user is present)
+  - If none, bulk-inserts: Food 🍔, Transport 🚌, Rent 🏠, Coffee ☕, Entertainment 🎬, Server Costs 🖥️
+- [x] Call it inside `beforeLoad` of `src/routes/__root.tsx` after `getServerUser` resolves (only when user is present)
 
 ---
 
