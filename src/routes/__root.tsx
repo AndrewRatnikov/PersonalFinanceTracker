@@ -14,6 +14,7 @@ import NotFoundPage from '../components/NotFoundPage'
 import appCss from '../styles.css?url'
 import type { AuthContext } from '../lib/authContext'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from 'sonner'
 
 const queryClient = new QueryClient()
 
@@ -70,6 +71,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <Header />
           {children}
+          <Toaster richColors position="bottom-center" />
         </QueryClientProvider>
         <TanStackDevtools
           config={{

@@ -4,16 +4,17 @@ Items ranked by urgency. Each block is self-contained — implement top to botto
 
 ---
 
-## 1. Form validation + toast notifications
+## 1. Form validation + toast notifications ✅
 _Unvalidated inputs currently reach the DB or throw unhandled errors._
 
-- [ ] Install / confirm `zod` and `sonner` are in `package.json`
-- [ ] Add `<Toaster />` to `src/routes/__root.tsx`
-- [ ] Define a Zod schema for expense creation (amount > 0, currency enum, categoryId required)
-- [ ] Apply schema in `SpeedEntryForm` — show inline field errors
-- [ ] Apply schema in the transaction edit form in `TransactionsTable`
-- [ ] Fire a `sonner` success toast on expense create / update / delete
-- [ ] Fire a `sonner` error toast when any server function throws
+- [x] Install `zod` and confirm `sonner` in `package.json`
+- [x] Add `<Toaster />` to `src/routes/__root.tsx`
+- [x] Define Zod schema for expense creation in `src/lib/schemas.ts`
+- [x] Apply schema in `SpeedEntryForm` — show inline field errors
+- [x] Fire `toast.success` on expense create in `src/routes/index.tsx`
+- [x] Fire `toast.error` on server function throw in `src/routes/index.tsx`
+- [x] Transactions delete already had toasts — no change needed
+- [ ] Apply schema in the transaction edit form (blocked — edit UI not built yet)
 
 ---
 

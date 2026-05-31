@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, SubmitEvent } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 
 import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
+import { createExpenseSchema } from '@/lib/schemas'
 
 interface SpeedEntryFormProps {
   categories: Array<Category>
@@ -28,18 +29,33 @@ export default function SpeedEntryForm({
   const [currency, setCurrency] = useState<Currency>('UAH')
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
   const [description, setDescription] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: SubmitEvent) => {
     e.preventDefault()
-    if (!amount || !categoryId) return
-    onSubmit({
+    setErrors({})
+
+    const result = createExpenseSchema.safeParse({
       amount: Number(amount),
       currency,
       categoryId,
       description: description.trim() || undefined,
     })
+
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {}
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as string
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message
+      }
+      setErrors(fieldErrors)
+      return
+    }
+
+    onSubmit(result.data)
     setAmount('')
     setDescription('')
+    setErrors({})
   }
 
   return (
@@ -47,7 +63,7 @@ export default function SpeedEntryForm({
       <form onSubmit={handleSubmit}>
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
 
-          {/* Amount + Currency — unified inline input */}
+          {/* Amount + Currency */}
           <div className="space-y-2">
             <Label
               htmlFor="amount"
@@ -55,7 +71,7 @@ export default function SpeedEntryForm({
             >
               Amount
             </Label>
-            <div className="flex items-center h-12 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden">
+            <div className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}>
               <input
                 id="amount"
                 type="number"
@@ -64,7 +80,6 @@ export default function SpeedEntryForm({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                required
                 disabled={isPending}
                 className="flex-1 h-full bg-transparent px-3 text-2xl font-bold outline-none
                   [appearance:textfield]
@@ -92,6 +107,9 @@ export default function SpeedEntryForm({
                 </SelectContent>
               </Select>
             </div>
+            {errors.amount && (
+              <p className="text-xs text-destructive">{errors.amount}</p>
+            )}
           </div>
 
           {/* Category */}
@@ -104,11 +122,13 @@ export default function SpeedEntryForm({
             </Label>
             <Select
               value={categoryId}
-              onValueChange={setCategoryId}
+              onValueChange={(v) => setCategoryId(v)}
               disabled={isPending}
-              required
             >
-              <SelectTrigger id="category" className="h-11">
+              <SelectTrigger
+                id="category"
+                className="h-11"
+              >
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
@@ -141,6 +161,7 @@ export default function SpeedEntryForm({
               placeholder="e.g. coffee with team"
               maxLength={120}
               disabled={isPending}
+              className={errors.description ? 'border-destructive' : ''}
             />
           </div>
 

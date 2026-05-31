@@ -15,6 +15,7 @@ import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import RecentHistoryList from '@/components/index/RecentHistoryList'
 import PageShell from '@/components/PageShell'
 import { Card, CardContent } from '@/components/ui/card'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/')({
   loader: async (): Promise<{
@@ -44,13 +45,12 @@ function Dashboard() {
   const handleCreateExpense = async (data: CreateExpenseInput) => {
     setIsPending(true)
     try {
-      // Execute the server function to insert the record
       await createExpense({ data })
-      // Invalidate the router to trigger a re-fetch of the loader data
       await router.invalidate()
+      toast.success('Expense saved')
     } catch (error) {
       console.error('Failed to create expense:', error)
-      alert('Failed to save expense. Please try again.')
+      toast.error('Failed to save expense. Please try again.')
     } finally {
       setIsPending(false)
     }
