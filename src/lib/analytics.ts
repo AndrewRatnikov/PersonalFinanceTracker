@@ -84,18 +84,29 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     const { supabase, user } = await getAuthenticatedClient()
     const range = normalizeRange(data)
 
-    const { data: rows, error } = await supabase
-      .from('expenses')
-      .select(
-        'id, amount, currency, category_id, created_at, categories (id, name, icon)',
-      )
-      .eq('user_id', user.id)
-      .gte('created_at', range.from)
-      .lte('created_at', range.to)
+    const [{ data: rows, error }, { data: incomeRows, error: incomeError }] =
+      await Promise.all([
+        supabase
+          .from('expenses')
+          .select('id, amount, currency, category_id, created_at, categories (id, name, icon)')
+          .eq('user_id', user.id)
+          .gte('created_at', range.from)
+          .lte('created_at', range.to),
+        supabase
+          .from('income')
+          .select('amount')
+          .eq('user_id', user.id)
+          .gte('created_at', range.from)
+          .lte('created_at', range.to),
+      ])
 
-    if (error) {
-      throw error
-    }
+    if (error) throw error
+    if (incomeError) throw incomeError
+
+    const totalIncome = (incomeRows ?? []).reduce(
+      (sum: number, row: any) => sum + Number(row.amount),
+      0,
+    )
 
     const categoryMap = new Map<string, CategoryBreakdownItem>()
     const timelineMap = new Map<string, number>()
@@ -149,5 +160,6 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
       to: range.to,
       categoryBreakdown,
       timeline,
+      totalIncome,
     }
   })

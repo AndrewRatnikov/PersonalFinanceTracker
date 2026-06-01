@@ -64,6 +64,7 @@ export interface AnalyticsRangeSummary {
   to: string
   categoryBreakdown: Array<CategoryBreakdownItem>
   timeline: Array<AnalyticsTimelinePoint>
+  totalIncome: number
 }
 
 export interface CreateExpenseInput {
