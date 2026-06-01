@@ -76,8 +76,8 @@ _No income table, route, form, or analytics integration exists yet._
   - Pagination controls (reuse `TransactionsPagination`)
   - Delete button per row with `AlertDialog` confirmation (reuse pattern from `TransactionsTable`)
 
-### 3.5 Navigation
-- [ ] Add `{ to: '/income', icon: TrendingUp, label: 'Income' }` to `NAV_LINKS` in `src/components/Header.tsx` — insert between Transactions and Settings
+### 3.5 Navigation ✅
+- [x] Add `{ to: '/income', icon: TrendingUp, label: 'Income' }` to `NAV_LINKS` in `src/components/Header.tsx` — insert between Transactions and Settings
 
 ### 3.6 Analytics integration
 - [ ] Extend `getRangeAnalytics` in `src/lib/analytics.ts` to also call `getIncomeTotalForRange` and include `totalIncome: number` in `AnalyticsRangeSummary`

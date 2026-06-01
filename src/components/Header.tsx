@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { Route } from '../routes/__root'
-import { BarChart3, Home, Menu, Settings, User2, List } from 'lucide-react'
+import { BarChart3, Home, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/transactions', icon: List, label: 'Transactions' },
+  { to: '/income', icon: TrendingUp, label: 'Income' },
   { to: '/settings', icon: Settings, label: 'Settings' },
   { to: '/profile', icon: User2, label: 'Profile' },
 ] as const
