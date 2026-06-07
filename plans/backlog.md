@@ -139,11 +139,11 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
   - `monthlyLimit`: positive number
   - `currency`: `z.enum(CURRENCIES)`
 
-### 4.3 Server functions — `src/lib/budgets.ts` (new file)
+### 4.3 Server functions — `src/lib/budgets.ts` (new file) ✅
 
-- [ ] `getBudgets()` — fetches all budgets for the current user, joined with `categories (id, name, icon)`; returns `Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>`
-- [ ] `upsertBudget({ data })` — validates with `inputValidator` using `upsertBudgetSchema`; issues an `upsert` on `(user_id, category_id)` with `onConflict: 'user_id,category_id'`; returns the saved `BudgetEntry`
-- [ ] `deleteBudget({ data: id })` — deletes budget row by id scoped to `user_id`; used when the user clears a category's limit
+- [x] `getBudgets()` — fetches all budgets for the current user, joined with `categories (id, name, icon)`; returns `Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>`
+- [x] `upsertBudget({ data })` — validates with `inputValidator` using `upsertBudgetSchema`; issues an `upsert` on `(user_id, category_id)` with `onConflict: 'user_id,category_id'`; returns the saved `BudgetEntry`
+- [x] `deleteBudget({ data: id })` — deletes budget row by id scoped to `user_id`; used when the user clears a category's limit
 
 ### 4.4 Analytics integration
 
