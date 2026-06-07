@@ -53,6 +53,28 @@ export interface AnalyticsTimelinePoint {
   total: number
 }
 
+export interface BudgetEntry {
+  id: string
+  categoryId: string
+  monthlyLimit: number
+  currency: Currency
+}
+
+export interface UpsertBudgetInput {
+  categoryId: string
+  monthlyLimit: number
+  currency: Currency
+}
+
+export interface BudgetVarianceItem {
+  categoryId: string
+  name: string
+  icon?: string | null
+  budget: number
+  actual: number
+  overBudget: boolean
+}
+
 export interface AnalyticsRangeSummary {
   /**
    * ISO datetime string for the inclusive range start.
@@ -65,6 +87,7 @@ export interface AnalyticsRangeSummary {
   categoryBreakdown: Array<CategoryBreakdownItem>
   timeline: Array<AnalyticsTimelinePoint>
   totalIncome: number
+  budgetVariance: Array<BudgetVarianceItem>
 }
 
 export interface CreateExpenseInput {

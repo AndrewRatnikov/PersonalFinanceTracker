@@ -108,7 +108,38 @@ On first login, the application should auto-provision a set of default categorie
 - Server Costs
 - Entertainment
 
-## 5. Income Table
+## 5. Budgets Table
+
+Stores per-category monthly spending limits set by the user.
+
+```sql
+create table public.budgets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  category_id uuid not null references public.categories(id) on delete cascade,
+  monthly_limit numeric not null check (monthly_limit > 0),
+  currency text not null check (currency in ('UAH', 'USD', 'EUR')) default 'UAH',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, category_id)
+);
+
+-- Enable RLS
+alter table public.budgets enable row level security;
+
+-- Policies
+create policy "Users can view their own budgets" on public.budgets for select using (auth.uid() = user_id);
+create policy "Users can insert their own budgets" on public.budgets for insert with check (auth.uid() = user_id);
+create policy "Users can update their own budgets" on public.budgets for update using (auth.uid() = user_id);
+create policy "Users can delete their own budgets" on public.budgets for delete using (auth.uid() = user_id);
+
+-- Trigger
+create trigger set_budgets_updated_at
+  before update on public.budgets
+  for each row execute function public.handle_updated_at();
+```
+
+## 6. Income Table
 
 ```sql
   create table public.income (
