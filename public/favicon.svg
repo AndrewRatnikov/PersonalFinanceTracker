@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <style>
+    .bar { fill: #18181b; opacity: 0.85; }
+    .accent { fill: #6366f1; }
+    @media (prefers-color-scheme: dark) {
+      .bar { fill: #ffffff; }
+    }
+  </style>
+  <rect x="16" y="74" width="16" height="30" rx="8" class="bar"/>
+  <rect x="42" y="56" width="16" height="48" rx="8" class="bar"/>
+  <rect x="68" y="38" width="16" height="66" rx="8" class="bar"/>
+  <rect x="94" y="18" width="16" height="86" rx="8" class="accent"/>
+</svg>

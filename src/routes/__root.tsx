@@ -64,6 +64,11 @@ export const Route = createRootRouteWithContext<AuthContext>()({
         rel: 'stylesheet',
         href: appCss,
       },
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: '/favicon.svg',
+      },
     ],
   }),
 

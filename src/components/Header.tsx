@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Route } from '../routes/__root'
 import { BarChart3, Home, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
+import { BrandIcon } from './BrandIcon'
 import {
   Sheet,
   SheetContent,
@@ -70,7 +71,10 @@ export default function Header() {
           </Sheet>
         ) : null}
         <h1 className="text-xl font-bold tracking-tight">
-          <Link to="/" className="hover:text-primary transition-colors">MinimaSpend</Link>
+          <Link to="/" className="flex items-center gap-2 hover:text-primary transition-colors">
+            <BrandIcon size={22} />
+            MinimaSpend
+          </Link>
         </h1>
       </div>
     </header>
