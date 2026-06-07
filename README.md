@@ -1,4 +1,8 @@
-Welcome to your new TanStack app!
+# MinimaSpend
+
+A minimal personal finance tracker for logging expenses, income, and budgets.
+
+**Live app:** https://minima-spend.vercel.app/
 
 # Getting Started
 
