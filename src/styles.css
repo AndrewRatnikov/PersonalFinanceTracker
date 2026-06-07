@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (@media (prefers-color-scheme: dark));
 
 body {
   @apply m-0;
@@ -169,7 +169,8 @@ code {
     oklch(0.708 0 0);
 }
 
-.dark {
+@media (prefers-color-scheme: dark) {
+  :root {
   --background:
     oklch(0.145 0 0);
   --foreground:
@@ -232,6 +233,7 @@ code {
     oklch(1 0 0 / 10%);
   --sidebar-ring:
     oklch(0.556 0 0);
+  }
 }
 
 @layer base {
