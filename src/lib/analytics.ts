@@ -7,6 +7,7 @@ import type { RangeInput } from './analyticsUtils'
 import type {
   AnalyticsRangeSummary,
   AnalyticsTimelinePoint,
+  BudgetVarianceItem,
   CategoryBreakdownItem,
   MonthlyExpenseSummary,
 } from './domain'
@@ -84,24 +85,32 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     const { supabase, user } = await getAuthenticatedClient()
     const range = normalizeRange(data)
 
-    const [{ data: rows, error }, { data: incomeRows, error: incomeError }] =
-      await Promise.all([
-        supabase
-          .from('expenses')
-          .select('id, amount, currency, category_id, created_at, categories (id, name, icon)')
-          .eq('user_id', user.id)
-          .gte('created_at', range.from)
-          .lte('created_at', range.to),
-        supabase
-          .from('income')
-          .select('amount')
-          .eq('user_id', user.id)
-          .gte('created_at', range.from)
-          .lte('created_at', range.to),
-      ])
+    const [
+      { data: rows, error },
+      { data: incomeRows, error: incomeError },
+      { data: budgetRows, error: budgetError },
+    ] = await Promise.all([
+      supabase
+        .from('expenses')
+        .select('id, amount, currency, category_id, created_at, categories (id, name, icon)')
+        .eq('user_id', user.id)
+        .gte('created_at', range.from)
+        .lte('created_at', range.to),
+      supabase
+        .from('income')
+        .select('amount')
+        .eq('user_id', user.id)
+        .gte('created_at', range.from)
+        .lte('created_at', range.to),
+      supabase
+        .from('budgets')
+        .select('category_id, monthly_limit, currency, categories (id, name, icon)')
+        .eq('user_id', user.id),
+    ])
 
     if (error) throw error
     if (incomeError) throw incomeError
+    if (budgetError) throw budgetError
 
     const totalIncome = (incomeRows ?? []).reduce(
       (sum: number, row: any) => sum + Number(row.amount),
@@ -155,11 +164,25 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
       }
     })
 
+    const budgetVariance: Array<BudgetVarianceItem> = (budgetRows ?? []).map((b: any) => {
+      const actual = categoryMap.get(b.category_id)?.total ?? 0
+      const budget = Number(b.monthly_limit)
+      return {
+        categoryId: b.category_id,
+        name: b.categories?.name ?? '',
+        icon: b.categories?.icon ?? null,
+        budget,
+        actual,
+        overBudget: actual > budget,
+      }
+    })
+
     return {
       from: range.from,
       to: range.to,
       categoryBreakdown,
       timeline,
       totalIncome,
+      budgetVariance,
     }
   })

@@ -145,9 +145,9 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
 - [x] `upsertBudget({ data })` — validates with `inputValidator` using `upsertBudgetSchema`; issues an `upsert` on `(user_id, category_id)` with `onConflict: 'user_id,category_id'`; returns the saved `BudgetEntry`
 - [x] `deleteBudget({ data: id })` — deletes budget row by id scoped to `user_id`; used when the user clears a category's limit
 
-### 4.4 Analytics integration
+### 4.4 Analytics integration ✅
 
-- [ ] Extend `getRangeAnalytics` in `src/lib/analytics.ts`:
+- [x] Extend `getRangeAnalytics` in `src/lib/analytics.ts`:
   - Add a third parallel query: `supabase.from('budgets').select('category_id, monthly_limit, currency').eq('user_id', user.id)`
   - After building `categoryMap`, merge budget limits: for each budget row look up the matching category in `categoryMap` and compute `actual` (use `0` if category had no spend), `budget: monthly_limit`, `overBudget: actual > monthly_limit`
   - Include categories that have a budget but zero spend in the range
