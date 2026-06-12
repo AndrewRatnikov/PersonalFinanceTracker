@@ -67,7 +67,7 @@ export default function BudgetVarianceBarChart({ data }: Props) {
             width={40}
           />
           <Tooltip
-            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
+            cursor={false}
             contentStyle={tooltipStyle}
             itemStyle={{ fontWeight: 600, padding: '0 4px' }}
             labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}

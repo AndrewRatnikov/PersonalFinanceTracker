@@ -85,7 +85,7 @@ export default function TimelineBarChart({ data }: Props) {
             width={40}
           />
           <Tooltip
-            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
+            cursor={false}
             contentStyle={{
               backgroundColor: 'hsl(var(--popover))',
               border: '1px solid hsl(var(--border))',
