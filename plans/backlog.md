@@ -153,13 +153,13 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
   - Include categories that have a budget but zero spend in the range
   - Append `budgetVariance: Array<BudgetVarianceItem>` to the returned `AnalyticsRangeSummary`
 
-### 4.5 Budget variance chart — `src/components/analytics/BudgetVarianceBarChart.tsx` (new file)
+### 4.5 Budget variance chart — `src/components/analytics/BudgetVarianceBarChart.tsx` (new file) ✅
 
-- [ ] Props: `data: Array<BudgetVarianceItem>`
-- [ ] Use Recharts `BarChart` with two `Bar` components: "Budget" (blue, `fill="hsl(var(--primary))"`) and "Actual" (dynamic fill — green when under, red/destructive when over)
+- [x] Props: `data: Array<BudgetVarianceItem>`
+- [x] Use Recharts `BarChart` with two `Bar` components: "Budget" (blue, `fill="hsl(var(--primary))"`) and "Actual" (dynamic fill — green when under, red/destructive when over)
   - Implement a custom `Cell`-per-bar fill: iterate `data` and apply `fill="hsl(var(--destructive))"` when `overBudget` is true, else `fill="hsl(var(--chart-2))"` (match the color used by `CategoryDonutChart`)
-- [ ] `XAxis dataKey="name"`, `YAxis`, `Tooltip`, `Legend` — same import pattern as `TimelineBarChart`
-- [ ] Wrap in a `<ResponsiveContainer width="100%" height={260}>`
+- [x] `XAxis dataKey="name"`, `YAxis`, `Tooltip`, `Legend` — same import pattern as `TimelineBarChart`
+- [x] Wrap in a `<ResponsiveContainer width="100%" height={260}>`
 
 ### 4.6 Settings — Budget tab
 
