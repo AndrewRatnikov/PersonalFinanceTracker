@@ -174,19 +174,9 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
   - Change `TabsList` to `grid-cols-3`; add third `TabsTrigger` with `value="budget"` and `<Wallet>` icon from lucide-react
   - Add `<TabsContent value="budget"><BudgetTab categories={categories} /></TabsContent>`
 
-### 4.7 Analytics page wiring
+### 4.7 Analytics page wiring ✅
 
-- [ ] In `src/routes/analytics.tsx`, after the "Over Time" section, conditionally render the variance chart:
-  ```tsx
-  {
-    analytics.budgetVariance.length > 0 && (
-      <section>
-        <h2 className="text-sm font-semibold mb-2">Budget vs. Actual</h2>
-        <BudgetVarianceBarChart data={analytics.budgetVariance} />
-      </section>
-    )
-  }
-  ```
+- [x] In `src/routes/analytics.tsx`, after the "Over Time" section, conditionally render the variance chart
 
 ---
 

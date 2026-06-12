@@ -79,16 +79,12 @@ export default function BudgetVarianceBarChart({ data }: Props) {
           <Legend
             wrapperStyle={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
           />
-          <Bar dataKey="Budget" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
+          <Bar dataKey="Budget" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={40} />
           <Bar dataKey="Actual" radius={[4, 4, 0, 0]} maxBarSize={40}>
             {chartData.map((entry, index) => (
               <Cell
                 key={`actual-cell-${index}`}
-                fill={
-                  entry.overBudget
-                    ? 'hsl(var(--destructive))'
-                    : 'hsl(var(--chart-2))'
-                }
+                fill={entry.overBudget ? '#ef4444' : '#22c55e'}
               />
             ))}
           </Bar>

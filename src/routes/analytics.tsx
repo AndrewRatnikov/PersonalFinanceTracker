@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { getRangeAnalytics } from '../lib/analytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
+import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
 import type { AnalyticsRangeSummary } from '../lib/domain'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
@@ -89,6 +90,13 @@ function AnalyticsPage() {
               </h2>
               <TimelineBarChart data={analytics.timeline} />
             </section>
+
+            {analytics.budgetVariance.length > 0 && (
+              <section>
+                <h2 className="text-sm font-semibold mb-2">Budget vs. Actual</h2>
+                <BudgetVarianceBarChart data={analytics.budgetVariance} />
+              </section>
+            )}
           </>
         ) : (
           <section className="mt-4">
