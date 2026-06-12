@@ -161,17 +161,16 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
 - [x] `XAxis dataKey="name"`, `YAxis`, `Tooltip`, `Legend` — same import pattern as `TimelineBarChart`
 - [x] Wrap in a `<ResponsiveContainer width="100%" height={260}>`
 
-### 4.6 Settings — Budget tab
+### 4.6 Settings — Budget tab ✅
 
-- [ ] Add `BudgetTab` to `src/components/settings/BudgetTab.tsx` (new file):
+- [x] Add `BudgetTab` to `src/components/settings/BudgetTab.tsx` (new file):
   - `useQuery(['budgets'], getBudgets)` to load existing limits
   - Accept `categories: Array<Category>` as a prop (already loaded by the settings route loader)
   - Render one row per category: icon + name on the left; a number `<Input>` for the monthly limit and a `<Select>` for currency on the right; a "Save" `<Button>` per row
   - Pre-fill inputs from the budgets query result; show empty inputs for categories with no budget
   - On "Save": call `upsertBudget` mutation → `toast.success('Budget saved')` / `toast.error(...)`; invalidate `['budgets']` query
   - Show a trash icon button per row only when a budget exists; on click: `AlertDialog` confirmation → `deleteBudget` → `toast.success('Budget removed')` → invalidate `['budgets']`
-- [ ] Update `src/routes/settings.tsx`:
-  - Add `getBudgets` call to the route `loader` so budgets are available server-side (or rely on client query — client `useQuery` is fine to keep it consistent with other tabs)
+- [x] Update `src/routes/settings.tsx`:
   - Change `TabsList` to `grid-cols-3`; add third `TabsTrigger` with `value="budget"` and `<Wallet>` icon from lucide-react
   - Add `<TabsContent value="budget"><BudgetTab categories={categories} /></TabsContent>`
 
