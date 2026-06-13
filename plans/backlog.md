@@ -184,11 +184,72 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
 
 _App is not installable and has no offline shell._
 
-- [ ] Install `vite-plugin-pwa`
-- [ ] Add plugin to `vite.config.ts` with `registerType: 'autoUpdate'`
-- [ ] Create `public/manifest.json` (name, short_name, icons, theme_color, display: standalone)
-- [ ] Add 192×192 and 512×512 app icons to `public/`
-- [ ] Verify install prompt works on mobile Chrome
+**Current state**
+- `public/manifest.json` exists but has TanStack placeholder content (`name`, `theme_color`, icons)
+- `public/logo192.png` and `public/logo512.png` exist but are TanStack logos — need replacing
+- `vite-plugin-pwa` is not installed; no service worker is registered
+
+**Compatibility note**
+The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa` generates a static SW file and injects the registration script at build time — this is fine for Nitro because the SW file lands in the output root and Nitro serves it as a static asset. Use `injectRegister: 'script'` (not `'auto'`) so the plugin emits an explicit `<script>` tag rather than relying on module injection that Nitro's HTML transform may strip.
+
+### 5.1 Install
+
+- [ ] `npm install -D vite-plugin-pwa`
+
+### 5.2 App icons
+
+- [ ] Replace `public/logo192.png` with a 192×192 Minima Spend app icon
+- [ ] Replace `public/logo512.png` with a 512×512 Minima Spend app icon
+  - Both must be square PNG with a solid or transparent background
+  - Derive from `public/favicon.svg` if possible (e.g. via Inkscape, Figma, or `sharp` CLI)
+
+### 5.3 Manifest
+
+- [ ] Update `public/manifest.json`:
+  ```json
+  {
+    "name": "Minima Spend",
+    "short_name": "Minima",
+    "start_url": "/",
+    "display": "standalone",
+    "theme_color": "#6366f1",
+    "background_color": "#09090b",
+    "icons": [
+      { "src": "logo192.png", "sizes": "192x192", "type": "image/png" },
+      { "src": "logo512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    ]
+  }
+  ```
+
+### 5.4 Vite plugin
+
+- [ ] Add `VitePWA` to `vite.config.ts`:
+  ```ts
+  import { VitePWA } from 'vite-plugin-pwa'
+
+  // inside plugins array:
+  VitePWA({
+    registerType: 'autoUpdate',
+    injectRegister: 'script',
+    manifest: false,           // use the file in public/ — don't let the plugin overwrite it
+    workbox: {
+      globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+    },
+  })
+  ```
+  - `manifest: false` keeps `public/manifest.json` as the single source of truth
+  - Place `VitePWA(...)` **before** `tanstackStart()` in the plugins array so it runs first
+
+### 5.5 Manifest link
+
+- [ ] Confirm `<link rel="manifest" href="/manifest.json">` is present in the HTML shell (check `src/routes/__root.tsx` `<Meta />` / `<Links />` — TanStack Start auto-injects assets from `public/`; add the link explicitly if it is missing)
+
+### 5.6 Verify
+
+- [ ] Run `npm run build && npm run preview`
+- [ ] Open Chrome DevTools → Application → Manifest — confirm name, icons, and display mode load correctly
+- [ ] DevTools → Application → Service Workers — confirm SW is registered and active
+- [ ] On mobile Chrome (or via DevTools device emulation + "Add to Home Screen"): verify install prompt appears
 
 ---
 
