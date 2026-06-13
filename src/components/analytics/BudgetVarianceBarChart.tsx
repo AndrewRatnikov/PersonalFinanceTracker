@@ -38,7 +38,9 @@ export default function BudgetVarianceBarChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-24 flex items-center justify-center">
-        <CardContent className="text-muted-foreground text-sm">No budget data found.</CardContent>
+        <CardContent className="text-muted-foreground text-sm">
+          No budget data found.
+        </CardContent>
       </Card>
     )
   }
@@ -90,16 +92,27 @@ export default function BudgetVarianceBarChart({ data }: Props) {
             cursor={false}
             contentStyle={tooltipStyle}
             itemStyle={{ fontWeight: 600, padding: '0 4px' }}
-            labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
-            formatter={(value: any, name: string) => [
-              `${Number(value).toLocaleString()} UAH`,
-              name,
+            labelStyle={{
+              color: 'hsl(var(--muted-foreground))',
+              marginBottom: '4px',
+            }}
+            formatter={(value, name) => [
+              `${Number(value ?? 0).toLocaleString()} UAH`,
+              name ?? '',
             ]}
           />
           <Legend
-            wrapperStyle={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+            wrapperStyle={{
+              fontSize: '12px',
+              color: 'hsl(var(--muted-foreground))',
+            }}
           />
-          <Bar dataKey="Budget" fill="#6366f1" radius={[0, 4, 4, 0]} maxBarSize={16} />
+          <Bar
+            dataKey="Budget"
+            fill="#6366f1"
+            radius={[0, 4, 4, 0]}
+            maxBarSize={16}
+          />
           <Bar dataKey="Actual" radius={[0, 4, 4, 0]} maxBarSize={16}>
             {chartData.map((entry, index) => (
               <Cell

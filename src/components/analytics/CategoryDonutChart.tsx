@@ -90,10 +90,10 @@ export default function CategoryDonutChart({ data }: Props) {
                 fontSize: '12px',
               }}
               itemStyle={{ fontWeight: 600, padding: '0 4px' }}
-              formatter={(value: any, name: any) => {
-                const pct =
-                  grandTotal > 0 ? ((value / grandTotal) * 100).toFixed(1) : '0'
-                return [`${Number(value).toLocaleString()} UAH (${pct}%)`, name]
+              formatter={(value, name) => {
+                const n = Number(value ?? 0)
+                const pct = grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
+                return [`${n.toLocaleString()} UAH (${pct}%)`, name ?? '']
               }}
             />
           </PieChart>

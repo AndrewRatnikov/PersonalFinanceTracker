@@ -96,8 +96,8 @@ export default function TimelineBarChart({ data }: Props) {
             }}
             itemStyle={{ fontWeight: 600, padding: '0 4px' }}
             labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
-            formatter={(value: any) => [
-              `${Number(value).toLocaleString()} UAH`,
+            formatter={(value) => [
+              `${Number(value ?? 0).toLocaleString()} UAH`,
               'Spent',
             ]}
           />
