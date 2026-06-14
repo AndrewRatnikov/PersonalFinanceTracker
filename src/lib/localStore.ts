@@ -35,8 +35,3 @@ export function setLocalStore<K extends Key>(
   if (typeof window === 'undefined') return
   localStorage.setItem(storageKey(userId, key), JSON.stringify(value))
 }
-
-export function removeLocalStore(userId: string, key: Key): void {
-  if (typeof window === 'undefined') return
-  localStorage.removeItem(storageKey(userId, key))
-}

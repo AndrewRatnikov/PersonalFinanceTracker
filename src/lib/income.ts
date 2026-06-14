@@ -132,32 +132,3 @@ export const deleteIncome = createServerFn({ method: 'POST' })
     if (error) throw error
   })
 
-export interface GetIncomeTotalForRangeInput {
-  from: string
-  to: string
-}
-
-export const getIncomeTotalForRange = createServerFn({ method: 'GET' })
-  .inputValidator((input: unknown): GetIncomeTotalForRangeInput => {
-    if (typeof input !== 'object' || input === null) {
-      throw new Error('Invalid range payload')
-    }
-    const { from, to } = input as { from?: unknown; to?: unknown }
-    if (typeof from !== 'string' || !from) throw new Error('from is required')
-    if (typeof to !== 'string' || !to) throw new Error('to is required')
-    return { from, to }
-  })
-  .handler(async ({ data }): Promise<number> => {
-    const { supabase, user } = await getAuthenticatedClient()
-
-    const { data: rows, error } = await supabase
-      .from('income')
-      .select('amount')
-      .eq('user_id', user.id)
-      .gte('created_at', data.from)
-      .lte('created_at', data.to)
-
-    if (error) throw error
-
-    return rows.reduce((sum: number, row: any) => sum + Number(row.amount), 0)
-  })
