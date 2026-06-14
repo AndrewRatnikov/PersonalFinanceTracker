@@ -4,6 +4,7 @@ import { nitro } from 'nitro/vite'
 import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 import tailwindcss from '@tailwindcss/vite'
 
@@ -15,6 +16,14 @@ const config = defineConfig({
     },
   },
   plugins: [
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: 'script',
+      manifest: false,
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
+    }),
     devtools(),
     tailwindcss(),
     tanstackStart(),

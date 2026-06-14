@@ -229,7 +229,7 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.4 Vite plugin
 
-- [ ] Add `VitePWA` to `vite.config.ts`:
+- [x] Add `VitePWA` to `vite.config.ts`:
 
   ```ts
   import { VitePWA } from 'vite-plugin-pwa'
