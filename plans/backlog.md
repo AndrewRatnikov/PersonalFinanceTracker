@@ -199,8 +199,8 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.2 App icons
 
-- [ ] Replace `public/logo192.png` with a 192×192 Minima Spend app icon
-- [ ] Replace `public/logo512.png` with a 512×512 Minima Spend app icon
+- [x] Replace `public/logo192.png` with a 192×192 Minima Spend app icon
+- [x] Replace `public/logo512.png` with a 512×512 Minima Spend app icon
   - Both must be square PNG with a solid or transparent background
   - Derive from `public/favicon.svg` if possible (e.g. via Inkscape, Figma, or `sharp` CLI)
 
