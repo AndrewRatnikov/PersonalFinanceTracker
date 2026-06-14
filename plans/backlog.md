@@ -206,7 +206,7 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.3 Manifest
 
-- [ ] Update `public/manifest.json`:
+- [x] Update `public/manifest.json`:
   ```json
   {
     "name": "Minima Spend",
