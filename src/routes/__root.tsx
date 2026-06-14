@@ -69,6 +69,10 @@ export const Route = createRootRouteWithContext<AuthContext>()({
         type: 'image/svg+xml',
         href: '/favicon.svg',
       },
+      {
+        rel: 'manifest',
+        href: '/manifest.json',
+      },
     ],
   }),
 

@@ -250,7 +250,7 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.5 Manifest link
 
-- [ ] Confirm `<link rel="manifest" href="/manifest.json">` is present in the HTML shell (check `src/routes/__root.tsx` `<Meta />` / `<Links />` — TanStack Start auto-injects assets from `public/`; add the link explicitly if it is missing)
+- [x] Confirm `<link rel="manifest" href="/manifest.json">` is present in the HTML shell (check `src/routes/__root.tsx` `<Meta />` / `<Links />` — TanStack Start auto-injects assets from `public/`; add the link explicitly if it is missing)
 
 ### 5.6 Verify
 
