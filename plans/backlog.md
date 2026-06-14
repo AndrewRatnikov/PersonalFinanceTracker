@@ -185,6 +185,7 @@ _No budget table, limit-setting UI, or budget vs. actual chart._
 _App is not installable and has no offline shell._
 
 **Current state**
+
 - `public/manifest.json` exists but has TanStack placeholder content (`name`, `theme_color`, icons)
 - `public/logo192.png` and `public/logo512.png` exist but are TanStack logos — need replacing
 - `vite-plugin-pwa` is not installed; no service worker is registered
@@ -194,7 +195,7 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.1 Install
 
-- [ ] `npm install -D vite-plugin-pwa`
+- [x] `npm install -D vite-plugin-pwa`
 
 ### 5.2 App icons
 
@@ -216,7 +217,12 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
     "background_color": "#09090b",
     "icons": [
       { "src": "logo192.png", "sizes": "192x192", "type": "image/png" },
-      { "src": "logo512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+      {
+        "src": "logo512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any maskable"
+      }
     ]
   }
   ```
@@ -224,6 +230,7 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 ### 5.4 Vite plugin
 
 - [ ] Add `VitePWA` to `vite.config.ts`:
+
   ```ts
   import { VitePWA } from 'vite-plugin-pwa'
 
@@ -231,12 +238,13 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
   VitePWA({
     registerType: 'autoUpdate',
     injectRegister: 'script',
-    manifest: false,           // use the file in public/ — don't let the plugin overwrite it
+    manifest: false, // use the file in public/ — don't let the plugin overwrite it
     workbox: {
       globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
     },
   })
   ```
+
   - `manifest: false` keeps `public/manifest.json` as the single source of truth
   - Place `VitePWA(...)` **before** `tanstackStart()` in the plugins array so it runs first
 
