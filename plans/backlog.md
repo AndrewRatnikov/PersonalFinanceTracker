@@ -254,9 +254,9 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 
 ### 5.6 Verify
 
-- [ ] Run `npm run build && npm run preview`
-- [ ] Open Chrome DevTools → Application → Manifest — confirm name, icons, and display mode load correctly
-- [ ] DevTools → Application → Service Workers — confirm SW is registered and active
+- [x] Run `npm run build && npm run preview`
+- [x] Open Chrome DevTools → Application → Manifest — confirm name, icons, and display mode load correctly
+- [x] DevTools → Application → Service Workers — confirm SW is registered and active
 - [ ] On mobile Chrome (or via DevTools device emulation + "Add to Home Screen"): verify install prompt appears
 
 ---
