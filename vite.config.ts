@@ -39,11 +39,22 @@ const config = defineConfig({
       injectRegister: null,
       manifest: false,
       workbox: {
-        // Only scan client-side assets — dist/server/* isn't served over HTTP
-        globDirectory: 'dist/client',
-        globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+        // Precache only the stable public-dir files (always present, no build-dir dependency)
+        globDirectory: 'public',
+        globPatterns: ['*.{ico,png,svg,json}'],
         // SSR handles all navigation; disable the SPA index.html fallback
         navigateFallback: null,
+        runtimeCaching: [
+          {
+            // Cache JS/CSS/fonts at runtime as they're requested
+            urlPattern: /\/assets\/.*\.(?:js|css|woff2)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'assets',
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+        ],
       },
     }),
     devtools(),
