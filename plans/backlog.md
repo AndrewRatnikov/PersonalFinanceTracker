@@ -257,17 +257,118 @@ The app uses `nitro` (Vercel preset) + `@tanstack/react-start`. `vite-plugin-pwa
 - [x] Run `npm run build && npm run preview`
 - [x] Open Chrome DevTools → Application → Manifest — confirm name, icons, and display mode load correctly
 - [x] DevTools → Application → Service Workers — confirm SW is registered and active
-- [ ] On mobile Chrome (or via DevTools device emulation + "Add to Home Screen"): verify install prompt appears
+- [x] On mobile Chrome (or via DevTools device emulation + "Add to Home Screen"): verify install prompt appears
 
 ---
 
 ## 6. Workbox offline cache
 
-_Depends on #5._
+_Depends on #5. The Workbox SW from #5 already caches static assets and JS bundles via `CacheFirst`. This step adds a navigation cache strategy and a data-layer offline fallback so the app renders meaningful content without a network connection._
 
-- [ ] Configure Workbox in `vite.config.ts`: cache-first for shell assets, network-first for API calls
-- [ ] Cache the last-fetched expenses and categories in IndexedDB via a Workbox plugin or manual strategy
-- [ ] Show a "Viewing cached data" banner when the app detects it is offline
+_Data note: the app fetches data through TanStack Router `loader` functions (not React Query `useQuery`), so offline fallback is implemented at the loader level, not in query hooks._
+
+### 6.1 Install
+
+- [ ] `npm install idb-keyval` — tiny (≈ 1 kB gzipped) typed key-value wrapper over IndexedDB; no separate `@types` package required
+
+### 6.2 Workbox navigation strategy — `vite.config.ts`
+
+- [ ] Add a `NetworkFirst` entry for navigate-mode requests to the existing `runtimeCaching` array inside `VitePWA`:
+  ```ts
+  {
+    urlPattern: ({ request }) => request.mode === 'navigate',
+    handler: 'NetworkFirst',
+    options: {
+      cacheName: 'navigation',
+      networkTimeoutSeconds: 3,
+      expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 },
+    },
+  }
+  ```
+  - `networkTimeoutSeconds: 3` — fall back to the cached shell after 3 s if the server does not respond
+  - Place this entry **before** the existing `CacheFirst` assets entry in the array
+
+### 6.3 IDB cache module — `src/lib/offlineCache.ts` (new file)
+
+- [ ] Create a typed IDB wrapper using `idb-keyval`'s custom-store API:
+  ```ts
+  import { createStore, get, set, clear } from 'idb-keyval'
+  const store = createStore('minima-offline', 'cache')
+  ```
+- [ ] Define a `OfflineCacheKey` string-union type covering the three persisted datasets:
+  - `'recentExpenses'` → `Array<Expense>`
+  - `'categories'` → `Array<Category>`
+  - `'monthlyStats'` → `Array<MonthlyExpenseSummary>`
+- [ ] Export three SSR-safe helpers (guard with `typeof window === 'undefined'` and return early/undefined on the server):
+  - `getOfflineCache<T>(key: OfflineCacheKey): Promise<T | undefined>`
+  - `setOfflineCache<T>(key: OfflineCacheKey, value: T): Promise<void>`
+  - `clearOfflineCache(): Promise<void>` — called on sign-out (used by #8)
+
+### 6.4 Offline-aware loader — `src/routes/index.tsx`
+
+- [ ] Wrap the existing `Promise.all([getMonthlyExpenses(), getRecentExpenses(), getUserCategories()])` in `try/catch`:
+  - **On success** (happy path): after destructuring, call `setOfflineCache` for `'recentExpenses'`, `'categories'`, and `'monthlyStats'` when `typeof window !== 'undefined'`; return the data as before
+  - **On network failure**: if `typeof window !== 'undefined' && !navigator.onLine`, attempt to read all three keys via `getOfflineCache`; if at least `recentExpenses` and `categories` are present, return them (use `[]` as fallback for `monthlyStats`) with a `fromCache: true` flag appended to the return value; if IDB is empty, re-throw the original error
+- [ ] Add `fromCache?: boolean` to the loader's inferred return type so `Route.useLoaderData()` exposes it
+
+### 6.5 Offline-aware loader — `src/routes/settings.tsx`
+
+- [ ] Apply the same try/catch pattern to the `getUserCategories()` call in the settings loader:
+  - On success: write to `'categories'` via `setOfflineCache`
+  - On offline error: read `'categories'` from IDB and return it; re-throw if IDB is empty
+
+### 6.6 Online status hook — `src/lib/useOnlineStatus.ts` (new file)
+
+- [ ] Implement using `navigator.onLine` as the initial value plus `'online'` / `'offline'` event listeners:
+  ```ts
+  import { useEffect, useState } from 'react'
+
+  export function useOnlineStatus(): boolean {
+    const [online, setOnline] = useState(
+      typeof navigator !== 'undefined' ? navigator.onLine : true,
+    )
+    useEffect(() => {
+      const on = () => setOnline(true)
+      const off = () => setOnline(false)
+      window.addEventListener('online', on)
+      window.addEventListener('offline', off)
+      return () => {
+        window.removeEventListener('online', on)
+        window.removeEventListener('offline', off)
+      }
+    }, [])
+    return online
+  }
+  ```
+
+### 6.7 Offline banner — `src/components/OfflineBanner.tsx` (new file)
+
+- [ ] Render a fixed bar at the top of the viewport when offline:
+  ```tsx
+  import { WifiOff } from 'lucide-react'
+  import { useOnlineStatus } from '@/lib/useOnlineStatus'
+
+  export function OfflineBanner() {
+    const online = useOnlineStatus()
+    if (online) return null
+    return (
+      <div className="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-muted px-4 py-2 text-xs text-muted-foreground">
+        <WifiOff className="h-3.5 w-3.5" />
+        Viewing cached data — some features may be unavailable
+      </div>
+    )
+  }
+  ```
+- [ ] Import and render `<OfflineBanner />` in `RootDocument` in `src/routes/__root.tsx` as the very first child inside `<body>`, before `<Header />`
+
+### 6.8 Verify
+
+- [ ] Run `npm run build && npm run preview`
+- [ ] DevTools → Application → Cache Storage — confirm a `navigation` cache with HTML entries appears after visiting a few routes
+- [ ] DevTools → Network → Offline; reload — confirm the app shell loads from SW cache and the dashboard renders recent expenses + categories from IDB instead of a blank or error state
+- [ ] Confirm the "Viewing cached data" banner appears while offline and disappears when the network is restored (toggle the DevTools offline switch while the app is open)
+- [ ] DevTools → Application → IndexedDB → `minima-offline` → `cache` — confirm `recentExpenses`, `categories`, and `monthlyStats` keys are present with correct data after an online visit
+- [ ] DevTools → Network → back Online; navigate to `/` — confirm live data resumes, banner disappears, and IDB is refreshed
 
 ---
 
