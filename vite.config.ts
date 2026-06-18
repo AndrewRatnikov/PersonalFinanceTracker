@@ -39,6 +39,11 @@ const config = defineConfig({
       injectRegister: null,
       manifest: false,
       workbox: {
+        // Claim all existing clients immediately so the SW intercepts requests on the
+        // very first page load, not only after the user navigates away and back.
+        // Without this, navigation responses are never cached and offline reload fails.
+        clientsClaim: true,
+        skipWaiting: true,
         // Precache only the stable public-dir files (always present, no build-dir dependency)
         globDirectory: 'public',
         globPatterns: ['*.{ico,png,svg,json}'],

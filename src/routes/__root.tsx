@@ -8,10 +8,14 @@ import {
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
+import type { User } from '@supabase/supabase-js'
 import { getServerUser } from '../lib/auth'
 import { provisionDefaultCategories } from '../lib/categories'
 import { getLocalStore, setLocalStore } from '../lib/localStore'
+
+const OFFLINE_USER_KEY = 'minima_offline_user'
 import Header from '../components/Header'
+import { OfflineBanner } from '../components/OfflineBanner'
 import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
@@ -23,9 +27,22 @@ const queryClient = new QueryClient()
 
 export const Route = createRootRouteWithContext<AuthContext>()({
   beforeLoad: async ({ location }) => {
-    // Call the server function to validate the user session securely.
-    // TanStack Start handles the network request transparently if this is run on the client.
-    const user = await getServerUser()
+    let user: User | null = null
+
+    try {
+      user = await getServerUser()
+      if (typeof window !== 'undefined' && user) {
+        localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({ id: user.id, email: user.email }))
+      }
+    } catch (err) {
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        const raw = localStorage.getItem(OFFLINE_USER_KEY)
+        user = raw ? (JSON.parse(raw) as User) : null
+      } else {
+        throw err
+      }
+    }
+
     const isLoading = false
 
     if (
@@ -39,12 +56,16 @@ export const Route = createRootRouteWithContext<AuthContext>()({
     if (user) {
       const alreadyProvisioned = getLocalStore(user.id, 'categoriesProvisioned')
       if (!alreadyProvisioned) {
-        await provisionDefaultCategories()
-        setLocalStore(user.id, 'categoriesProvisioned', true)
+        try {
+          await provisionDefaultCategories()
+          setLocalStore(user.id, 'categoriesProvisioned', true)
+        } catch (err) {
+          if (typeof window === 'undefined' || navigator.onLine) throw err
+          // Offline — skip provisioning, will retry on next online session
+        }
       }
     }
 
-    // Return the updated context to propagate the user down to child routes.
     return { auth: { user, isLoading } }
   },
   head: () => ({
@@ -96,6 +117,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <QueryClientProvider client={queryClient}>
           <Header />
+          <OfflineBanner />
           {children}
           <Toaster richColors position="bottom-center" />
         </QueryClientProvider>

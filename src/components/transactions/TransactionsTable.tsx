@@ -1,5 +1,6 @@
 import dayjs from 'dayjs'
-import { Edit2, Loader2, Trash2, Search } from 'lucide-react'
+import { Edit2, Loader2, Trash2, Search, WifiOff } from 'lucide-react'
+import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
   Table,
   TableBody,
@@ -45,6 +46,8 @@ export function TransactionsTable({
   onEdit,
   onDelete,
 }: TransactionsTableProps) {
+  const online = useOnlineStatus()
+
   return (
     <Table>
       <TableHeader>
@@ -65,8 +68,15 @@ export function TransactionsTable({
           </TableRow>
         ) : isError ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-12 text-center text-destructive">
-              Failed to load transactions. Please try again later.
+            <TableCell colSpan={5} className="p-12 text-center text-muted-foreground">
+              {online ? (
+                <span className="text-destructive">Failed to load transactions. Please try again later.</span>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <WifiOff className="h-5 w-5" />
+                  Offline — transaction history unavailable without a connection.
+                </div>
+              )}
             </TableCell>
           </TableRow>
         ) : transactions.length === 0 ? (

@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type {
   Category,
@@ -63,9 +63,17 @@ export const Route = createFileRoute('/')({
 })
 
 function Dashboard() {
-  const { monthlyStats, recentExpenses, categories } = Route.useLoaderData()
+  const { monthlyStats, recentExpenses, categories, fromCache } = Route.useLoaderData()
   const router = useRouter()
   const [isPending, setIsPending] = useState(false)
+
+  useEffect(() => {
+    if (!fromCache) {
+      void setOfflineCache('recentExpenses', recentExpenses)
+      void setOfflineCache('categories', categories)
+      void setOfflineCache('monthlyStats', monthlyStats)
+    }
+  }, [recentExpenses, categories, monthlyStats, fromCache])
 
   const handleCreateExpense = async (data: CreateExpenseInput) => {
     setIsPending(true)
