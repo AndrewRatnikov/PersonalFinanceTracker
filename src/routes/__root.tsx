@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Toaster } from 'sonner'
 import {
   HeadContent,
   Scripts,
@@ -7,21 +8,20 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { User } from '@supabase/supabase-js'
+
 import { getServerUser } from '../lib/auth'
 import { provisionDefaultCategories } from '../lib/categories'
 import { getLocalStore, setLocalStore } from '../lib/localStore'
-
-const OFFLINE_USER_KEY = 'minima_offline_user'
+import type { AuthContext } from '../lib/authContext'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
 import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
-import type { AuthContext } from '../lib/authContext'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'sonner'
+
+const OFFLINE_USER_KEY = 'minima_offline_user'
 
 const queryClient = new QueryClient()
 
@@ -32,7 +32,10 @@ export const Route = createRootRouteWithContext<AuthContext>()({
     try {
       user = await getServerUser()
       if (typeof window !== 'undefined' && user) {
-        localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({ id: user.id, email: user.email }))
+        localStorage.setItem(
+          OFFLINE_USER_KEY,
+          JSON.stringify({ id: user.id, email: user.email }),
+        )
       }
     } catch (err) {
       if (typeof window !== 'undefined' && !navigator.onLine) {
