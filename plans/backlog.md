@@ -318,9 +318,9 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
   - On success: write to `'categories'` via `setOfflineCache`
   - On offline error: read `'categories'` from IDB and return it; re-throw if IDB is empty
 
-### 6.6 Online status hook — `src/lib/useOnlineStatus.ts` (new file)
+### 6.6 Online status hook — `src/lib/useOnlineStatus.ts` (new file) ✅
 
-- [ ] Implement using `navigator.onLine` as the initial value plus `'online'` / `'offline'` event listeners:
+- [x] Implement using `navigator.onLine` as the initial value plus `'online'` / `'offline'` event listeners:
 
   ```ts
   import { useEffect, useState } from 'react'
