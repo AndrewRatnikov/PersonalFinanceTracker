@@ -10,6 +10,10 @@ import type {
 import { getMonthlyExpenses } from '@/lib/analytics'
 import { getUserCategories } from '@/lib/categories'
 import { createExpense, getRecentExpenses } from '@/lib/expenses'
+import {
+  getOfflineCache,
+  setOfflineCache,
+} from '@/lib/offlineCache'
 import DashboardStats from '@/components/index/DashboardStats'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import RecentHistoryList from '@/components/index/RecentHistoryList'
@@ -22,16 +26,37 @@ export const Route = createFileRoute('/')({
     monthlyStats: Array<MonthlyExpenseSummary>
     recentExpenses: Array<Expense>
     categories: Array<Category>
+    fromCache?: boolean
   }> => {
-    const [monthlyStats, recentExpenses, categories] = await Promise.all([
-      getMonthlyExpenses(),
-      getRecentExpenses(),
-      getUserCategories(),
-    ])
-    return {
-      monthlyStats,
-      recentExpenses,
-      categories,
+    try {
+      const [monthlyStats, recentExpenses, categories] = await Promise.all([
+        getMonthlyExpenses(),
+        getRecentExpenses(),
+        getUserCategories(),
+      ])
+      if (typeof window !== 'undefined') {
+        void setOfflineCache('monthlyStats', monthlyStats)
+        void setOfflineCache('recentExpenses', recentExpenses)
+        void setOfflineCache('categories', categories)
+      }
+      return { monthlyStats, recentExpenses, categories }
+    } catch (err) {
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        const [recentExpenses, categories, monthlyStats] = await Promise.all([
+          getOfflineCache('recentExpenses'),
+          getOfflineCache('categories'),
+          getOfflineCache('monthlyStats'),
+        ])
+        if (recentExpenses && categories) {
+          return {
+            monthlyStats: monthlyStats ?? [],
+            recentExpenses,
+            categories,
+            fromCache: true,
+          }
+        }
+      }
+      throw err
     }
   },
   component: Dashboard,

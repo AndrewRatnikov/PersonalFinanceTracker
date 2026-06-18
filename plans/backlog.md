@@ -305,12 +305,12 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
   - `setOfflineCache<T>(key: OfflineCacheKey, value: T): Promise<void>`
   - `clearOfflineCache(): Promise<void>` — called on sign-out (used by #8)
 
-### 6.4 Offline-aware loader — `src/routes/index.tsx`
+### 6.4 Offline-aware loader — `src/routes/index.tsx` ✅
 
-- [ ] Wrap the existing `Promise.all([getMonthlyExpenses(), getRecentExpenses(), getUserCategories()])` in `try/catch`:
+- [x] Wrap the existing `Promise.all([getMonthlyExpenses(), getRecentExpenses(), getUserCategories()])` in `try/catch`:
   - **On success** (happy path): after destructuring, call `setOfflineCache` for `'recentExpenses'`, `'categories'`, and `'monthlyStats'` when `typeof window !== 'undefined'`; return the data as before
   - **On network failure**: if `typeof window !== 'undefined' && !navigator.onLine`, attempt to read all three keys via `getOfflineCache`; if at least `recentExpenses` and `categories` are present, return them (use `[]` as fallback for `monthlyStats`) with a `fromCache: true` flag appended to the return value; if IDB is empty, re-throw the original error
-- [ ] Add `fromCache?: boolean` to the loader's inferred return type so `Route.useLoaderData()` exposes it
+- [x] Add `fromCache?: boolean` to the loader's inferred return type so `Route.useLoaderData()` exposes it
 
 ### 6.5 Offline-aware loader — `src/routes/settings.tsx`
 
