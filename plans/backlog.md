@@ -271,9 +271,9 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 
 - [x] `npm install idb-keyval` — tiny (≈ 1 kB gzipped) typed key-value wrapper over IndexedDB; no separate `@types` package required
 
-### 6.2 Workbox navigation strategy — `vite.config.ts`
+### 6.2 Workbox navigation strategy — `vite.config.ts` ✅
 
-- [ ] Add a `NetworkFirst` entry for navigate-mode requests to the existing `runtimeCaching` array inside `VitePWA`:
+- [x] Add a `NetworkFirst` entry for navigate-mode requests to the existing `runtimeCaching` array inside `VitePWA`:
   ```ts
   {
     urlPattern: ({ request }) => request.mode === 'navigate',

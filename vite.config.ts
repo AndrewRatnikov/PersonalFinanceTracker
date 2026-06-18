@@ -46,6 +46,15 @@ const config = defineConfig({
         navigateFallback: null,
         runtimeCaching: [
           {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'navigation',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+          {
             // Cache JS/CSS/fonts at runtime as they're requested
             urlPattern: /\/assets\/.*\.(?:js|css|woff2)$/,
             handler: 'CacheFirst',
