@@ -289,18 +289,18 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
   - `networkTimeoutSeconds: 3` — fall back to the cached shell after 3 s if the server does not respond
   - Place this entry **before** the existing `CacheFirst` assets entry in the array
 
-### 6.3 IDB cache module — `src/lib/offlineCache.ts` (new file)
+### 6.3 IDB cache module — `src/lib/offlineCache.ts` (new file) ✅
 
-- [ ] Create a typed IDB wrapper using `idb-keyval`'s custom-store API:
+- [x] Create a typed IDB wrapper using `idb-keyval`'s custom-store API:
   ```ts
   import { createStore, get, set, clear } from 'idb-keyval'
   const store = createStore('minima-offline', 'cache')
   ```
-- [ ] Define a `OfflineCacheKey` string-union type covering the three persisted datasets:
+- [x] Define a `OfflineCacheKey` string-union type covering the three persisted datasets:
   - `'recentExpenses'` → `Array<Expense>`
   - `'categories'` → `Array<Category>`
   - `'monthlyStats'` → `Array<MonthlyExpenseSummary>`
-- [ ] Export three SSR-safe helpers (guard with `typeof window === 'undefined'` and return early/undefined on the server):
+- [x] Export three SSR-safe helpers (guard with `typeof window === 'undefined'` and return early/undefined on the server):
   - `getOfflineCache<T>(key: OfflineCacheKey): Promise<T | undefined>`
   - `setOfflineCache<T>(key: OfflineCacheKey, value: T): Promise<void>`
   - `clearOfflineCache(): Promise<void>` — called on sign-out (used by #8)
