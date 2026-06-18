@@ -371,9 +371,9 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 - [x] Run `npm run build && npm run preview`
 - [x] DevTools → Application → Cache Storage — confirm a `navigation` cache with HTML entries appears after visiting a few routes
 - [x] DevTools → Network → Offline; reload — confirm the app shell loads from SW cache and the dashboard renders recent expenses + categories from IDB instead of a blank or error state
-- [ ] Confirm the "Viewing cached data" banner appears while offline and disappears when the network is restored (toggle the DevTools offline switch while the app is open)
-- [ ] DevTools → Application → IndexedDB → `minima-offline` → `cache` — confirm `recentExpenses`, `categories`, and `monthlyStats` keys are present with correct data after an online visit
-- [ ] DevTools → Network → back Online; navigate to `/` — confirm live data resumes, banner disappears, and IDB is refreshed
+- [x] Confirm the "Viewing cached data" banner appears while offline and disappears when the network is restored (toggle the DevTools offline switch while the app is open)
+- [x] DevTools → Application → IndexedDB → `minima-offline` → `cache` — confirm `recentExpenses`, `categories`, and `monthlyStats` keys are present with correct data after an online visit
+- [x] DevTools → Network → back Online; navigate to `/` — confirm live data resumes, banner disappears, and IDB is refreshed
 
 ---
 
