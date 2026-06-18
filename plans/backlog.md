@@ -269,7 +269,7 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 
 ### 6.1 Install
 
-- [ ] `npm install idb-keyval` — tiny (≈ 1 kB gzipped) typed key-value wrapper over IndexedDB; no separate `@types` package required
+- [x] `npm install idb-keyval` — tiny (≈ 1 kB gzipped) typed key-value wrapper over IndexedDB; no separate `@types` package required
 
 ### 6.2 Workbox navigation strategy — `vite.config.ts`
 
@@ -285,6 +285,7 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
     },
   }
   ```
+
   - `networkTimeoutSeconds: 3` — fall back to the cached shell after 3 s if the server does not respond
   - Place this entry **before** the existing `CacheFirst` assets entry in the array
 
@@ -320,6 +321,7 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 ### 6.6 Online status hook — `src/lib/useOnlineStatus.ts` (new file)
 
 - [ ] Implement using `navigator.onLine` as the initial value plus `'online'` / `'offline'` event listeners:
+
   ```ts
   import { useEffect, useState } from 'react'
 
@@ -344,6 +346,7 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 ### 6.7 Offline banner — `src/components/OfflineBanner.tsx` (new file)
 
 - [ ] Render a fixed bar at the top of the viewport when offline:
+
   ```tsx
   import { WifiOff } from 'lucide-react'
   import { useOnlineStatus } from '@/lib/useOnlineStatus'
@@ -359,6 +362,7 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
     )
   }
   ```
+
 - [ ] Import and render `<OfflineBanner />` in `RootDocument` in `src/routes/__root.tsx` as the very first child inside `<body>`, before `<Header />`
 
 ### 6.8 Verify
