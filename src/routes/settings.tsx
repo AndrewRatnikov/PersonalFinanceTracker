@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Database, Tag, Wallet } from 'lucide-react'
 
 import { getUserCategories } from '@/lib/categories'
+import { getOfflineCache, setOfflineCache } from '@/lib/offlineCache'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
@@ -11,8 +12,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export const Route = createFileRoute('/settings')({
   loader: async (): Promise<{ categories: Array<Category> }> => {
-    const categories = await getUserCategories()
-    return { categories }
+    try {
+      const categories = await getUserCategories()
+      if (typeof window !== 'undefined') {
+        void setOfflineCache('categories', categories)
+      }
+      return { categories }
+    } catch (err) {
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        const categories = await getOfflineCache('categories')
+        if (categories) return { categories }
+      }
+      throw err
+    }
   },
   component: SettingsPage,
 })

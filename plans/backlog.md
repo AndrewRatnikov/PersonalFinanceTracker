@@ -312,9 +312,9 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
   - **On network failure**: if `typeof window !== 'undefined' && !navigator.onLine`, attempt to read all three keys via `getOfflineCache`; if at least `recentExpenses` and `categories` are present, return them (use `[]` as fallback for `monthlyStats`) with a `fromCache: true` flag appended to the return value; if IDB is empty, re-throw the original error
 - [x] Add `fromCache?: boolean` to the loader's inferred return type so `Route.useLoaderData()` exposes it
 
-### 6.5 Offline-aware loader — `src/routes/settings.tsx`
+### 6.5 Offline-aware loader — `src/routes/settings.tsx` ✅
 
-- [ ] Apply the same try/catch pattern to the `getUserCategories()` call in the settings loader:
+- [x] Apply the same try/catch pattern to the `getUserCategories()` call in the settings loader:
   - On success: write to `'categories'` via `setOfflineCache`
   - On offline error: read `'categories'` from IDB and return it; re-throw if IDB is empty
 
