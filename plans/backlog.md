@@ -377,19 +377,232 @@ _Data note: the app fetches data through TanStack Router `loader` functions (not
 
 ---
 
-## 7. Encrypted local state
+## 7. Local-first storage with encryption
 
-_Depends on #6 — nothing to encrypt until offline cache exists._
+_Depends on #6 — IDB infrastructure and offlineCache module exist._
 
-- [ ] Derive an AES-GCM key from the Supabase session token using Web Crypto API
-- [ ] Wrap all IndexedDB writes with `crypto.subtle.encrypt` and reads with `crypto.subtle.decrypt`
-- [ ] Store the derived key only in memory (never persisted)
+**Goal:** IDB becomes the primary data store for all user data (expenses, categories, income, budgets). Every write is encrypted with AES-GCM before it touches disk. Supabase is retained for auth and will be used for cloud sync in a future Premium tier — for now all data operations bypass the server entirely.
+
+**Architectural shift**
+
+| | Before | After |
+|---|---|---|
+| Primary store | Supabase (PostgreSQL) | IndexedDB (encrypted) |
+| Offline data | IDB read-through cache | IDB is the source of truth |
+| Server functions | All CRUD | Auth only |
+| Analytics | Computed server-side | Computed client-side from IDB |
+
+**Key derivation strategy:** the access token rotates on every refresh, so it cannot be used as stable key material. Instead, derive the key from `userId` (stable) plus a per-device random salt stored in `localStorage` under `minima_device_salt_{userId}`. This makes the key unique per user per device. If `localStorage` is cleared the IDB data becomes unreadable — treat as a fresh start (data can be re-seeded from Supabase for Premium users; free-tier users lose local data, which is acceptable).
+
+### 7.1 Crypto module — `src/lib/crypto.ts` (new file)
+
+- [ ] Export `getOrCreateDeviceSalt(userId: string): Uint8Array`:
+  - Key: `minima_device_salt_{userId}` in `localStorage`
+  - If absent: `crypto.getRandomValues(new Uint8Array(32))`, hex-encode and store, return it
+  - If present: hex-decode and return
+  - Guard with `typeof window === 'undefined'` early-return (throws on SSR — callers must be client-only)
+- [ ] Export `deriveKey(userId: string, deviceSalt: Uint8Array): Promise<CryptoKey>`:
+  ```ts
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(userId),
+    { name: 'HKDF' },
+    false,
+    ['deriveKey'],
+  )
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: deviceSalt, info: new Uint8Array() },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+  ```
+- [ ] Export `encryptValue(key: CryptoKey, value: unknown): Promise<Uint8Array>`:
+  - Generate random 12-byte IV: `crypto.getRandomValues(new Uint8Array(12))`
+  - Encode: `new TextEncoder().encode(JSON.stringify(value))`
+  - `crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)`
+  - Return `Uint8Array` with IV (bytes 0–11) prepended to ciphertext
+- [ ] Export `decryptValue(key: CryptoKey, data: Uint8Array): Promise<unknown>`:
+  - Split IV (`data.slice(0, 12)`) and ciphertext (`data.slice(12)`)
+  - `crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)`
+  - UTF-8 decode, JSON-parse, return
+
+### 7.2 Local DB module — `src/lib/localDb.ts` (new file)
+
+This module replaces direct calls to server functions for all data operations. `offlineCache.ts` is retired — its three cache keys become part of the richer schema here.
+
+**IDB store layout** (one `idb-keyval` custom store `'minima-local'` / `'data'`):
+
+| Key | Type |
+|---|---|
+| `'expenses'` | `Array<Expense>` |
+| `'categories'` | `Array<Category>` |
+| `'income'` | `Array<IncomeEntry>` |
+| `'budgets'` | `Array<BudgetEntry>` |
+
+- [ ] Module-level `let _key: CryptoKey | null = null`
+- [ ] Create a `createStore('minima-local', 'data')` store (same guard pattern as `offlineCache.ts`)
+- [ ] Export `initLocalDb(userId: string): Promise<void>`:
+  - Guard: early-return if `typeof window === 'undefined'`
+  - Call `getOrCreateDeviceSalt(userId)` then `deriveKey` → assign `_key`
+- [ ] Export `wipeLocalDbKey(): void` — sets `_key = null`; called on sign-out by #8
+- [ ] Internal helpers `readStore<K>(key)` / `writeStore<K>(key, data)`:
+  - `readStore`: if `_key` is null return `undefined`; read raw IDB value; if not `Uint8Array` return `undefined` (legacy data); `decryptValue` in `try/catch`, return `undefined` on error
+  - `writeStore`: if `_key` is null throw `'LocalDb not initialized'`; `encryptValue` then `set(key, encrypted, store)`
+- [ ] **Expenses CRUD**:
+  - `getAllExpenses(): Promise<Array<Expense>>` — reads `'expenses'`, returns `[]` if absent; joins category from `'categories'` by id so `expense.category` is always populated
+  - `addExpense(input: CreateExpenseInput): Promise<Expense>` — reads current array, appends new entry with `crypto.randomUUID()` id and `new Date().toISOString()` createdAt, writes back; returns the new entry
+  - `deleteExpense(id: string): Promise<void>` — filters out by id and writes back
+- [ ] **Categories CRUD**:
+  - `getAllCategories(): Promise<Array<Category>>` — reads `'categories'`, returns `[]` if absent
+  - `addCategory(input: CreateCategoryInput): Promise<Category>` — appends with new UUID, writes back
+  - `updateCategory(input: UpdateCategoryInput): Promise<Category>` — maps over array replacing matching id, writes back
+  - `deleteCategory(id: string): Promise<void>` — checks for any expense in `'expenses'` referencing this `categoryId`; throws the same "X expenses use this category" error if found; otherwise filters and writes back
+  - `provisionDefaultCategories(): Promise<void>` — reads `'categories'`; if non-empty returns early; inserts the same six default entries as the current `categories.ts` server function (Food 🍔, Transport 🚌, Rent 🏠, Coffee ☕, Entertainment 🎬, Server Costs 🖥️) with client-generated UUIDs; writes back
+- [ ] **Income CRUD**:
+  - `getAllIncome(): Promise<Array<IncomeEntry>>` — reads `'income'`, returns `[]` if absent
+  - `addIncome(input: CreateIncomeInput): Promise<IncomeEntry>` — appends with UUID + createdAt, writes back
+  - `deleteIncome(id: string): Promise<void>` — filters and writes back
+- [ ] **Budgets CRUD**:
+  - `getAllBudgets(): Promise<Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>>` — reads `'budgets'`, joins category name/icon from `'categories'`
+  - `upsertBudget(input: UpsertBudgetInput): Promise<BudgetEntry>` — reads current array; if entry with same `categoryId` exists replace it (preserving `id`), otherwise append with new UUID; writes back
+  - `deleteBudget(id: string): Promise<void>` — filters and writes back
+
+### 7.3 One-time data migration from Supabase — `src/lib/dataMigration.ts` (new file)
+
+Existing users have data in Supabase. On first run after this feature ships, pull it into IDB.
+
+- [ ] Export `runDataMigration(userId: string): Promise<void>`:
+  - Check `localStorage.getItem('minima_migrated_' + userId)` — if present, return early
+  - Call in parallel: existing server functions `getUserCategories()`, `getRecentExpenses()` (note: fetches only 10; see caveat below), `getAllIncome({ pageIndex: 0, pageSize: 1000 })`, `getBudgets()`
+  - Write each result to IDB via `writeStore` (raw, since `localDb` helpers use `readStore/writeStore` internally — call the CRUD setters or `writeStore` directly)
+  - For expenses: `getRecentExpenses()` only returns 10 rows. Use `getTransactionsPaginated` in a loop (page through all pages) to seed the full history. Cap at 500 rows to avoid a massive first-load stall — log a warning if truncated
+  - Set `localStorage.setItem('minima_migrated_' + userId, '1')` on success
+  - Wrap the whole function in `try/catch` — on failure log the error and do **not** set the flag (will retry next load)
+
+### 7.4 Local analytics — `src/lib/localAnalytics.ts` (new file)
+
+Replace the `getRangeAnalytics` server function with a client-side computation over IDB data.
+
+- [ ] Export `computeRangeAnalytics(from: string, to: string): Promise<AnalyticsRangeSummary>`:
+  - Call `getAllExpenses()`, `getAllCategories()`, `getAllIncome()`, `getAllBudgets()` in parallel
+  - Filter expenses to those with `createdAt >= from && createdAt <= to`
+  - Build `categoryBreakdown`: group filtered expenses by `categoryId`, sum amounts, join name/icon from categories
+  - Build `timeline`: group filtered expenses by ISO date (`createdAt.slice(0, 10)`), sum amounts, format label as `DD Mon`
+  - Compute `totalIncome`: sum income entries whose `createdAt` falls in range
+  - Compute `budgetVariance`: for each budget, find actual spend in range from `categoryBreakdown` (default 0); set `overBudget: actual > monthlyLimit`; include categories with budget but zero spend
+  - Return `AnalyticsRangeSummary` with `from`, `to`, and all computed fields
+
+### 7.5 Update routes to use localDb
+
+All routes drop their Supabase server function calls. Data fetching moves entirely to React Query `useQuery` against `localDb` functions. The SSR `loader` for each route becomes auth-only (no data).
+
+**`src/routes/index.tsx`**
+- [ ] Remove `getMonthlyExpenses()`, `getRecentExpenses()`, `getUserCategories()` from the `loader`; remove the offline try/catch pattern — it is no longer needed
+- [ ] Add `useQuery(['categories'], getAllCategories)` and `useQuery(['expenses'], getAllExpenses)` in the component
+- [ ] Compute monthly stats client-side: group `getAllExpenses()` result by month/year, sum totals — replaces `MonthlyExpenseSummary` server logic
+- [ ] Remove `fromCache` flag handling (IDB is always the source of truth now)
+
+**`src/routes/transactions.tsx`**
+- [ ] Replace `getTransactionsPaginated` fetcher with a local function that calls `getAllExpenses()` and paginates in-memory (sort by `createdAt` descending, slice by `pageIndex`/`pageSize`)
+- [ ] Replace `createExpense` mutation with `addExpense` from `localDb`; keep `toast.success` / `toast.error` and `queryClient.invalidateQueries(['expenses'])`
+- [ ] Replace `deleteExpense` mutation with `deleteExpense` from `localDb`
+
+**`src/routes/income.tsx`**
+- [ ] Same pattern: replace `getIncomePaginated`, `createIncome`, `deleteIncome` with localDb equivalents; query key stays `['income']`
+
+**`src/routes/settings.tsx`**
+- [ ] Remove `getUserCategories()` from the `loader`; remove offline try/catch
+- [ ] `CategoriesTab`: replace `createCategory`, `updateCategory`, `deleteCategory` mutations and `getUserCategories` query with localDb equivalents; query key `['categories']`
+- [ ] `BudgetTab`: replace `getBudgets`, `upsertBudget`, `deleteBudget` with localDb equivalents; query key `['budgets']`
+
+**`src/routes/analytics.tsx`**
+- [ ] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
+
+### 7.6 Wire init + migration — `src/routes/__root.tsx`
+
+- [ ] Import `initLocalDb` from `../lib/localDb`, `runDataMigration` from `../lib/dataMigration`
+- [ ] In `beforeLoad`, after `getServerUser()` resolves and `user` is non-null, add:
+  ```ts
+  if (typeof window !== 'undefined') {
+    await initLocalDb(user.id)
+    await runDataMigration(user.id)
+  }
+  ```
+  - Place **before** the `provisionDefaultCategories` call
+- [ ] Change the `provisionDefaultCategories()` call to use the localDb version: replace `await provisionDefaultCategories()` (server function) with `await localProvisionDefaultCategories()` imported from `../lib/localDb`; remove the `setLocalStore(user.id, 'categoriesProvisioned', true)` guard — `localDb.provisionDefaultCategories()` already short-circuits if categories exist
+
+### 7.7 Premium Supabase sync (stub — not wired)
+
+- [ ] Add `export const ENABLE_SUPABASE_SYNC = false` at the top of `src/lib/localDb.ts`
+- [ ] Add a comment block explaining: when `true`, each write mutation should also call the corresponding server function in `src/lib/expenses.ts` / `categories.ts` / `income.ts` / `budgets.ts`; guarded behind a Premium check; not implemented yet
+
+### 7.8 Retire `src/lib/offlineCache.ts`
+
+- [ ] Remove `offlineCache.ts` (all its functionality is superseded by `localDb.ts`)
+- [ ] Remove `import … from '../lib/offlineCache'` from `src/routes/index.tsx` and `src/routes/settings.tsx`
+- [ ] Remove the `<OfflineBanner />` offline try/catch fallbacks in loaders — they existed to serve the old IDB-as-cache pattern; with local-first the banner still shows when offline, but data always comes from IDB without a special code path
+
+### 7.9 Verify
+
+- [ ] `npm run dev` — create a new expense; open DevTools → Application → IndexedDB → `minima-local` → `data` → confirm the `expenses` entry is a binary blob, not readable JSON
+- [ ] Reload the page — confirm expenses still appear (decrypt on read works)
+- [ ] DevTools → Network → Offline; reload — confirm the dashboard, transactions, income, analytics pages all load normally from IDB with no server calls
+- [ ] Confirm the "Viewing cached data" banner still appears when offline
+- [ ] Add an expense while offline; go back online; confirm the expense persists (it was written directly to IDB, not a network call)
+- [ ] Open a second browser profile pointing to the same `localhost`; confirm it cannot read the IDB data (different `deviceSalt` in that profile's `localStorage`)
+- [ ] Existing user migration: sign in with an account that has Supabase data; confirm all historical expenses/categories/income appear in the app after first load
 
 ---
 
-## 8. Cache wipe on sign-out
+## 8. Data wipe on sign-out
 
-_Depends on #6 and #7._
+_Depends on #7. With IDB as the primary data store (not just a cache), clearing it on sign-out is a security requirement — the next person who opens the browser must not be able to read another user's expenses._
 
-- [ ] On `supabase.auth.signOut()`, clear all IndexedDB stores and relevant `localStorage` keys
-- [ ] Verify offline cache is gone after sign-out by testing in DevTools → Application → Storage
+### 8.1 Local CSV export — `src/lib/localExport.ts` (new file)
+
+The existing `exportExpensesCSV` in `csvTools.ts` is a server function that reads from Supabase. After #7 all data lives in IDB, so it must be replaced with a client-side export covering all four collections.
+
+- [ ] Export `exportAllLocalData(): Promise<void>`:
+  - Reads `getAllExpenses()`, `getAllCategories()`, `getAllIncome()`, `getAllBudgets()` in parallel from `localDb`
+  - Builds four CSV strings:
+    - **expenses.csv** — columns: `date, amount, currency, category, description` (same format as the existing `exportExpensesCSV` so import still works)
+    - **income.csv** — columns: `date, source, amount, currency, description`
+    - **categories.csv** — columns: `name, icon`
+    - **budgets.csv** — columns: `category, monthly_limit, currency`
+  - For each CSV string, triggers a browser download via a temporary `<a href="blob:..." download="filename.csv">` element (no extra dependency — four sequential downloads)
+  - Helper: `triggerDownload(filename: string, csvContent: string): void` — creates a `Blob` with `type: 'text/csv'`, creates a temporary object URL, clicks a hidden `<a>`, then revokes the URL
+
+### 8.2 Sign-out confirmation dialog
+
+- [ ] Replace the sign-out button in `src/components/Header.tsx` with an `AlertDialog` confirmation:
+  - Title: `"Sign out?"`
+  - Description: `"All locally stored data — expenses, categories, income, and budgets — will be permanently deleted from this device. Export your data first if you want to keep a copy."`
+  - Secondary action button: `"Export my data"` — calls `exportAllLocalData()` without closing the dialog, so the user can download and then confirm
+  - Confirm button: `"Sign out & delete data"` (destructive variant)
+  - Cancel button: `"Cancel"`
+  - Only proceed with cleanup + sign-out when the user confirms
+
+### 8.3 Sign-out cleanup
+
+- [ ] Wrap the sign-out flow in a helper that runs in this order:
+  1. `exportAllLocalData()` is already opt-in from the dialog — no automatic export here
+  2. `wipeLocalDbKey()` from `src/lib/localDb.ts` — clears the in-memory `CryptoKey`
+  3. Clear the IDB store (`clear(store)` from `localDb.ts`) — wipes all encrypted blobs
+  4. Clear `localStorage` keys for the signed-out user:
+     - `minima_device_salt_{userId}` — device key material (makes any residual IDB blobs permanently unreadable)
+     - `minima_migrated_{userId}` — migration flag (re-login triggers a fresh seed)
+     - `minima_offline_user` — cached user identity used by the offline `beforeLoad` fallback
+  5. Call `supabase.auth.signOut()` and redirect to `/login`
+
+### 8.4 Update `csvTools.ts`
+
+- [ ] Mark `exportExpensesCSV` server function as deprecated with a comment pointing to `localExport.ts`; do not delete it yet — the import UI still references it and will be migrated separately
+
+### 8.5 Verify
+
+- [ ] Click sign-out → confirm the dialog appears with the warning description
+- [ ] Click "Export my data" → confirm four `.csv` files download (expenses, income, categories, budgets); dialog remains open
+- [ ] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm the three keys are gone
+- [ ] Navigate back to `/` — confirm redirect to `/login` with no stale data
