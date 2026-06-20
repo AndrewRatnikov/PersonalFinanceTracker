@@ -392,43 +392,35 @@ _Depends on #6 — IDB infrastructure and offlineCache module exist._
 | Server functions | All CRUD | Auth only |
 | Analytics | Computed server-side | Computed client-side from IDB |
 
-**Key derivation strategy:** the access token rotates on every refresh, so it cannot be used as stable key material. Instead, derive the key from `userId` (stable) plus a per-device random salt stored in `localStorage` under `minima_device_salt_{userId}`. This makes the key unique per user per device. If `localStorage` is cleared the IDB data becomes unreadable — treat as a fresh start (data can be re-seeded from Supabase for Premium users; free-tier users lose local data, which is acceptable).
+**Key derivation strategy:** the user provides a local encryption password on every login. The key is derived from that password using PBKDF2-SHA256 (200,000 iterations) with a per-device random salt stored in `localStorage` under `minima_device_salt_{userId}`. The derived `CryptoKey` lives only in a module-level variable — never written to storage. To detect a wrong password without storing the password itself, a small sentinel blob is encrypted with the derived key and stored in `localStorage` under `minima_key_verify_{userId}`; successful decryption of that blob confirms the correct password. On sign-out the in-memory key and the IDB data are wiped; the device salt and verifier are kept so the same user can re-enter their password on next login on the same device.
 
-### 7.1 Crypto module — `src/lib/crypto.ts` (new file)
+### 7.1 Crypto module — `src/lib/crypto.ts` ✅
 
-- [ ] Export `getOrCreateDeviceSalt(userId: string): Uint8Array`:
-  - Key: `minima_device_salt_{userId}` in `localStorage`
-  - If absent: `crypto.getRandomValues(new Uint8Array(32))`, hex-encode and store, return it
-  - If present: hex-decode and return
-  - Guard with `typeof window === 'undefined'` early-return (throws on SSR — callers must be client-only)
-- [ ] Export `deriveKey(userId: string, deviceSalt: Uint8Array): Promise<CryptoKey>`:
-  ```ts
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(userId),
-    { name: 'HKDF' },
-    false,
-    ['deriveKey'],
-  )
-  return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: deviceSalt, info: new Uint8Array() },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  )
-  ```
-- [ ] Export `encryptValue(key: CryptoKey, value: unknown): Promise<Uint8Array>`:
-  - Generate random 12-byte IV: `crypto.getRandomValues(new Uint8Array(12))`
-  - Encode: `new TextEncoder().encode(JSON.stringify(value))`
-  - `crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)`
-  - Return `Uint8Array` with IV (bytes 0–11) prepended to ciphertext
-- [ ] Export `decryptValue(key: CryptoKey, data: Uint8Array): Promise<unknown>`:
-  - Split IV (`data.slice(0, 12)`) and ciphertext (`data.slice(12)`)
-  - `crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)`
-  - UTF-8 decode, JSON-parse, return
+- [x] Export `getOrCreateDeviceSalt(userId: string): Uint8Array`
+- [x] Export `deriveKey(password: string, deviceSalt: Uint8Array): Promise<CryptoKey>` — PBKDF2-SHA256, 200k iterations
+- [x] Export `encryptValue(key: CryptoKey, value: unknown): Promise<Uint8Array>`
+- [x] Export `decryptValue(key: CryptoKey, data: Uint8Array): Promise<unknown>`
+- [x] Export `storeKeyVerifier(key: CryptoKey, userId: string): Promise<void>`
+- [x] Export `checkKeyVerifier(key: CryptoKey, userId: string): Promise<boolean>`
 
-### 7.2 Local DB module — `src/lib/localDb.ts` (new file)
+### 7.2 Password unlock UI — `src/components/PasswordUnlockDialog.tsx` (new file)
+
+Shown after Supabase auth on every page load until the in-memory key is set. Cannot be dismissed — the app is unusable without it.
+
+- [ ] Props: `userId: string`, `onUnlocked: (key: CryptoKey) => void`
+- [ ] On mount, detect mode:
+  - **New user** — `localStorage.getItem('minima_key_verify_' + userId)` is absent
+    - Render "Create your encryption password" heading
+    - Two fields: Password + Confirm password (both `type="password"`)
+    - On submit: validate passwords match and are at least 8 characters; call `getOrCreateDeviceSalt(userId)` → `deriveKey(password, salt)` → `storeKeyVerifier(key, userId)` → `onUnlocked(key)`
+  - **Returning user** — verifier exists
+    - Render "Enter your encryption password" heading
+    - One field: Password (`type="password"`)
+    - On submit: `getOrCreateDeviceSalt(userId)` → `deriveKey(password, salt)` → `checkKeyVerifier(key, userId)` → if `true`: `onUnlocked(key)`; if `false`: show inline error `"Incorrect password"`
+- [ ] Show a `<Loader2 className="animate-spin" />` spinner while deriving (PBKDF2 at 200k iterations takes ~200–400 ms)
+- [ ] Render as a full-screen centered card (not a closeable dialog) using existing Card components; dark overlay behind it
+
+### 7.3 Local DB module — `src/lib/localDb.ts` (new file)
 
 This module replaces direct calls to server functions for all data operations. `offlineCache.ts` is retired — its three cache keys become part of the richer schema here.
 
@@ -443,10 +435,10 @@ This module replaces direct calls to server functions for all data operations. `
 
 - [ ] Module-level `let _key: CryptoKey | null = null`
 - [ ] Create a `createStore('minima-local', 'data')` store (same guard pattern as `offlineCache.ts`)
-- [ ] Export `initLocalDb(userId: string): Promise<void>`:
-  - Guard: early-return if `typeof window === 'undefined'`
-  - Call `getOrCreateDeviceSalt(userId)` then `deriveKey` → assign `_key`
+- [ ] Export `initLocalDb(userId: string): void` — SSR-safe; calls `getOrCreateDeviceSalt(userId)` and stores the salt in module scope; does **not** derive the key (no password yet at this point)
+- [ ] Export `unlockLocalDb(key: CryptoKey): void` — sets `_key`; called by `PasswordUnlockDialog` via `onUnlocked`
 - [ ] Export `wipeLocalDbKey(): void` — sets `_key = null`; called on sign-out by #8
+- [ ] Export `clearLocalDb(): Promise<void>` — calls `clear(store)` to wipe all IDB blobs; called on sign-out by #8
 - [ ] Internal helpers `readStore<K>(key)` / `writeStore<K>(key, data)`:
   - `readStore`: if `_key` is null return `undefined`; read raw IDB value; if not `Uint8Array` return `undefined` (legacy data); `decryptValue` in `try/catch`, return `undefined` on error
   - `writeStore`: if `_key` is null throw `'LocalDb not initialized'`; `encryptValue` then `set(key, encrypted, store)`
@@ -469,7 +461,7 @@ This module replaces direct calls to server functions for all data operations. `
   - `upsertBudget(input: UpsertBudgetInput): Promise<BudgetEntry>` — reads current array; if entry with same `categoryId` exists replace it (preserving `id`), otherwise append with new UUID; writes back
   - `deleteBudget(id: string): Promise<void>` — filters and writes back
 
-### 7.3 One-time data migration from Supabase — `src/lib/dataMigration.ts` (new file)
+### 7.4 One-time data migration from Supabase — `src/lib/dataMigration.ts` (new file)
 
 Existing users have data in Supabase. On first run after this feature ships, pull it into IDB.
 
@@ -481,7 +473,7 @@ Existing users have data in Supabase. On first run after this feature ships, pul
   - Set `localStorage.setItem('minima_migrated_' + userId, '1')` on success
   - Wrap the whole function in `try/catch` — on failure log the error and do **not** set the flag (will retry next load)
 
-### 7.4 Local analytics — `src/lib/localAnalytics.ts` (new file)
+### 7.5 Local analytics — `src/lib/localAnalytics.ts` (new file)
 
 Replace the `getRangeAnalytics` server function with a client-side computation over IDB data.
 
@@ -494,7 +486,7 @@ Replace the `getRangeAnalytics` server function with a client-side computation o
   - Compute `budgetVariance`: for each budget, find actual spend in range from `categoryBreakdown` (default 0); set `overBudget: actual > monthlyLimit`; include categories with budget but zero spend
   - Return `AnalyticsRangeSummary` with `from`, `to`, and all computed fields
 
-### 7.5 Update routes to use localDb
+### 7.6 Update routes to use localDb
 
 All routes drop their Supabase server function calls. Data fetching moves entirely to React Query `useQuery` against `localDb` functions. The SSR `loader` for each route becomes auth-only (no data).
 
@@ -520,39 +512,34 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 **`src/routes/analytics.tsx`**
 - [ ] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
 
-### 7.6 Wire init + migration — `src/routes/__root.tsx`
+### 7.7 Wire init + unlock — `src/routes/__root.tsx`
 
-- [ ] Import `initLocalDb` from `../lib/localDb`, `runDataMigration` from `../lib/dataMigration`
-- [ ] In `beforeLoad`, after `getServerUser()` resolves and `user` is non-null, add:
-  ```ts
-  if (typeof window !== 'undefined') {
-    await initLocalDb(user.id)
-    await runDataMigration(user.id)
-  }
-  ```
-  - Place **before** the `provisionDefaultCategories` call
-- [ ] Change the `provisionDefaultCategories()` call to use the localDb version: replace `await provisionDefaultCategories()` (server function) with `await localProvisionDefaultCategories()` imported from `../lib/localDb`; remove the `setLocalStore(user.id, 'categoriesProvisioned', true)` guard — `localDb.provisionDefaultCategories()` already short-circuits if categories exist
+- [ ] In `beforeLoad`, after `getServerUser()` resolves and `user` is non-null, call `initLocalDb(user.id)` client-side (sets up the IDB store and device salt in module scope; no key derived yet)
+- [ ] Remove the `provisionDefaultCategories()` server function call from `beforeLoad` entirely — it requires the key to write to IDB and must happen after unlock (see below)
+- [ ] In `RootDocument`, read `user` from route context; if `user` is present and `_key` is null, render `<PasswordUnlockDialog userId={user.id} onUnlocked={unlockLocalDb} />` as a full-screen overlay before `{children}`
+- [ ] After `onUnlocked` fires (key set), trigger `provisionDefaultCategories()` and `runDataMigration(user.id)` from `localDb` — these require `_key` to write to IDB; run them once via a `useEffect` keyed on whether the key is set
 
-### 7.7 Premium Supabase sync (stub — not wired)
+### 7.8 Premium Supabase sync (stub — not wired)
 
 - [ ] Add `export const ENABLE_SUPABASE_SYNC = false` at the top of `src/lib/localDb.ts`
 - [ ] Add a comment block explaining: when `true`, each write mutation should also call the corresponding server function in `src/lib/expenses.ts` / `categories.ts` / `income.ts` / `budgets.ts`; guarded behind a Premium check; not implemented yet
 
-### 7.8 Retire `src/lib/offlineCache.ts`
+### 7.9 Retire `src/lib/offlineCache.ts`
 
 - [ ] Remove `offlineCache.ts` (all its functionality is superseded by `localDb.ts`)
 - [ ] Remove `import … from '../lib/offlineCache'` from `src/routes/index.tsx` and `src/routes/settings.tsx`
 - [ ] Remove the `<OfflineBanner />` offline try/catch fallbacks in loaders — they existed to serve the old IDB-as-cache pattern; with local-first the banner still shows when offline, but data always comes from IDB without a special code path
 
-### 7.9 Verify
+### 7.10 Verify
 
-- [ ] `npm run dev` — create a new expense; open DevTools → Application → IndexedDB → `minima-local` → `data` → confirm the `expenses` entry is a binary blob, not readable JSON
-- [ ] Reload the page — confirm expenses still appear (decrypt on read works)
-- [ ] DevTools → Network → Offline; reload — confirm the dashboard, transactions, income, analytics pages all load normally from IDB with no server calls
-- [ ] Confirm the "Viewing cached data" banner still appears when offline
-- [ ] Add an expense while offline; go back online; confirm the expense persists (it was written directly to IDB, not a network call)
-- [ ] Open a second browser profile pointing to the same `localhost`; confirm it cannot read the IDB data (different `deviceSalt` in that profile's `localStorage`)
-- [ ] Existing user migration: sign in with an account that has Supabase data; confirm all historical expenses/categories/income appear in the app after first load
+- [ ] First login: confirm password creation dialog appears; create password; confirm app loads
+- [ ] Reload page: confirm password entry dialog appears (not creation); enter same password; confirm app loads with existing data
+- [ ] Enter wrong password on reload: confirm inline "Incorrect password" error; correct password then works
+- [ ] Create a new expense; DevTools → IndexedDB → `minima-local` → `data` → confirm `expenses` is a binary blob, not readable JSON
+- [ ] DevTools → Network → Offline; reload + enter password — confirm dashboard loads from IDB with no server calls
+- [ ] Add an expense while offline; go back online; confirm it persists (written directly to IDB)
+- [ ] Sign out; sign back in with the same password — confirm data is still present (deviceSalt + verifier were kept; IDB was re-populated from migration)
+- [ ] Open a second browser profile: confirm a different `deviceSalt` is generated; IDB blobs from the first profile cannot be decrypted even with the same password
 
 ---
 
@@ -589,12 +576,12 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 - [ ] Wrap the sign-out flow in a helper that runs in this order:
   1. `exportAllLocalData()` is already opt-in from the dialog — no automatic export here
   2. `wipeLocalDbKey()` from `src/lib/localDb.ts` — clears the in-memory `CryptoKey`
-  3. Clear the IDB store (`clear(store)` from `localDb.ts`) — wipes all encrypted blobs
-  4. Clear `localStorage` keys for the signed-out user:
-     - `minima_device_salt_{userId}` — device key material (makes any residual IDB blobs permanently unreadable)
-     - `minima_migrated_{userId}` — migration flag (re-login triggers a fresh seed)
+  3. `clearLocalDb()` from `src/lib/localDb.ts` — wipes all encrypted IDB blobs
+  4. Clear these `localStorage` keys for the signed-out user:
+     - `minima_migrated_{userId}` — reset migration flag so re-login re-seeds from Supabase
      - `minima_offline_user` — cached user identity used by the offline `beforeLoad` fallback
-  5. Call `supabase.auth.signOut()` and redirect to `/login`
+  5. **Keep** `minima_device_salt_{userId}` and `minima_key_verify_{userId}` — these allow the same user to re-enter their password on next login on this device and have the key re-derived identically; without them the IDB data (already wiped) would be permanently unreadable and the user would have to create a new password
+  6. Call `supabase.auth.signOut()` and redirect to `/login`
 
 ### 8.4 Update `csvTools.ts`
 
@@ -604,5 +591,6 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 - [ ] Click sign-out → confirm the dialog appears with the warning description
 - [ ] Click "Export my data" → confirm four `.csv` files download (expenses, income, categories, budgets); dialog remains open
-- [ ] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm the three keys are gone
+- [ ] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm `minima_migrated_{userId}` and `minima_offline_user` are gone but `minima_device_salt_{userId}` and `minima_key_verify_{userId}` are still present
 - [ ] Navigate back to `/` — confirm redirect to `/login` with no stale data
+- [ ] Sign back in → confirm password entry dialog (not creation) → enter same password → app loads with empty data (IDB was wiped; migration re-seeds from Supabase if applicable)
