@@ -403,22 +403,12 @@ _Depends on #6 — IDB infrastructure and offlineCache module exist._
 - [x] Export `storeKeyVerifier(key: CryptoKey, userId: string): Promise<void>`
 - [x] Export `checkKeyVerifier(key: CryptoKey, userId: string): Promise<boolean>`
 
-### 7.2 Password unlock UI — `src/components/PasswordUnlockDialog.tsx` (new file)
+### 7.2 Password unlock UI — `src/components/PasswordUnlockDialog.tsx` ✅
 
-Shown after Supabase auth on every page load until the in-memory key is set. Cannot be dismissed — the app is unusable without it.
-
-- [ ] Props: `userId: string`, `onUnlocked: (key: CryptoKey) => void`
-- [ ] On mount, detect mode:
-  - **New user** — `localStorage.getItem('minima_key_verify_' + userId)` is absent
-    - Render "Create your encryption password" heading
-    - Two fields: Password + Confirm password (both `type="password"`)
-    - On submit: validate passwords match and are at least 8 characters; call `getOrCreateDeviceSalt(userId)` → `deriveKey(password, salt)` → `storeKeyVerifier(key, userId)` → `onUnlocked(key)`
-  - **Returning user** — verifier exists
-    - Render "Enter your encryption password" heading
-    - One field: Password (`type="password"`)
-    - On submit: `getOrCreateDeviceSalt(userId)` → `deriveKey(password, salt)` → `checkKeyVerifier(key, userId)` → if `true`: `onUnlocked(key)`; if `false`: show inline error `"Incorrect password"`
-- [ ] Show a `<Loader2 className="animate-spin" />` spinner while deriving (PBKDF2 at 200k iterations takes ~200–400 ms)
-- [ ] Render as a full-screen centered card (not a closeable dialog) using existing Card components; dark overlay behind it
+- [x] Props: `userId: string`, `onUnlocked: (key: CryptoKey) => void`
+- [x] Mode detection on mount: absent verifier → create mode (two fields + validation); verifier present → unlock mode (one field + `checkKeyVerifier`)
+- [x] `Loader2` spinner during PBKDF2 derivation; inline error for wrong password / mismatched confirm
+- [x] Full-screen `fixed inset-0` overlay with centered Card; cannot be dismissed
 
 ### 7.3 Local DB module — `src/lib/localDb.ts` (new file)
 
