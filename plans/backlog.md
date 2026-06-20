@@ -410,7 +410,7 @@ _Depends on #6 — IDB infrastructure and offlineCache module exist._
 - [x] `Loader2` spinner during PBKDF2 derivation; inline error for wrong password / mismatched confirm
 - [x] Full-screen `fixed inset-0` overlay with centered Card; cannot be dismissed
 
-### 7.3 Local DB module — `src/lib/localDb.ts` (new file)
+### 7.3 Local DB module — `src/lib/localDb.ts` (new file) ✅
 
 This module replaces direct calls to server functions for all data operations. `offlineCache.ts` is retired — its three cache keys become part of the richer schema here.
 
@@ -423,45 +423,37 @@ This module replaces direct calls to server functions for all data operations. `
 | `'income'` | `Array<IncomeEntry>` |
 | `'budgets'` | `Array<BudgetEntry>` |
 
-- [ ] Module-level `let _key: CryptoKey | null = null`
-- [ ] Create a `createStore('minima-local', 'data')` store (same guard pattern as `offlineCache.ts`)
-- [ ] Export `initLocalDb(userId: string): void` — SSR-safe; calls `getOrCreateDeviceSalt(userId)` and stores the salt in module scope; does **not** derive the key (no password yet at this point)
-- [ ] Export `unlockLocalDb(key: CryptoKey): void` — sets `_key`; called by `PasswordUnlockDialog` via `onUnlocked`
-- [ ] Export `wipeLocalDbKey(): void` — sets `_key = null`; called on sign-out by #8
-- [ ] Export `clearLocalDb(): Promise<void>` — calls `clear(store)` to wipe all IDB blobs; called on sign-out by #8
-- [ ] Internal helpers `readStore<K>(key)` / `writeStore<K>(key, data)`:
+- [x] Module-level `let _key: CryptoKey | null = null`
+- [x] Create a `createStore('minima-local', 'data')` store (same guard pattern as `offlineCache.ts`)
+- [x] Export `initLocalDb(userId: string): void` — SSR-safe; calls `getOrCreateDeviceSalt(userId)` and stores the salt in module scope; does **not** derive the key (no password yet at this point)
+- [x] Export `unlockLocalDb(key: CryptoKey): void` — sets `_key`; called by `PasswordUnlockDialog` via `onUnlocked`
+- [x] Export `wipeLocalDbKey(): void` — sets `_key = null`; called on sign-out by #8
+- [x] Export `clearLocalDb(): Promise<void>` — calls `clear(store)` to wipe all IDB blobs; called on sign-out by #8
+- [x] Internal helpers `readStore<K>(key)` / `writeStore<K>(key, data)`:
   - `readStore`: if `_key` is null return `undefined`; read raw IDB value; if not `Uint8Array` return `undefined` (legacy data); `decryptValue` in `try/catch`, return `undefined` on error
   - `writeStore`: if `_key` is null throw `'LocalDb not initialized'`; `encryptValue` then `set(key, encrypted, store)`
-- [ ] **Expenses CRUD**:
+- [x] **Expenses CRUD**:
   - `getAllExpenses(): Promise<Array<Expense>>` — reads `'expenses'`, returns `[]` if absent; joins category from `'categories'` by id so `expense.category` is always populated
   - `addExpense(input: CreateExpenseInput): Promise<Expense>` — reads current array, appends new entry with `crypto.randomUUID()` id and `new Date().toISOString()` createdAt, writes back; returns the new entry
   - `deleteExpense(id: string): Promise<void>` — filters out by id and writes back
-- [ ] **Categories CRUD**:
+- [x] **Categories CRUD**:
   - `getAllCategories(): Promise<Array<Category>>` — reads `'categories'`, returns `[]` if absent
   - `addCategory(input: CreateCategoryInput): Promise<Category>` — appends with new UUID, writes back
   - `updateCategory(input: UpdateCategoryInput): Promise<Category>` — maps over array replacing matching id, writes back
   - `deleteCategory(id: string): Promise<void>` — checks for any expense in `'expenses'` referencing this `categoryId`; throws the same "X expenses use this category" error if found; otherwise filters and writes back
   - `provisionDefaultCategories(): Promise<void>` — reads `'categories'`; if non-empty returns early; inserts the same six default entries as the current `categories.ts` server function (Food 🍔, Transport 🚌, Rent 🏠, Coffee ☕, Entertainment 🎬, Server Costs 🖥️) with client-generated UUIDs; writes back
-- [ ] **Income CRUD**:
+- [x] **Income CRUD**:
   - `getAllIncome(): Promise<Array<IncomeEntry>>` — reads `'income'`, returns `[]` if absent
   - `addIncome(input: CreateIncomeInput): Promise<IncomeEntry>` — appends with UUID + createdAt, writes back
   - `deleteIncome(id: string): Promise<void>` — filters and writes back
-- [ ] **Budgets CRUD**:
+- [x] **Budgets CRUD**:
   - `getAllBudgets(): Promise<Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>>` — reads `'budgets'`, joins category name/icon from `'categories'`
   - `upsertBudget(input: UpsertBudgetInput): Promise<BudgetEntry>` — reads current array; if entry with same `categoryId` exists replace it (preserving `id`), otherwise append with new UUID; writes back
   - `deleteBudget(id: string): Promise<void>` — filters and writes back
 
-### 7.4 One-time data migration from Supabase — `src/lib/dataMigration.ts` (new file)
+### 7.4 One-time data migration from Supabase — `src/lib/dataMigration.ts` (skipped)
 
-Existing users have data in Supabase. On first run after this feature ships, pull it into IDB.
-
-- [ ] Export `runDataMigration(userId: string): Promise<void>`:
-  - Check `localStorage.getItem('minima_migrated_' + userId)` — if present, return early
-  - Call in parallel: existing server functions `getUserCategories()`, `getRecentExpenses()` (note: fetches only 10; see caveat below), `getAllIncome({ pageIndex: 0, pageSize: 1000 })`, `getBudgets()`
-  - Write each result to IDB via `writeStore` (raw, since `localDb` helpers use `readStore/writeStore` internally — call the CRUD setters or `writeStore` directly)
-  - For expenses: `getRecentExpenses()` only returns 10 rows. Use `getTransactionsPaginated` in a loop (page through all pages) to seed the full history. Cap at 500 rows to avoid a massive first-load stall — log a warning if truncated
-  - Set `localStorage.setItem('minima_migrated_' + userId, '1')` on success
-  - Wrap the whole function in `try/catch` — on failure log the error and do **not** set the flag (will retry next load)
+_Skipped — only a test user exists; no Supabase data needs to be migrated. App starts fresh from IDB seeded by `provisionDefaultCategories`._
 
 ### 7.5 Local analytics — `src/lib/localAnalytics.ts` (new file)
 
