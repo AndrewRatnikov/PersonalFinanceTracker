@@ -1,4 +1,4 @@
-import { createStore, get, set, clear } from 'idb-keyval'
+import { createStore, get, set, clear, keys } from 'idb-keyval'
 
 import { encryptValue, decryptValue, getOrCreateDeviceSalt } from './crypto'
 import type {
@@ -18,8 +18,9 @@ export const ENABLE_SUPABASE_SYNC = false
 // function in src/lib/expenses.ts / categories.ts / income.ts / budgets.ts,
 // guarded behind a Premium check. Not implemented yet.
 
+// Expenses are stored in per-month chunks: `expenses_YYYY_MM`.
+// All other collections are small enough to store as single keys.
 interface LocalDbMap {
-  expenses: Array<Expense>
   categories: Array<Category>
   income: Array<IncomeEntry>
   budgets: Array<BudgetEntry>
@@ -28,16 +29,13 @@ interface LocalDbMap {
 type LocalDbKey = keyof LocalDbMap
 
 let _key: CryptoKey | null = null
-let _deviceSalt: Uint8Array | null = null
 
 const store =
-  typeof window !== 'undefined'
-    ? createStore('minima-local', 'data')
-    : null
+  typeof window !== 'undefined' ? createStore('minima-local', 'data') : null
 
 export function initLocalDb(userId: string): void {
   if (typeof window === 'undefined') return
-  _deviceSalt = getOrCreateDeviceSalt(userId)
+  getOrCreateDeviceSalt(userId)
 }
 
 export function unlockLocalDb(key: CryptoKey): void {
@@ -52,6 +50,8 @@ export async function clearLocalDb(): Promise<void> {
   if (!store) return
   await clear(store)
 }
+
+// ── Generic encrypted read/write ──────────────────────────────────────────────
 
 async function readStore<K extends LocalDbKey>(
   key: K,
@@ -76,17 +76,99 @@ async function writeStore<K extends LocalDbKey>(
   await set(key, encrypted, store)
 }
 
+// ── Expense chunk helpers ─────────────────────────────────────────────────────
+
+function expenseChunkKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `expenses_${y}_${m}`
+}
+
+function chunkKeysBetween(from: string, to: string): Array<string> {
+  const result: Array<string> = []
+  const start = new Date(from)
+  const end = new Date(to)
+  // Advance in UTC months to stay consistent with expenseChunkKey.
+  let y = start.getUTCFullYear()
+  let mo = start.getUTCMonth()
+  const endY = end.getUTCFullYear()
+  const endMo = end.getUTCMonth()
+  while (y < endY || (y === endY && mo <= endMo)) {
+    result.push(`expenses_${y}_${String(mo + 1).padStart(2, '0')}`)
+    mo++
+    if (mo > 11) {
+      mo = 0
+      y++
+    }
+  }
+  return result
+}
+
+async function readChunk(chunkKey: string): Promise<Array<Expense>> {
+  if (!_key || !store) return []
+  const raw = await get<unknown>(chunkKey, store)
+  if (!(raw instanceof Uint8Array)) return []
+  try {
+    return (await decryptValue(_key, raw)) as Array<Expense>
+  } catch {
+    return []
+  }
+}
+
+async function writeChunk(
+  chunkKey: string,
+  data: Array<Expense>,
+): Promise<void> {
+  if (!_key) throw new Error('LocalDb not initialized')
+  if (!store) return
+  const encrypted = await encryptValue(_key, data)
+  await set(chunkKey, encrypted, store)
+}
+
+async function allExpenseChunkKeys(): Promise<Array<string>> {
+  if (!store) return []
+  const allKeys = await keys<string>(store)
+  return allKeys.filter((k) => k.startsWith('expenses_')).sort()
+}
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
-export async function getAllExpenses(): Promise<Array<Expense>> {
-  const expenses = (await readStore('expenses')) ?? []
+async function joinCategories(
+  expenses: Array<Expense>,
+): Promise<Array<Expense>> {
   const categories = (await readStore('categories')) ?? []
   const categoryMap = new Map(categories.map((c) => [c.id, c]))
-  return expenses.map((e) => ({ ...e, category: categoryMap.get(e.categoryId) }))
+  return expenses.map((e) => ({
+    ...e,
+    category: categoryMap.get(e.categoryId),
+  }))
+}
+
+export async function getExpensesForRange(
+  from: string,
+  to: string,
+): Promise<Array<Expense>> {
+  const chunkKeys = chunkKeysBetween(from, to)
+  const chunks = await Promise.all(chunkKeys.map(readChunk))
+  const expenses = chunks
+    .flat()
+    .filter((e) => e.createdAt >= from && e.createdAt <= to)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return joinCategories(expenses)
+}
+
+// TODO: could possible create a spike if user will export all data for 5 years
+export async function getAllExpenses(): Promise<Array<Expense>> {
+  const chunkKeys = await allExpenseChunkKeys()
+  const chunks = await Promise.all(chunkKeys.map(readChunk))
+  const expenses = chunks
+    .flat()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return joinCategories(expenses)
 }
 
 export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
-  const expenses = (await readStore('expenses')) ?? []
   const entry: Expense = {
     id: crypto.randomUUID(),
     amount: input.amount,
@@ -95,17 +177,24 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     description: input.description,
     createdAt: new Date().toISOString(),
   }
-  await writeStore('expenses', [...expenses, entry])
+  const chunkKey = expenseChunkKey(entry.createdAt)
+  const existing = await readChunk(chunkKey)
+  await writeChunk(chunkKey, [...existing, entry])
   const categories = (await readStore('categories')) ?? []
   const category = categories.find((c) => c.id === entry.categoryId)
   return { ...entry, category }
 }
 
-export async function deleteExpense(id: string): Promise<void> {
-  const expenses = (await readStore('expenses')) ?? []
-  await writeStore(
-    'expenses',
-    expenses.filter((e) => e.id !== id),
+// createdAt is required so we can derive the correct chunk without a full scan.
+export async function deleteExpense(
+  id: string,
+  createdAt: string,
+): Promise<void> {
+  const chunkKey = expenseChunkKey(createdAt)
+  const chunk = await readChunk(chunkKey)
+  await writeChunk(
+    chunkKey,
+    chunk.filter((e) => e.id !== id),
   )
 }
 
@@ -115,7 +204,9 @@ export async function getAllCategories(): Promise<Array<Category>> {
   return (await readStore('categories')) ?? []
 }
 
-export async function addCategory(input: CreateCategoryInput): Promise<Category> {
+export async function addCategory(
+  input: CreateCategoryInput,
+): Promise<Category> {
   const categories = (await readStore('categories')) ?? []
   const entry: Category = {
     id: crypto.randomUUID(),
@@ -131,17 +222,23 @@ export async function updateCategory(
 ): Promise<Category> {
   const categories = (await readStore('categories')) ?? []
   const updated = categories.map((c) =>
-    c.id === input.id ? { ...c, name: input.name, icon: input.icon ?? null } : c,
+    c.id === input.id
+      ? { ...c, name: input.name, icon: input.icon ?? null }
+      : c,
   )
   await writeStore('categories', updated)
   return updated.find((c) => c.id === input.id)!
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  const expenses = (await readStore('expenses')) ?? []
-  const using = expenses.filter((e) => e.categoryId === id).length
+  // Check all expense chunks for references to this category.
+  const chunkKeys = await allExpenseChunkKeys()
+  const chunks = await Promise.all(chunkKeys.map(readChunk))
+  const using = chunks.flat().filter((e) => e.categoryId === id).length
   if (using > 0) {
-    throw new Error(`${using} expense${using === 1 ? '' : 's'} use this category`)
+    throw new Error(
+      `${using} expense${using === 1 ? '' : 's'} use this category`,
+    )
   }
   const categories = (await readStore('categories')) ?? []
   await writeStore(
@@ -176,7 +273,9 @@ export async function getAllIncome(): Promise<Array<IncomeEntry>> {
   return (await readStore('income')) ?? []
 }
 
-export async function addIncome(input: CreateIncomeInput): Promise<IncomeEntry> {
+export async function addIncome(
+  input: CreateIncomeInput,
+): Promise<IncomeEntry> {
   const income = (await readStore('income')) ?? []
   const entry: IncomeEntry = {
     id: crypto.randomUUID(),
@@ -216,13 +315,19 @@ export async function getAllBudgets(): Promise<
   })
 }
 
-export async function upsertBudget(input: UpsertBudgetInput): Promise<BudgetEntry> {
+export async function upsertBudget(
+  input: UpsertBudgetInput,
+): Promise<BudgetEntry> {
   const budgets = (await readStore('budgets')) ?? []
   const existing = budgets.find((b) => b.categoryId === input.categoryId)
   let entry: BudgetEntry
   let updated: Array<BudgetEntry>
   if (existing) {
-    entry = { ...existing, monthlyLimit: input.monthlyLimit, currency: input.currency }
+    entry = {
+      ...existing,
+      monthlyLimit: input.monthlyLimit,
+      currency: input.currency,
+    }
     updated = budgets.map((b) => (b.id === existing.id ? entry : b))
   } else {
     entry = {

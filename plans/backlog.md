@@ -455,18 +455,18 @@ This module replaces direct calls to server functions for all data operations. `
 
 _Skipped — only a test user exists; no Supabase data needs to be migrated. App starts fresh from IDB seeded by `provisionDefaultCategories`._
 
-### 7.5 Local analytics — `src/lib/localAnalytics.ts` (new file)
+### 7.5 Local analytics — `src/lib/localAnalytics.ts` (new file) ✅
 
 Replace the `getRangeAnalytics` server function with a client-side computation over IDB data.
 
-- [ ] Export `computeRangeAnalytics(from: string, to: string): Promise<AnalyticsRangeSummary>`:
-  - Call `getAllExpenses()`, `getAllCategories()`, `getAllIncome()`, `getAllBudgets()` in parallel
-  - Filter expenses to those with `createdAt >= from && createdAt <= to`
-  - Build `categoryBreakdown`: group filtered expenses by `categoryId`, sum amounts, join name/icon from categories
-  - Build `timeline`: group filtered expenses by ISO date (`createdAt.slice(0, 10)`), sum amounts, format label as `DD Mon`
-  - Compute `totalIncome`: sum income entries whose `createdAt` falls in range
-  - Compute `budgetVariance`: for each budget, find actual spend in range from `categoryBreakdown` (default 0); set `overBudget: actual > monthlyLimit`; include categories with budget but zero spend
-  - Return `AnalyticsRangeSummary` with `from`, `to`, and all computed fields
+- [x] Export `computeRangeAnalytics(from: string, to: string): Promise<AnalyticsRangeSummary>`:
+  - [x] Call `getAllExpenses()`, `getAllCategories()`, `getAllIncome()`, `getAllBudgets()` in parallel
+  - [x] Filter expenses to those with `createdAt >= from && createdAt <= to`
+  - [x] Build `categoryBreakdown`: group filtered expenses by `categoryId`, sum amounts, join name/icon from categories
+  - [x] Build `timeline`: group filtered expenses by ISO date (`createdAt.slice(0, 10)`), sum amounts, format label as `DD Mon`
+  - [x] Compute `totalIncome`: sum income entries whose `createdAt` falls in range
+  - [x] Compute `budgetVariance`: for each budget, find actual spend in range from `categoryBreakdown` (default 0); set `overBudget: actual > monthlyLimit`; include categories with budget but zero spend
+  - [x] Return `AnalyticsRangeSummary` with `from`, `to`, and all computed fields
 
 ### 7.6 Update routes to use localDb
 
