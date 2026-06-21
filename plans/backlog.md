@@ -506,11 +506,11 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 - [x] Add `export const ENABLE_SUPABASE_SYNC = false` at the top of `src/lib/localDb.ts`
 - [x] Add a comment block explaining: when `true`, each write mutation should also call the corresponding server function in `src/lib/expenses.ts` / `categories.ts` / `income.ts` / `budgets.ts`; guarded behind a Premium check; not implemented yet
 
-### 7.9 Retire `src/lib/offlineCache.ts`
+### 7.9 Retire `src/lib/offlineCache.ts` ✅
 
-- [ ] Remove `offlineCache.ts` (all its functionality is superseded by `localDb.ts`)
-- [ ] Remove `import … from '../lib/offlineCache'` from `src/routes/index.tsx` and `src/routes/settings.tsx`
-- [ ] Remove the `<OfflineBanner />` offline try/catch fallbacks in loaders — they existed to serve the old IDB-as-cache pattern; with local-first the banner still shows when offline, but data always comes from IDB without a special code path
+- [x] Remove `offlineCache.ts` (all its functionality is superseded by `localDb.ts`)
+- [x] Remove `import … from '../lib/offlineCache'` from `src/routes/index.tsx` and `src/routes/settings.tsx`
+- [x] Remove the `<OfflineBanner />` offline try/catch fallbacks in loaders — they existed to serve the old IDB-as-cache pattern; with local-first the banner still shows when offline, but data always comes from IDB without a special code path
 
 ### 7.10 Verify
 

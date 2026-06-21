@@ -78,7 +78,9 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
           <div className="flex items-center gap-2">
             <Lock className="h-4 w-4 text-muted-foreground" />
             <CardTitle>
-              {isNewUser ? 'Create encryption password' : 'Enter encryption password'}
+              {isNewUser
+                ? 'Create encryption password'
+                : 'Enter encryption password'}
             </CardTitle>
           </div>
           <CardDescription>
@@ -89,7 +91,7 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
         </CardHeader>
 
         <form onSubmit={handleSubmit}>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col gap-4 mb-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -117,9 +119,7 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
               </div>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
 
           <CardFooter>
