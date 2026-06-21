@@ -3,9 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { getBudgets, upsertBudget, deleteBudget } from '@/lib/budgets'
-import type { BudgetEntryWithCategory } from '@/lib/budgets'
-import type { Category, Currency } from '@/lib/domain'
+import { getAllBudgets, upsertBudget, deleteBudget } from '@/lib/localDb'
+import type { BudgetEntry, Category, Currency } from '@/lib/domain'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,7 +30,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 interface BudgetRowProps {
   category: Category
-  existingBudget: BudgetEntryWithCategory | undefined
+  existingBudget: (BudgetEntry & { categoryName: string; categoryIcon: string | null }) | undefined
 }
 
 function BudgetRow({ category, existingBudget }: BudgetRowProps) {
@@ -46,11 +45,9 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
   const saveMutation = useMutation({
     mutationFn: () =>
       upsertBudget({
-        data: {
-          categoryId: category.id,
-          monthlyLimit: Number(limit),
-          currency,
-        },
+        categoryId: category.id,
+        monthlyLimit: Number(limit),
+        currency,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
@@ -62,7 +59,7 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteBudget({ data: existingBudget!.id }),
+    mutationFn: () => deleteBudget(existingBudget!.id),
     onSuccess: () => {
       setLimit('')
       setCurrency('UAH')
@@ -171,7 +168,7 @@ interface BudgetTabProps {
 export function BudgetTab({ categories }: BudgetTabProps) {
   const { data: budgets = [], isLoading } = useQuery({
     queryKey: ['budgets'],
-    queryFn: () => getBudgets(),
+    queryFn: () => getAllBudgets(),
   })
 
   const budgetMap = new Map(budgets.map((b) => [b.categoryId, b]))

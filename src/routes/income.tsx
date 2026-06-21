@@ -3,9 +3,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { getIncomePaginated, deleteIncome } from '@/lib/income'
-import type { GetIncomePaginatedInput } from '@/lib/income'
-
+import { getAllIncome, deleteIncome } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
 import { Card } from '@/components/ui/card'
 import { AddIncomeForm } from '@/components/income/AddIncomeForm'
@@ -21,22 +19,20 @@ function IncomePage() {
   const pageSize = 15
   const queryClient = useQueryClient()
 
-  const queryInput: GetIncomePaginatedInput = useMemo(
-    () => ({ pageIndex, pageSize }),
-    [pageIndex, pageSize],
-  )
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['income', queryInput],
-    queryFn: () => getIncomePaginated({ data: queryInput }),
+  const { data: allIncome = [], isLoading, isError } = useQuery({
+    queryKey: ['income'],
+    queryFn: getAllIncome,
   })
 
-  const income = data?.income || []
-  const totalCount = data?.totalCount || 0
+  const totalCount = allIncome.length
   const totalPages = Math.ceil(totalCount / pageSize)
+  const income = useMemo(
+    () => allIncome.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+    [allIncome, pageIndex, pageSize],
+  )
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteIncome({ data: id }),
+    mutationFn: (id: string) => deleteIncome(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['income'] })
       toast.success('Income deleted')

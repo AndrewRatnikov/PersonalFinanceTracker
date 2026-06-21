@@ -1,24 +1,28 @@
 import { useState } from 'react'
-import { useLoaderData, useRouter } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
-import { createCategory } from '../../lib/categories'
+
+import { getAllCategories, addCategory } from '@/lib/localDb'
+import type { Category } from '@/lib/domain'
 import { CategoryRow } from './CategoryRow'
-import type { Category } from '../../lib/domain'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function CategoriesTab() {
-  const { categories } = useLoaderData({ from: '/settings' })
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
-
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('')
 
-  const refresh = () => router.invalidate()
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: getAllCategories,
+  })
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['categories'] })
 
   const withPending = async (fn: () => Promise<void>) => {
     setError(null)
@@ -35,7 +39,7 @@ export function CategoriesTab() {
 
   const handleAdd = () =>
     withPending(async () => {
-      await createCategory({ data: { name: newName, icon: newIcon || null } })
+      await addCategory({ name: newName, icon: newIcon || null })
       setNewName('')
       setNewIcon('')
     })
@@ -48,7 +52,6 @@ export function CategoriesTab() {
         </Alert>
       )}
 
-      {/* Add new category */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -88,7 +91,6 @@ export function CategoriesTab() {
         </CardContent>
       </Card>
 
-      {/* Category list */}
       <div className="flex flex-col gap-3">
         {categories.length === 0 && (
           <p className="text-muted-foreground text-sm text-center py-10 italic">

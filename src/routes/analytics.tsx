@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
 
-import { getRangeAnalytics } from '../lib/analytics'
+import { computeRangeAnalytics } from '../lib/localAnalytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
-import type { AnalyticsRangeSummary } from '../lib/domain'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -17,24 +18,12 @@ export type AnalyticsSearch = {
 export const Route = createFileRoute('/analytics')({
   validateSearch: (search: Record<string, unknown>): AnalyticsSearch => {
     const result: AnalyticsSearch = {}
-    if (typeof search.from === 'string') {
-      result.from = search.from
-    }
-    if (typeof search.to === 'string') {
-      result.to = search.to
-    }
+    if (typeof search.from === 'string') result.from = search.from
+    if (typeof search.to === 'string') result.to = search.to
     return result
-  },
-  loaderDeps: ({ search: { from, to } }) => ({ from, to }),
-  loader: async ({
-    deps: { from, to },
-  }): Promise<{ analytics: AnalyticsRangeSummary }> => {
-    const analytics = await getRangeAnalytics({ data: { from, to } })
-    return { analytics }
   },
   component: AnalyticsPage,
 })
-
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
@@ -54,8 +43,22 @@ function StatCard({ title, value }: { title: string; value: string }) {
 }
 
 function AnalyticsPage() {
-  const { analytics } = Route.useLoaderData()
   const search = Route.useSearch()
+
+  const { data: analytics, isLoading } = useQuery({
+    queryKey: ['analytics', search.from, search.to],
+    queryFn: () => computeRangeAnalytics({ from: search.from, to: search.to }),
+  })
+
+  if (isLoading || !analytics) {
+    return (
+      <PageShell>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </PageShell>
+    )
+  }
 
   const hasData =
     analytics.categoryBreakdown.length > 0 || analytics.timeline.length > 0
@@ -71,23 +74,25 @@ function AnalyticsPage() {
         <AnalyticsFilters analytics={analytics} search={search} />
 
         <div className="grid grid-cols-2 gap-4">
-          <StatCard title="Total Spent" value={`${CURRENCY_SYMBOL['UAH']}${totalSpent.toFixed(2)}`} />
-          <StatCard title="Total Income" value={`${CURRENCY_SYMBOL['UAH']}${analytics.totalIncome.toFixed(2)}`} />
+          <StatCard
+            title="Total Spent"
+            value={`${CURRENCY_SYMBOL['UAH']}${totalSpent.toFixed(2)}`}
+          />
+          <StatCard
+            title="Total Income"
+            value={`${CURRENCY_SYMBOL['UAH']}${analytics.totalIncome.toFixed(2)}`}
+          />
         </div>
 
         {hasData ? (
           <>
             <section>
-              <h2 className="text-sm font-semibold mb-2">
-                By Category
-              </h2>
+              <h2 className="text-sm font-semibold mb-2">By Category</h2>
               <CategoryDonutChart data={analytics.categoryBreakdown} />
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold mb-2">
-                Over Time
-              </h2>
+              <h2 className="text-sm font-semibold mb-2">Over Time</h2>
               <TimelineBarChart data={analytics.timeline} />
             </section>
 

@@ -1,13 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  getTransactionsPaginated,
-  deleteExpense,
-  GetTransactionsPaginatedInput,
-} from '@/lib/transactions'
-import { getUserCategories } from '@/lib/categories'
 import { toast } from 'sonner'
+
+import { getAllCategories, getAllExpenses, deleteExpense } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
@@ -24,48 +20,42 @@ function Transactions() {
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  // Fetch Categories for Filter
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => getUserCategories(),
+    queryFn: getAllCategories,
   })
 
-  // Fetch Transactions
-  const queryInput: GetTransactionsPaginatedInput = useMemo(
-    () => ({
-      pageIndex,
-      pageSize,
-      categoryId,
-      dateRange: null, // Date range filter can be added later
-    }),
-    [pageIndex, pageSize, categoryId],
+  const { data: allExpenses = [], isLoading, isError } = useQuery({
+    queryKey: ['expenses'],
+    queryFn: getAllExpenses,
+  })
+
+  const filtered = useMemo(() => {
+    if (!categoryId) return allExpenses
+    return allExpenses.filter((e) => e.categoryId === categoryId)
+  }, [allExpenses, categoryId])
+
+  const totalCount = filtered.length
+  const totalPages = Math.ceil(totalCount / pageSize)
+  const transactions = useMemo(
+    () => filtered.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+    [filtered, pageIndex, pageSize],
   )
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['transactions', queryInput],
-    queryFn: () => getTransactionsPaginated({ data: queryInput }),
-  })
-
-  const transactions = data?.transactions || []
-  const totalCount = data?.totalCount || 0
-  const totalPages = Math.ceil(totalCount / pageSize)
-
-  // Delete Mutation
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteExpense({ data: { id } }),
+    mutationFn: ({ id, createdAt }: { id: string; createdAt: string }) =>
+      deleteExpense(id, createdAt),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['recentExpenses'] })
+      queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success('Transaction deleted')
     },
     onError: (error: any) => {
       toast.error(`Failed to delete: ${error.message}`)
-      console.error('Delete error', error)
     },
   })
 
-  const handleDelete = (id: string) => {
-    deleteMutation.mutate(id)
+  const handleDelete = (id: string, createdAt: string) => {
+    deleteMutation.mutate({ id, createdAt })
   }
 
   const handleEdit = (id: string) => {
@@ -74,7 +64,7 @@ function Transactions() {
 
   const handleCategoryFilterChange = (value: string) => {
     setCategoryId(value === 'all' ? null : value)
-    setPageIndex(0) // Reset to first page when filtering
+    setPageIndex(0)
   }
 
   return (

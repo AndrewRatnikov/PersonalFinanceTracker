@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
-import { deleteCategory, updateCategory } from '../../lib/categories'
+import { deleteCategory, updateCategory } from '@/lib/localDb'
 import type { Category } from '../../lib/domain'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,9 +32,7 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const save = async () => {
     setIsPending(true)
     try {
-      await updateCategory({
-        data: { id: category.id, name: editName, icon: editIcon || null },
-      })
+      await updateCategory({ id: category.id, name: editName, icon: editIcon || null })
       onMutate()
       setIsEditing(false)
     } catch (e: any) {
@@ -47,7 +45,7 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const remove = async () => {
     setIsPending(true)
     try {
-      await deleteCategory({ data: category.id })
+      await deleteCategory(category.id)
       onMutate()
     } catch (e: any) {
       onError(e?.message ?? 'Failed to delete category')

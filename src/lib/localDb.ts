@@ -349,3 +349,31 @@ export async function deleteBudget(id: string): Promise<void> {
     budgets.filter((b) => b.id !== id),
   )
 }
+
+// ── Seed helper (dev / testing only) ─────────────────────────────────────────
+
+export async function bulkSeedExpenses(
+  expenses: Array<Omit<Expense, 'id' | 'category'> & { id?: string }>,
+): Promise<void> {
+  const byChunk = new Map<string, Array<Expense>>()
+  for (const e of expenses) {
+    const key = expenseChunkKey(e.createdAt)
+    const entry: Expense = { ...e, id: e.id ?? crypto.randomUUID() }
+    const arr = byChunk.get(key) ?? []
+    arr.push(entry)
+    byChunk.set(key, arr)
+  }
+  await Promise.all(
+    Array.from(byChunk.entries()).map(([key, chunk]) => writeChunk(key, chunk)),
+  )
+}
+
+export async function bulkSeedIncome(
+  income: Array<Omit<IncomeEntry, 'id'> & { id?: string }>,
+): Promise<void> {
+  const entries: Array<IncomeEntry> = income.map((i) => ({
+    ...i,
+    id: i.id ?? crypto.randomUUID(),
+  }))
+  await writeStore('income', entries)
+}

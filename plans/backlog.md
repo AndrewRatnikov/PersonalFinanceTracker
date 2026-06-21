@@ -468,31 +468,31 @@ Replace the `getRangeAnalytics` server function with a client-side computation o
   - [x] Compute `budgetVariance`: for each budget, find actual spend in range from `categoryBreakdown` (default 0); set `overBudget: actual > monthlyLimit`; include categories with budget but zero spend
   - [x] Return `AnalyticsRangeSummary` with `from`, `to`, and all computed fields
 
-### 7.6 Update routes to use localDb
+### 7.6 Update routes to use localDb ✅
 
 All routes drop their Supabase server function calls. Data fetching moves entirely to React Query `useQuery` against `localDb` functions. The SSR `loader` for each route becomes auth-only (no data).
 
 **`src/routes/index.tsx`**
-- [ ] Remove `getMonthlyExpenses()`, `getRecentExpenses()`, `getUserCategories()` from the `loader`; remove the offline try/catch pattern — it is no longer needed
-- [ ] Add `useQuery(['categories'], getAllCategories)` and `useQuery(['expenses'], getAllExpenses)` in the component
-- [ ] Compute monthly stats client-side: group `getAllExpenses()` result by month/year, sum totals — replaces `MonthlyExpenseSummary` server logic
-- [ ] Remove `fromCache` flag handling (IDB is always the source of truth now)
+- [x] Remove `getMonthlyExpenses()`, `getRecentExpenses()`, `getUserCategories()` from the `loader`; remove the offline try/catch pattern — it is no longer needed
+- [x] Add `useQuery(['categories'], getAllCategories)` and `useQuery(['expenses'], getAllExpenses)` in the component
+- [x] Compute monthly stats client-side: group `getAllExpenses()` result by month/year, sum totals — replaces `MonthlyExpenseSummary` server logic
+- [x] Remove `fromCache` flag handling (IDB is always the source of truth now)
 
 **`src/routes/transactions.tsx`**
-- [ ] Replace `getTransactionsPaginated` fetcher with a local function that calls `getAllExpenses()` and paginates in-memory (sort by `createdAt` descending, slice by `pageIndex`/`pageSize`)
-- [ ] Replace `createExpense` mutation with `addExpense` from `localDb`; keep `toast.success` / `toast.error` and `queryClient.invalidateQueries(['expenses'])`
-- [ ] Replace `deleteExpense` mutation with `deleteExpense` from `localDb`
+- [x] Replace `getTransactionsPaginated` fetcher with a local function that calls `getAllExpenses()` and paginates in-memory (sort by `createdAt` descending, slice by `pageIndex`/`pageSize`)
+- [x] Replace `createExpense` mutation with `addExpense` from `localDb`; keep `toast.success` / `toast.error` and `queryClient.invalidateQueries(['expenses'])`
+- [x] Replace `deleteExpense` mutation with `deleteExpense` from `localDb`
 
 **`src/routes/income.tsx`**
-- [ ] Same pattern: replace `getIncomePaginated`, `createIncome`, `deleteIncome` with localDb equivalents; query key stays `['income']`
+- [x] Same pattern: replace `getIncomePaginated`, `createIncome`, `deleteIncome` with localDb equivalents; query key stays `['income']`
 
 **`src/routes/settings.tsx`**
-- [ ] Remove `getUserCategories()` from the `loader`; remove offline try/catch
-- [ ] `CategoriesTab`: replace `createCategory`, `updateCategory`, `deleteCategory` mutations and `getUserCategories` query with localDb equivalents; query key `['categories']`
-- [ ] `BudgetTab`: replace `getBudgets`, `upsertBudget`, `deleteBudget` with localDb equivalents; query key `['budgets']`
+- [x] Remove `getUserCategories()` from the `loader`; remove offline try/catch
+- [x] `CategoriesTab`: replace `createCategory`, `updateCategory`, `deleteCategory` mutations and `getUserCategories` query with localDb equivalents; query key `['categories']`
+- [x] `BudgetTab`: replace `getBudgets`, `upsertBudget`, `deleteBudget` with localDb equivalents; query key `['budgets']`
 
 **`src/routes/analytics.tsx`**
-- [ ] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
+- [x] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
 
 ### 7.7 Wire init + unlock — `src/routes/__root.tsx`
 

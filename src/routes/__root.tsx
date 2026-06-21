@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import {
   HeadContent,
@@ -12,11 +12,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { User } from '@supabase/supabase-js'
 
 import { getServerUser } from '../lib/auth'
-import { provisionDefaultCategories } from '../lib/categories'
+import { provisionDefaultCategories as provisionServerCategories } from '../lib/categories'
+import {
+  unlockLocalDb,
+  provisionDefaultCategories as provisionLocalCategories,
+} from '../lib/localDb'
 import { getLocalStore, setLocalStore } from '../lib/localStore'
 import type { AuthContext } from '../lib/authContext'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
+import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
 import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
@@ -60,7 +65,7 @@ export const Route = createRootRouteWithContext<AuthContext>()({
       const alreadyProvisioned = getLocalStore(user.id, 'categoriesProvisioned')
       if (!alreadyProvisioned) {
         try {
-          await provisionDefaultCategories()
+          await provisionServerCategories()
           setLocalStore(user.id, 'categoriesProvisioned', true)
         } catch (err) {
           if (typeof window === 'undefined' || navigator.onLine) throw err
@@ -106,11 +111,25 @@ export const Route = createRootRouteWithContext<AuthContext>()({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const { auth } = Route.useRouteContext()
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
     }
+    setMounted(true)
   }, [])
+
+  const handleUnlocked = async (key: CryptoKey) => {
+    unlockLocalDb(key)
+    await provisionLocalCategories()
+    setIsUnlocked(true)
+    queryClient.invalidateQueries()
+  }
+
+  const showUnlockDialog = mounted && !!auth.user && !isUnlocked
 
   return (
     <html lang="en">
@@ -121,6 +140,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <Header />
           <OfflineBanner />
+          {showUnlockDialog && (
+            <PasswordUnlockDialog userId={auth.user!.id} onUnlocked={handleUnlocked} />
+          )}
           {children}
           <Toaster richColors position="bottom-center" />
         </QueryClientProvider>

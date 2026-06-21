@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { createIncome } from '@/lib/income'
+import { addIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
-import type { Currency } from '@/lib/domain'
+import type { CreateIncomeInput, Currency } from '@/lib/domain'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,8 +30,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
-    mutationFn: (data: Parameters<typeof createIncome>[0]['data']) =>
-      createIncome({ data }),
+    mutationFn: (data: CreateIncomeInput) => addIncome(data),
     onSuccess: () => {
       setAmount('')
       setSource('')

@@ -1,36 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Database, Tag, Wallet } from 'lucide-react'
 
-import { getUserCategories } from '@/lib/categories'
-import { getOfflineCache, setOfflineCache } from '@/lib/offlineCache'
+import { getAllCategories } from '@/lib/localDb'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
-import type { Category } from '@/lib/domain'
 import PageShell from '@/components/PageShell'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export const Route = createFileRoute('/settings')({
-  loader: async (): Promise<{ categories: Array<Category> }> => {
-    try {
-      const categories = await getUserCategories()
-      if (typeof window !== 'undefined') {
-        void setOfflineCache('categories', categories)
-      }
-      return { categories }
-    } catch (err) {
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        const categories = await getOfflineCache('categories')
-        if (categories) return { categories }
-      }
-      throw err
-    }
-  },
   component: SettingsPage,
 })
 
 function SettingsPage() {
-  const { categories } = Route.useLoaderData()
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: getAllCategories,
+  })
 
   return (
     <PageShell>

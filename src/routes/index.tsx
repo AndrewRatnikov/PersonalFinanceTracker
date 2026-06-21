@@ -1,19 +1,10 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 
-import type {
-  Category,
-  CreateExpenseInput,
-  Expense,
-  MonthlyExpenseSummary,
-} from '@/lib/domain'
-import { getMonthlyExpenses } from '@/lib/analytics'
-import { getUserCategories } from '@/lib/categories'
-import { createExpense, getRecentExpenses } from '@/lib/expenses'
-import {
-  getOfflineCache,
-  setOfflineCache,
-} from '@/lib/offlineCache'
+import type { CreateExpenseInput, Expense, MonthlyExpenseSummary } from '@/lib/domain'
+import { getAllCategories, addExpense, getExpensesForRange } from '@/lib/localDb'
 import DashboardStats from '@/components/index/DashboardStats'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import RecentHistoryList from '@/components/index/RecentHistoryList'
@@ -22,68 +13,65 @@ import { Card, CardContent } from '@/components/ui/card'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/')({
-  loader: async (): Promise<{
-    monthlyStats: Array<MonthlyExpenseSummary>
-    recentExpenses: Array<Expense>
-    categories: Array<Category>
-    fromCache?: boolean
-  }> => {
-    try {
-      const [monthlyStats, recentExpenses, categories] = await Promise.all([
-        getMonthlyExpenses(),
-        getRecentExpenses(),
-        getUserCategories(),
-      ])
-      if (typeof window !== 'undefined') {
-        void setOfflineCache('monthlyStats', monthlyStats)
-        void setOfflineCache('recentExpenses', recentExpenses)
-        void setOfflineCache('categories', categories)
-      }
-      return { monthlyStats, recentExpenses, categories }
-    } catch (err) {
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        const [recentExpenses, categories, monthlyStats] = await Promise.all([
-          getOfflineCache('recentExpenses'),
-          getOfflineCache('categories'),
-          getOfflineCache('monthlyStats'),
-        ])
-        if (recentExpenses && categories) {
-          return {
-            monthlyStats: monthlyStats ?? [],
-            recentExpenses,
-            categories,
-            fromCache: true,
-          }
-        }
-      }
-      throw err
-    }
-  },
   component: Dashboard,
 })
 
+function computeMonthlyStats(expenses: Array<Expense>): Array<MonthlyExpenseSummary> {
+  const monthlyMap: Record<string, number> = {}
+  for (let i = 11; i >= 0; i--) {
+    const d = dayjs().subtract(i, 'month')
+    const key = `${d.year()}-${d.format('MMM')}`
+    monthlyMap[key] = 0
+  }
+  for (const e of expenses) {
+    const d = dayjs(e.createdAt)
+    const key = `${d.year()}-${d.format('MMM')}`
+    if (key in monthlyMap) monthlyMap[key] += Number(e.amount)
+  }
+  return Object.entries(monthlyMap).map(([key, total]) => {
+    const [year, month] = key.split('-')
+    return { month, year, name: month, total }
+  })
+}
+
 function Dashboard() {
-  const { monthlyStats, recentExpenses, categories, fromCache } = Route.useLoaderData()
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [isPending, setIsPending] = useState(false)
 
-  useEffect(() => {
-    if (!fromCache) {
-      void setOfflineCache('recentExpenses', recentExpenses)
-      void setOfflineCache('categories', categories)
-      void setOfflineCache('monthlyStats', monthlyStats)
-    }
-  }, [recentExpenses, categories, monthlyStats, fromCache])
+  const [from] = useState(() =>
+    dayjs().subtract(11, 'month').startOf('month').toISOString(),
+  )
+  const [to] = useState(() => dayjs().endOf('day').toISOString())
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: getAllCategories,
+  })
+
+  const { data: expenses = [] } = useQuery({
+    queryKey: ['expenses', from, to],
+    queryFn: () => getExpensesForRange(from, to),
+  })
+
+  const monthlyStats = useMemo(() => computeMonthlyStats(expenses), [expenses])
+  const recentExpenses = useMemo(() => expenses.slice(0, 10), [expenses])
+
+  const addMutation = useMutation({
+    mutationFn: (data: CreateExpenseInput) => addExpense(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] })
+      toast.success('Expense saved')
+    },
+    onError: (error: any) => {
+      console.error('Failed to create expense:', error)
+      toast.error('Failed to save expense. Please try again.')
+    },
+  })
 
   const handleCreateExpense = async (data: CreateExpenseInput) => {
     setIsPending(true)
     try {
-      await createExpense({ data })
-      await router.invalidate()
-      toast.success('Expense saved')
-    } catch (error) {
-      console.error('Failed to create expense:', error)
-      toast.error('Failed to save expense. Please try again.')
+      await addMutation.mutateAsync(data)
     } finally {
       setIsPending(false)
     }

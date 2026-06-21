@@ -1,13 +1,16 @@
 import { useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { Download, Upload } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Download, FlaskConical, Upload } from 'lucide-react'
 import { exportExpensesCSV, importExpensesCSV } from '@/lib/csvTools'
+import { seedTestData } from '@/lib/seedData'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export function DataToolsTab() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [exportPending, setExportPending] = useState(false)
@@ -18,6 +21,25 @@ export function DataToolsTab() {
     errors: Array<string>
   } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [seedPending, setSeedPending] = useState(false)
+  const [seedResult, setSeedResult] = useState<{ expenses: number; income: number; budgets: number } | null>(null)
+  const [seedError, setSeedError] = useState<string | null>(null)
+
+  // --- Seed ---
+  const handleSeed = async () => {
+    setSeedPending(true)
+    setSeedError(null)
+    setSeedResult(null)
+    try {
+      const result = await seedTestData()
+      setSeedResult(result)
+      await queryClient.invalidateQueries()
+    } catch (e: any) {
+      setSeedError(e?.message ?? 'Seed failed')
+    } finally {
+      setSeedPending(false)
+    }
+  }
 
   // --- Export ---
   const handleExport = async () => {
@@ -139,6 +161,43 @@ export function DataToolsTab() {
                   </ul>
                 </AlertDescription>
               )}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Seed test data */}
+      <Card className="bg-card/50 border-border backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Seed Test Data</CardTitle>
+          <CardDescription>
+            Load 3 months of realistic expenses, income entries, and budgets for manual testing.
+            Only works on an empty dataset.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <Button
+            onClick={handleSeed}
+            disabled={seedPending}
+            variant="outline"
+            className="self-start flex items-center gap-2"
+          >
+            <FlaskConical size={16} />
+            {seedPending ? 'Seeding…' : 'Load test data'}
+          </Button>
+
+          {seedError && (
+            <Alert variant="destructive" className="bg-destructive/10">
+              <AlertDescription>{seedError}</AlertDescription>
+            </Alert>
+          )}
+
+          {seedResult && (
+            <Alert className="bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+              <AlertTitle className="text-sm">
+                ✓ Seeded {seedResult.expenses} expenses, {seedResult.income} income entries,{' '}
+                {seedResult.budgets} budgets.
+              </AlertTitle>
             </Alert>
           )}
         </CardContent>
