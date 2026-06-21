@@ -385,12 +385,12 @@ _Depends on #6 — IDB infrastructure and offlineCache module exist._
 
 **Architectural shift**
 
-| | Before | After |
-|---|---|---|
-| Primary store | Supabase (PostgreSQL) | IndexedDB (encrypted) |
-| Offline data | IDB read-through cache | IDB is the source of truth |
-| Server functions | All CRUD | Auth only |
-| Analytics | Computed server-side | Computed client-side from IDB |
+|                  | Before                 | After                         |
+| ---------------- | ---------------------- | ----------------------------- |
+| Primary store    | Supabase (PostgreSQL)  | IndexedDB (encrypted)         |
+| Offline data     | IDB read-through cache | IDB is the source of truth    |
+| Server functions | All CRUD               | Auth only                     |
+| Analytics        | Computed server-side   | Computed client-side from IDB |
 
 **Key derivation strategy:** the user provides a local encryption password on every login. The key is derived from that password using PBKDF2-SHA256 (200,000 iterations) with a per-device random salt stored in `localStorage` under `minima_device_salt_{userId}`. The derived `CryptoKey` lives only in a module-level variable — never written to storage. To detect a wrong password without storing the password itself, a small sentinel blob is encrypted with the derived key and stored in `localStorage` under `minima_key_verify_{userId}`; successful decryption of that blob confirms the correct password. On sign-out the in-memory key and the IDB data are wiped; the device salt and verifier are kept so the same user can re-enter their password on next login on the same device.
 
@@ -416,12 +416,12 @@ This module replaces direct calls to server functions for all data operations. `
 
 **IDB store layout** (one `idb-keyval` custom store `'minima-local'` / `'data'`):
 
-| Key | Type |
-|---|---|
-| `'expenses'` | `Array<Expense>` |
-| `'categories'` | `Array<Category>` |
-| `'income'` | `Array<IncomeEntry>` |
-| `'budgets'` | `Array<BudgetEntry>` |
+| Key            | Type                 |
+| -------------- | -------------------- |
+| `'expenses'`   | `Array<Expense>`     |
+| `'categories'` | `Array<Category>`    |
+| `'income'`     | `Array<IncomeEntry>` |
+| `'budgets'`    | `Array<BudgetEntry>` |
 
 - [x] Module-level `let _key: CryptoKey | null = null`
 - [x] Create a `createStore('minima-local', 'data')` store (same guard pattern as `offlineCache.ts`)
@@ -473,25 +473,30 @@ Replace the `getRangeAnalytics` server function with a client-side computation o
 All routes drop their Supabase server function calls. Data fetching moves entirely to React Query `useQuery` against `localDb` functions. The SSR `loader` for each route becomes auth-only (no data).
 
 **`src/routes/index.tsx`**
+
 - [x] Remove `getMonthlyExpenses()`, `getRecentExpenses()`, `getUserCategories()` from the `loader`; remove the offline try/catch pattern — it is no longer needed
 - [x] Add `useQuery(['categories'], getAllCategories)` and `useQuery(['expenses'], getAllExpenses)` in the component
 - [x] Compute monthly stats client-side: group `getAllExpenses()` result by month/year, sum totals — replaces `MonthlyExpenseSummary` server logic
 - [x] Remove `fromCache` flag handling (IDB is always the source of truth now)
 
 **`src/routes/transactions.tsx`**
+
 - [x] Replace `getTransactionsPaginated` fetcher with a local function that calls `getAllExpenses()` and paginates in-memory (sort by `createdAt` descending, slice by `pageIndex`/`pageSize`)
 - [x] Replace `createExpense` mutation with `addExpense` from `localDb`; keep `toast.success` / `toast.error` and `queryClient.invalidateQueries(['expenses'])`
 - [x] Replace `deleteExpense` mutation with `deleteExpense` from `localDb`
 
 **`src/routes/income.tsx`**
+
 - [x] Same pattern: replace `getIncomePaginated`, `createIncome`, `deleteIncome` with localDb equivalents; query key stays `['income']`
 
 **`src/routes/settings.tsx`**
+
 - [x] Remove `getUserCategories()` from the `loader`; remove offline try/catch
 - [x] `CategoriesTab`: replace `createCategory`, `updateCategory`, `deleteCategory` mutations and `getUserCategories` query with localDb equivalents; query key `['categories']`
 - [x] `BudgetTab`: replace `getBudgets`, `upsertBudget`, `deleteBudget` with localDb equivalents; query key `['budgets']`
 
 **`src/routes/analytics.tsx`**
+
 - [x] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
 
 ### 7.7 Wire init + unlock — `src/routes/__root.tsx` ✅
@@ -514,14 +519,39 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 
 ### 7.10 Verify
 
-- [ ] First login: confirm password creation dialog appears; create password; confirm app loads
-- [ ] Reload page: confirm password entry dialog appears (not creation); enter same password; confirm app loads with existing data
-- [ ] Enter wrong password on reload: confirm inline "Incorrect password" error; correct password then works
-- [ ] Create a new expense; DevTools → IndexedDB → `minima-local` → `data` → confirm `expenses` is a binary blob, not readable JSON
-- [ ] DevTools → Network → Offline; reload + enter password — confirm dashboard loads from IDB with no server calls
-- [ ] Add an expense while offline; go back online; confirm it persists (written directly to IDB)
-- [ ] Sign out; sign back in with the same password — confirm data is still present (deviceSalt + verifier were kept; IDB was re-populated from migration)
-- [ ] Open a second browser profile: confirm a different `deviceSalt` is generated; IDB blobs from the first profile cannot be decrypted even with the same password
+- [x] First login: confirm password creation dialog appears; create password; confirm app loads
+- [x] Reload page: confirm password entry dialog appears (not creation); enter same password; confirm app loads with existing data
+- [x] Enter wrong password on reload: confirm inline "Incorrect password" error; correct password then works
+- [x] Create a new expense; DevTools → IndexedDB → `minima-local` → `data` → confirm `expenses` is a binary blob, not readable JSON
+- [x] DevTools → Network → Offline; reload + enter password — confirm dashboard loads from IDB with no server calls
+- [-] Add an expense while offline; go back online; confirm it persists (written directly to IDB)
+- [x] Sign out; sign back in with the same password — confirm data is still present (deviceSalt + verifier were kept; IDB was re-populated from migration)
+- [x] Open a second browser profile: confirm a different `deviceSalt` is generated; IDB blobs from the first profile cannot be decrypted even with the same password
+
+### 7.11 Fix offline navigation regression
+
+_After the local-first migration, the app is not navigable when offline. Root cause: the `beforeLoad` offline fallback in `src/routes/__root.tsx` only activates when `navigator.onLine === false`. That flag is unreliable — the browser can report online while a network request is already failing. Any fetch error from `getServerUser()` that does not pass the `!navigator.onLine` guard is re-thrown, which crashes navigation before the unlock dialog ever renders._
+
+- [ ] Widen the offline catch in `beforeLoad` — instead of gating on `navigator.onLine`, fall back to the localStorage user whenever `getServerUser()` throws on the client **and** a cached user exists in `minima_offline_user`; only re-throw when the client is confirmed online **and** no cached user is present (genuine auth failure):
+
+  ```ts
+  } catch (err) {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(OFFLINE_USER_KEY)
+      if (raw) {
+        user = JSON.parse(raw) as User   // use cached identity regardless of onLine flag
+      } else if (!navigator.onLine) {
+        user = null                        // offline, no cache → let redirect handle it
+      } else {
+        throw err                          // online, no cache → real auth error
+      }
+    } else {
+      throw err
+    }
+  }
+  ```
+
+- [ ] Verify: DevTools → Network → Offline; hard-reload — confirm the unlock dialog appears without a 3-second hang or uncaught error; enter password; confirm dashboard renders data from IDB
 
 ---
 
