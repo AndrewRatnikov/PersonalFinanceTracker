@@ -501,10 +501,10 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 - [x] In `RootDocument`, read `user` from route context; if `user` is present and `_key` is null, render `<PasswordUnlockDialog userId={user.id} onUnlocked={unlockLocalDb} />` as a full-screen overlay before `{children}`
 - [x] After `onUnlocked` fires (key set), trigger `provisionDefaultCategories()` and `runDataMigration(user.id)` from `localDb` — these require `_key` to write to IDB; run them once via a `useEffect` keyed on whether the key is set
 
-### 7.8 Premium Supabase sync (stub — not wired)
+### 7.8 Premium Supabase sync (stub — not wired) ✅
 
-- [ ] Add `export const ENABLE_SUPABASE_SYNC = false` at the top of `src/lib/localDb.ts`
-- [ ] Add a comment block explaining: when `true`, each write mutation should also call the corresponding server function in `src/lib/expenses.ts` / `categories.ts` / `income.ts` / `budgets.ts`; guarded behind a Premium check; not implemented yet
+- [x] Add `export const ENABLE_SUPABASE_SYNC = false` at the top of `src/lib/localDb.ts`
+- [x] Add a comment block explaining: when `true`, each write mutation should also call the corresponding server function in `src/lib/expenses.ts` / `categories.ts` / `income.ts` / `budgets.ts`; guarded behind a Premium check; not implemented yet
 
 ### 7.9 Retire `src/lib/offlineCache.ts`
 
