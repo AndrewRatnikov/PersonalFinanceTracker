@@ -12,12 +12,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { User } from '@supabase/supabase-js'
 
 import { getServerUser } from '../lib/auth'
-import { provisionDefaultCategories as provisionServerCategories } from '../lib/categories'
 import {
-  unlockLocalDb,
+  initLocalDb,
   provisionDefaultCategories as provisionLocalCategories,
+  unlockLocalDb,
 } from '../lib/localDb'
-import { getLocalStore, setLocalStore } from '../lib/localStore'
 import type { AuthContext } from '../lib/authContext'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
@@ -61,17 +60,8 @@ export const Route = createRootRouteWithContext<AuthContext>()({
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }
 
-    if (user) {
-      const alreadyProvisioned = getLocalStore(user.id, 'categoriesProvisioned')
-      if (!alreadyProvisioned) {
-        try {
-          await provisionServerCategories()
-          setLocalStore(user.id, 'categoriesProvisioned', true)
-        } catch (err) {
-          if (typeof window === 'undefined' || navigator.onLine) throw err
-          // Offline — skip provisioning, will retry on next online session
-        }
-      }
+    if (user && typeof window !== 'undefined') {
+      initLocalDb(user.id)
     }
 
     return { auth: { user, isLoading } }

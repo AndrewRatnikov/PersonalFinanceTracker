@@ -494,12 +494,12 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 **`src/routes/analytics.tsx`**
 - [x] Replace `getRangeAnalytics({ from, to })` call with `computeRangeAnalytics(from, to)` from `localAnalytics.ts`
 
-### 7.7 Wire init + unlock — `src/routes/__root.tsx`
+### 7.7 Wire init + unlock — `src/routes/__root.tsx` ✅
 
-- [ ] In `beforeLoad`, after `getServerUser()` resolves and `user` is non-null, call `initLocalDb(user.id)` client-side (sets up the IDB store and device salt in module scope; no key derived yet)
-- [ ] Remove the `provisionDefaultCategories()` server function call from `beforeLoad` entirely — it requires the key to write to IDB and must happen after unlock (see below)
-- [ ] In `RootDocument`, read `user` from route context; if `user` is present and `_key` is null, render `<PasswordUnlockDialog userId={user.id} onUnlocked={unlockLocalDb} />` as a full-screen overlay before `{children}`
-- [ ] After `onUnlocked` fires (key set), trigger `provisionDefaultCategories()` and `runDataMigration(user.id)` from `localDb` — these require `_key` to write to IDB; run them once via a `useEffect` keyed on whether the key is set
+- [x] In `beforeLoad`, after `getServerUser()` resolves and `user` is non-null, call `initLocalDb(user.id)` client-side (sets up the IDB store and device salt in module scope; no key derived yet)
+- [x] Remove the `provisionDefaultCategories()` server function call from `beforeLoad` entirely — it requires the key to write to IDB and must happen after unlock (see below)
+- [x] In `RootDocument`, read `user` from route context; if `user` is present and `_key` is null, render `<PasswordUnlockDialog userId={user.id} onUnlocked={unlockLocalDb} />` as a full-screen overlay before `{children}`
+- [x] After `onUnlocked` fires (key set), trigger `provisionDefaultCategories()` and `runDataMigration(user.id)` from `localDb` — these require `_key` to write to IDB; run them once via a `useEffect` keyed on whether the key is set
 
 ### 7.8 Premium Supabase sync (stub — not wired)
 
