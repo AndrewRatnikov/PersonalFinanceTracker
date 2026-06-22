@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { Download, Upload } from 'lucide-react'
-import { exportExpensesCSV, importExpensesCSV } from '@/lib/csvTools'
+import { importExpensesCSV } from '@/lib/csvTools'
+import { exportAllLocalData } from '@/lib/localExport'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -23,14 +24,7 @@ export function DataToolsTab() {
   const handleExport = async () => {
     setExportPending(true)
     try {
-      const csv = await exportExpensesCSV()
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'minima-spend-export.csv'
-      a.click()
-      URL.revokeObjectURL(url)
+      await exportAllLocalData()
     } catch (e: any) {
       console.error('Export failed:', e)
     } finally {
@@ -68,7 +62,7 @@ export function DataToolsTab() {
         <CardHeader>
           <CardTitle className="text-lg">Export to CSV</CardTitle>
           <CardDescription>
-            Download all your expenses as a spreadsheet-compatible CSV file.
+            Download all your data as CSV files: expenses, income, categories, and budgets.
           </CardDescription>
         </CardHeader>
         <CardContent>
