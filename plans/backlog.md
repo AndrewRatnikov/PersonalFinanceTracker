@@ -575,7 +575,7 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 ### 8.2 Sign-out confirmation dialog
 
-- [ ] Replace the sign-out button in `src/components/Header.tsx` with an `AlertDialog` confirmation:
+- [x] Replace the sign-out button in `src/components/Header.tsx` with an `AlertDialog` confirmation:
   - Title: `"Sign out?"`
   - Description: `"All locally stored data — expenses, categories, income, and budgets — will be permanently deleted from this device. Export your data first if you want to keep a copy."`
   - Secondary action button: `"Export my data"` — calls `exportAllLocalData()` without closing the dialog, so the user can download and then confirm
@@ -585,7 +585,7 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 ### 8.3 Sign-out cleanup
 
-- [ ] Wrap the sign-out flow in a helper that runs in this order:
+- [x] Wrap the sign-out flow in a helper that runs in this order:
   1. `exportAllLocalData()` is already opt-in from the dialog — no automatic export here
   2. `wipeLocalDbKey()` from `src/lib/localDb.ts` — clears the in-memory `CryptoKey`
   3. `clearLocalDb()` from `src/lib/localDb.ts` — wipes all encrypted IDB blobs

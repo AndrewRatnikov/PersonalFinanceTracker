@@ -1,6 +1,8 @@
-import { Link } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { BarChart3, Home, LogOut, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
+import { toast } from 'sonner'
 import { Route } from '../routes/__root'
-import { BarChart3, Home, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
 import { BrandIcon } from './BrandIcon'
 import {
   Sheet,
@@ -10,7 +12,21 @@ import {
   SheetTrigger,
   SheetClose,
 } from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { createBrowserSupabaseClient } from '@/lib/supabase'
+import { clearLocalDb, wipeLocalDbKey } from '@/lib/localDb'
+import { exportAllLocalData } from '@/lib/localExport'
 
 const NAV_LINKS = [
   { to: '/', icon: Home, label: 'Home' },
@@ -21,9 +37,39 @@ const NAV_LINKS = [
   { to: '/profile', icon: User2, label: 'Profile' },
 ] as const
 
+const OFFLINE_USER_KEY = 'minima_offline_user'
+
 export default function Header() {
   const { auth } = Route.useRouteContext()
   const user = auth?.user
+  const navigate = useNavigate()
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      await exportAllLocalData()
+    } catch {
+      toast.error('Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    wipeLocalDbKey()
+    await clearLocalDb()
+
+    if (user) {
+      localStorage.removeItem(`minima_migrated_${user.id}`)
+    }
+    localStorage.removeItem(OFFLINE_USER_KEY)
+
+    const supabase = createBrowserSupabaseClient()
+    await supabase.auth.signOut()
+
+    navigate({ to: '/login' })
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
@@ -40,14 +86,9 @@ export default function Header() {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent
-              side="left"
-              className="w-80 flex flex-col p-0"
-            >
+            <SheetContent side="left" className="w-80 flex flex-col p-0">
               <SheetHeader className="p-6 border-b">
-                <SheetTitle className="text-xl font-bold">
-                  Navigation
-                </SheetTitle>
+                <SheetTitle className="text-xl font-bold">Navigation</SheetTitle>
               </SheetHeader>
 
               <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
@@ -67,6 +108,47 @@ export default function Header() {
                   </SheetClose>
                 ))}
               </nav>
+
+              <div className="p-4 border-t">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <LogOut className="h-5 w-5" />
+                      Sign out
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        All locally stored data — expenses, categories, income, and budgets — will
+                        be permanently deleted from this device. Export your data first if you want
+                        to keep a copy.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                      <Button
+                        variant="outline"
+                        className="sm:mr-auto"
+                        onClick={handleExport}
+                        disabled={exporting}
+                      >
+                        {exporting ? 'Exporting…' : 'Export my data'}
+                      </Button>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={handleSignOut}
+                      >
+                        Sign out &amp; delete data
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </SheetContent>
           </Sheet>
         ) : null}
