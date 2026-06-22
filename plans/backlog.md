@@ -601,8 +601,8 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 ### 8.5 Verify
 
-- [ ] Click sign-out → confirm the dialog appears with the warning description
-- [ ] Click "Export my data" → confirm four `.csv` files download (expenses, income, categories, budgets); dialog remains open
-- [ ] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm `minima_migrated_{userId}` and `minima_offline_user` are gone but `minima_device_salt_{userId}` and `minima_key_verify_{userId}` are still present
-- [ ] Navigate back to `/` — confirm redirect to `/login` with no stale data
-- [ ] Sign back in → confirm password entry dialog (not creation) → enter same password → app loads with empty data (IDB was wiped; migration re-seeds from Supabase if applicable)
+- [x] Click sign-out → confirm the dialog appears with the warning description
+- [x] Click "Export my data" → confirm four `.csv` files download (expenses, income, categories, budgets); dialog remains open
+- [x] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm `minima_migrated_{userId}` and `minima_offline_user` are gone but `minima_device_salt_{userId}` and `minima_key_verify_{userId}` are still present
+- [x] Navigate back to `/` — confirm redirect to `/login` with no stale data
+- [x] Sign back in → confirm password entry dialog (not creation) → enter same password → app loads with empty data (IDB was wiped; migration re-seeds from Supabase if applicable)
