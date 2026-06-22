@@ -1,10 +1,11 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { LogOut, Mail, User2 } from 'lucide-react'
+import { useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { Mail, User2 } from 'lucide-react'
 
 import { getServerUserProfile } from '@/lib/auth'
 import type { UserProfile } from '@/lib/auth'
-import { createBrowserSupabaseClient } from '@/lib/supabase'
 import PageShell from '@/components/PageShell'
+import { SignOutDialog } from '@/components/SignOutDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
@@ -17,13 +18,8 @@ export const Route = createFileRoute('/profile')({
 
 function ProfilePage() {
   const user = Route.useLoaderData()
-  const router = useRouter()
-
-  const handleSignOut = async () => {
-    const supabase = createBrowserSupabaseClient()
-    await supabase.auth.signOut()
-    router.navigate({ to: '/login' })
-  }
+  const { auth } = Route.useRouteContext()
+  const [signOutOpen, setSignOutOpen] = useState(false)
 
   if (!user) return null
 
@@ -60,15 +56,20 @@ function ProfilePage() {
 
             <Button
               variant="destructive"
-              onClick={handleSignOut}
+              onClick={() => setSignOutOpen(true)}
               size="lg"
               className="w-full sm:w-auto px-8"
             >
-              <LogOut className="mr-2 h-4 w-4" />
               Sign Out
             </Button>
           </CardContent>
         </Card>
+
+        <SignOutDialog
+          userId={auth.user!.id}
+          open={signOutOpen}
+          onOpenChange={setSignOutOpen}
+        />
       </div>
     </PageShell>
   )

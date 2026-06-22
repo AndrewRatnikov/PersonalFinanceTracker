@@ -1,8 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { BarChart3, Home, LogOut, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
+import { BarChart3, Home, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
 import { Route } from '../routes/__root'
 import { BrandIcon } from './BrandIcon'
-import { SignOutDialog } from './SignOutDialog'
 import {
   Sheet,
   SheetContent,
@@ -63,18 +62,6 @@ export default function Header() {
                   </SheetClose>
                 ))}
               </nav>
-
-              <div className="p-4 border-t">
-                <SignOutDialog userId={user.id}>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <LogOut className="h-5 w-5" />
-                    Sign out
-                  </Button>
-                </SignOutDialog>
-              </div>
             </SheetContent>
           </Sheet>
         ) : null}

@@ -10,7 +10,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
@@ -21,10 +20,11 @@ const OFFLINE_USER_KEY = 'minima_offline_user'
 
 interface Props {
   userId: string
-  children: React.ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-export function SignOutDialog({ userId, children }: Props) {
+export function SignOutDialog({ userId, open, onOpenChange }: Props) {
   const navigate = useNavigate()
   const [exporting, setExporting] = useState(false)
 
@@ -53,8 +53,7 @@ export function SignOutDialog({ userId, children }: Props) {
   }
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Sign out?</AlertDialogTitle>
