@@ -42,9 +42,17 @@ export const Route = createRootRouteWithContext<AuthContext>()({
         )
       }
     } catch (err) {
-      if (typeof window !== 'undefined' && !navigator.onLine) {
+      if (typeof window !== 'undefined') {
         const raw = localStorage.getItem(OFFLINE_USER_KEY)
-        user = raw ? (JSON.parse(raw) as User) : null
+        if (raw) {
+          // Use cached identity regardless of navigator.onLine — the flag is
+          // unreliable; a failed fetch is enough signal to fall back.
+          user = JSON.parse(raw) as User
+        } else if (!navigator.onLine) {
+          user = null // offline, no cache → redirect to login
+        } else {
+          throw err // online, no cache → real auth error
+        }
       } else {
         throw err
       }
@@ -120,6 +128,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   }
 
   const showUnlockDialog = mounted && !!auth.user && !isUnlocked
+  // Don't render route children until the DB is unlocked. Before `mounted`
+  // is true (SSR + first paint) children render normally so hydration matches
+  // the server output. After mount, if a user is present but not yet unlocked,
+  // we hide children so their useQuery hooks don't run with _key = null and
+  // cache empty results that then need to be forcibly invalidated.
+  const showChildren = !mounted || !auth.user || isUnlocked
 
   return (
     <html lang="en">
@@ -131,9 +145,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <Header />
           <OfflineBanner />
           {showUnlockDialog && (
-            <PasswordUnlockDialog userId={auth.user!.id} onUnlocked={handleUnlocked} />
+            <PasswordUnlockDialog
+              userId={auth.user!.id}
+              onUnlocked={handleUnlocked}
+            />
           )}
-          {children}
+          {showChildren && children}
           <Toaster richColors position="bottom-center" />
         </QueryClientProvider>
         <TanStackDevtools

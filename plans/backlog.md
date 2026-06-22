@@ -528,11 +528,11 @@ All routes drop their Supabase server function calls. Data fetching moves entire
 - [x] Sign out; sign back in with the same password — confirm data is still present (deviceSalt + verifier were kept; IDB was re-populated from migration)
 - [x] Open a second browser profile: confirm a different `deviceSalt` is generated; IDB blobs from the first profile cannot be decrypted even with the same password
 
-### 7.11 Fix offline navigation regression
+### 7.11 Fix offline navigation regression ✅
 
 _After the local-first migration, the app is not navigable when offline. Root cause: the `beforeLoad` offline fallback in `src/routes/__root.tsx` only activates when `navigator.onLine === false`. That flag is unreliable — the browser can report online while a network request is already failing. Any fetch error from `getServerUser()` that does not pass the `!navigator.onLine` guard is re-thrown, which crashes navigation before the unlock dialog ever renders._
 
-- [ ] Widen the offline catch in `beforeLoad` — instead of gating on `navigator.onLine`, fall back to the localStorage user whenever `getServerUser()` throws on the client **and** a cached user exists in `minima_offline_user`; only re-throw when the client is confirmed online **and** no cached user is present (genuine auth failure):
+- [x] Widen the offline catch in `beforeLoad` — instead of gating on `navigator.onLine`, fall back to the localStorage user whenever `getServerUser()` throws on the client **and** a cached user exists in `minima_offline_user`; only re-throw when the client is confirmed online **and** no cached user is present (genuine auth failure):
 
   ```ts
   } catch (err) {
@@ -551,7 +551,7 @@ _After the local-first migration, the app is not navigable when offline. Root ca
   }
   ```
 
-- [ ] Verify: DevTools → Network → Offline; hard-reload — confirm the unlock dialog appears without a 3-second hang or uncaught error; enter password; confirm dashboard renders data from IDB
+- [x] Verify: DevTools → Network → Offline; hard-reload — confirm the unlock dialog appears without a 3-second hang or uncaught error; enter password; confirm dashboard renders data from IDB
 
 ---
 
