@@ -563,7 +563,7 @@ _Depends on #7. With IDB as the primary data store (not just a cache), clearing 
 
 The existing `exportExpensesCSV` in `csvTools.ts` is a server function that reads from Supabase. After #7 all data lives in IDB, so it must be replaced with a client-side export covering all four collections.
 
-- [ ] Export `exportAllLocalData(): Promise<void>`:
+- [x] Export `exportAllLocalData(): Promise<void>`:
   - Reads `getAllExpenses()`, `getAllCategories()`, `getAllIncome()`, `getAllBudgets()` in parallel from `localDb`
   - Builds four CSV strings:
     - **expenses.csv** — columns: `date, amount, currency, category, description` (same format as the existing `exportExpensesCSV` so import still works)
@@ -597,7 +597,7 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 ### 8.4 Update `csvTools.ts`
 
-- [ ] Mark `exportExpensesCSV` server function as deprecated with a comment pointing to `localExport.ts`; do not delete it yet — the import UI still references it and will be migrated separately
+- [x] Mark `exportExpensesCSV` server function as deprecated with a comment pointing to `localExport.ts`; do not delete it yet — the import UI still references it and will be migrated separately
 
 ### 8.5 Verify
 

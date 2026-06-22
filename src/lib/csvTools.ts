@@ -10,8 +10,8 @@ import type { Currency } from './domain'
 // ---------------------------------------------------------------------------
 
 /**
- * Returns all of the current user's expenses as a CSV string.
- * Columns: date, amount, currency, category, description
+ * @deprecated Use `exportAllLocalData` from `localExport.ts` instead.
+ * This server function reads from Supabase; all data now lives in IDB.
  */
 export const exportExpensesCSV = createServerFn({ method: 'GET' }).handler(
   async (): Promise<string> => {
