@@ -27,7 +27,12 @@ import appCss from '../styles.css?url'
 
 const OFFLINE_USER_KEY = 'minima_offline_user'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { networkMode: 'offlineFirst' },
+    mutations: { networkMode: 'offlineFirst' },
+  },
+})
 
 export const Route = createRootRouteWithContext<AuthContext>()({
   beforeLoad: async ({ location }) => {
