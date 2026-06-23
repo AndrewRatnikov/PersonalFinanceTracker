@@ -740,8 +740,8 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/routes/index.tsx:41`
 
-- [ ] Replace the `useState(() => dayjs().endOf('day').toISOString())` initialiser for `to` with a `useMemo` that derives `from`/`to` from `dayjs().format('YYYY-MM-DD')` so the range re-computes when the date changes
-- [ ] Alternatively, invalidate the range query when a new expense is added so the UI always reflects the current day
+- [x] Replace the `useState(() => dayjs().endOf('day').toISOString())` initialiser for `to` with a `useMemo` that derives `from`/`to` from `dayjs().format('YYYY-MM-DD')` so the range re-computes when the date changes
+- [-] Alternatively, invalidate the range query when a new expense is added so the UI always reflects the current day
 
 #### 10.4.2 `categoryId` accepts empty string
 

@@ -38,10 +38,11 @@ function Dashboard() {
   const queryClient = useQueryClient()
   const [isPending, setIsPending] = useState(false)
 
-  const [from] = useState(() =>
-    dayjs().subtract(11, 'month').startOf('month').toISOString(),
-  )
-  const [to] = useState(() => dayjs().endOf('day').toISOString())
+  const todayStr = dayjs().format('YYYY-MM-DD')
+  const { from, to } = useMemo(() => ({
+    from: dayjs(todayStr).subtract(11, 'month').startOf('month').toISOString(),
+    to: dayjs(todayStr).endOf('day').toISOString(),
+  }), [todayStr])
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
