@@ -606,3 +606,56 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 - [x] Click "Sign out & delete data" → DevTools → Application → IndexedDB → confirm `minima-local` store is empty; LocalStorage → confirm `minima_migrated_{userId}` and `minima_offline_user` are gone but `minima_device_salt_{userId}` and `minima_key_verify_{userId}` are still present
 - [x] Navigate back to `/` — confirm redirect to `/login` with no stale data
 - [x] Sign back in → confirm password entry dialog (not creation) → enter same password → app loads with empty data (IDB was wiped; migration re-seeds from Supabase if applicable)
+
+---
+
+## 9. Full local CSV import
+
+_The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categories.csv`, `budgets.csv`). The current import in `DataToolsTab` only handles a single expenses file and still calls the deprecated Supabase server function `importExpensesCSV` from `csvTools.ts`, which writes to Supabase — not IDB. This step replaces it with a client-side importer that covers all four collections._
+
+### 9.1 Local import module — `src/lib/localImport.ts` (new file)
+
+- [ ] Add shared `parseCSV(text: string): Array<Record<string, string>>` helper — splits lines, uses the first row as column headers, handles quoted fields and escaped `""` sequences; returns objects keyed by header name
+- [ ] Add `importCategoriesFromCSV(csv: string): Promise<ImportResult>` where `ImportResult = { inserted: number; skipped: number; errors: Array<string> }`:
+  - Reads existing categories from IDB once to build a name-based dedupe set
+  - For each row: require non-empty `name`; skip without error if a category with the same name already exists; otherwise call `addCategory({ name, icon: icon || null })`
+- [ ] Add `importExpensesFromCSV(csv: string): Promise<ImportResult>`:
+  - Reads `getAllCategories()` once to build a case-insensitive `name → id` map
+  - For each row: validate `amount` is a positive finite number; validate `currency` is in `CURRENCIES`; look up `category` name — error the row if not found; parse `date` with `new Date(dateStr)` (fall back to `new Date()` if blank/invalid); call `addExpense({ amount, currency, categoryId, description: description || undefined, createdAt: date.toISOString() })`
+- [ ] Add `importIncomeFromCSV(csv: string): Promise<ImportResult>`:
+  - For each row: require non-empty `source`; validate `amount` positive; validate `currency`; parse `date`; call `addIncome({ source, amount, currency, description: description || undefined, createdAt: date.toISOString() })`
+- [ ] Add `importBudgetsFromCSV(csv: string): Promise<ImportResult>`:
+  - Reads `getAllCategories()` to build a name → id map
+  - For each row: look up `category` name; validate `monthly_limit` positive; validate `currency`; call `upsertBudget({ categoryId, monthlyLimit, currency })`
+- [ ] Add top-level `importLocalDataFile(file: File): Promise<{ type: string; result: ImportResult }>` dispatcher:
+  - Detects importer by filename (case-insensitive): `categories.csv` → categories, `expenses.csv` → expenses, `income.csv` → income, `budgets.csv` → budgets
+  - Falls back to header-sniffing if filename doesn't match: `source` column → income; `category` + no `source` → expenses; `monthly_limit` column → budgets; `name` + `icon` → categories
+  - If the user uploads an expenses or budgets file while categories IDB store is empty, throws `"Import categories.csv first so expense/budget rows can be matched to categories."`
+
+### 9.2 Extend `addExpense` and `addIncome` — `src/lib/domain.ts` + `src/lib/localDb.ts`
+
+- [ ] Add optional `createdAt?: string` to `CreateExpenseInput` and `CreateIncomeInput` in `src/lib/domain.ts`
+- [ ] In `addExpense`: use `input.createdAt ?? new Date().toISOString()` when building the entry
+- [ ] In `addIncome`: same pattern
+
+### 9.3 Update `DataToolsTab` — `src/components/settings/DataToolsTab.tsx`
+
+- [ ] Replace `import { importExpensesCSV } from '@/lib/csvTools'` with `import { importLocalDataFile } from '@/lib/localImport'`
+- [ ] Add `multiple` attribute to the file input so the user can select all four CSVs at once
+- [ ] When multiple files are selected, import in dependency order: categories first, then expenses, income, and budgets in parallel; collect per-file results
+- [ ] Display results per file in the success alert: one line per file — `"categories.csv — 6 inserted"`, `"expenses.csv — 42 inserted, 3 skipped"` etc.; row-level errors listed below (reuse existing `errors` array rendering pattern)
+- [ ] Update `CardDescription` to: `"Upload one or more CSV files from a Minima export (expenses.csv, income.csv, categories.csv, budgets.csv). Import categories before expenses or budgets."`
+
+### 9.4 Retire the Supabase import — `src/lib/csvTools.ts`
+
+- [ ] Remove the `importExpensesCSV` server function (the `exportExpensesCSV` is already deprecated; this cleans up the last active reference)
+
+### 9.5 Verify
+
+- [ ] Export all data (Settings → Data Tools → Download CSV) — confirm four files download
+- [ ] Sign out → sign back in → IDB is now empty; in Data Tools tab, upload all four CSVs at once
+- [ ] Confirm the success alert shows per-file results with correct inserted counts
+- [ ] Navigate to Transactions, Income, and Settings → Categories, Budget — confirm all records are present and match the original data
+- [ ] Upload only `expenses.csv` when no categories exist — confirm the error `"Import categories.csv first…"` appears; upload `categories.csv` first, then `expenses.csv` — confirm success
+- [ ] Upload an `expenses.csv` row with an unrecognised category name — confirm a row-level error is shown and the row is skipped while valid rows are inserted
+- [ ] Upload a file with a non-standard name (e.g. `my-expenses.csv`) — confirm header-sniffing detects it as expenses and imports correctly
