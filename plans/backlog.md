@@ -659,3 +659,138 @@ _The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categ
 - [x] Upload only `expenses.csv` when no categories exist — confirm the error `"Import categories.csv first…"` appears; upload `categories.csv` first, then `expenses.csv` — confirm success
 - [x] Upload an `expenses.csv` row with an unrecognised category name — confirm a row-level error is shown and the row is skipped while valid rows are inserted
 - [x] Upload a file with a non-standard name (e.g. `my-expenses.csv`) — confirm header-sniffing detects it as expenses and imports correctly
+
+---
+
+## 10. Code review fixes (2026-06-23)
+
+_15 findings from a full-codebase review. Grouped by severity — implement top to bottom._
+
+---
+
+### 10.1 Critical runtime bugs
+
+_These break core functionality silently._
+
+#### 10.1.1 Expense delete always no-ops
+
+**File:** `src/components/transactions/TransactionsTable.tsx:162`
+
+- [ ] Change the `onDelete` prop type from `(id: string) => void` to `(id: string, createdAt: string) => void`
+- [ ] Update the call site to `onDelete(tx.id, tx.createdAt)` so `createdAt` is never `undefined` when it reaches `deleteExpense`
+
+#### 10.1.2 No try/catch in `handleSignOut` — broken state on error
+
+**File:** `src/components/SignOutDialog.tsx:42`
+
+- [ ] Wrap the entire `handleSignOut` body in `try/catch`
+- [ ] In `catch`: show a `toast.error` describing the failure
+- [ ] In `finally`: call `navigate({ to: '/login' })` so the user is never left in a broken state even if a step throws
+
+---
+
+### 10.2 Data integrity
+
+_Bugs that silently corrupt or lose data._
+
+#### 10.2.1 Invalid date → `expenses_NaN_NaN` chunk, data permanently lost
+
+**File:** `src/lib/localDb.ts:82` (`expenseChunkKey`)
+
+- [ ] Add a guard at the top of `expenseChunkKey`: if `new Date(dateStr)` is invalid (`isNaN(date.getTime())`), throw `"expenseChunkKey: invalid date string"` immediately
+- [ ] In `addExpense`, assert that `input.createdAt` (if provided) is a valid ISO string before calling `expenseChunkKey`; throw a descriptive error if not
+
+#### 10.2.2 `deleteCategory` leaves orphaned budget entries
+
+**File:** `src/lib/localDb.ts:233` (`deleteCategory`)
+
+- [ ] After the existing expense-reference check, read the `'budgets'` store
+- [ ] Filter out any budget entry whose `categoryId` matches the deleted category id
+- [ ] Write the filtered array back to `'budgets'` before returning
+
+#### 10.2.3 `updateCategory` non-null assertion crashes on missing id
+
+**File:** `src/lib/localDb.ts:230` (`updateCategory`)
+
+- [ ] Replace `return updated.find((c) => c.id === input.id)!` with an explicit check: if `.find()` returns `undefined`, throw `'Category not found: ' + input.id`
+
+---
+
+### 10.3 Import bugs
+
+#### 10.3.1 `Promise.all` in `DataToolsTab` discards partial success, causes duplication on retry
+
+**File:** `src/components/settings/DataToolsTab.tsx:57`
+
+- [ ] Replace the `Promise.all` over the non-category files with a sequential `for…of` loop (or `Promise.allSettled`) that runs each importer independently
+- [ ] Collect per-file results and errors in an array regardless of individual failures
+- [ ] Always set `importResults` with the collected results; only set `importError` for files that individually failed — never discard results from files that succeeded
+
+#### 10.3.2 `YYYY-MM-DD` dates parsed as UTC midnight — wrong day in UTC− timezones
+
+**File:** `src/lib/localImport.ts:66`
+
+- [ ] Replace `new Date(dateStr)` with `new Date(dateStr + 'T00:00:00')` (no `Z` suffix) wherever a bare date string from CSV is parsed, so it is treated as local midnight rather than UTC midnight
+
+---
+
+### 10.4 UX bugs
+
+#### 10.4.1 `from`/`to` range frozen at mount — new expenses invisible after midnight
+
+**File:** `src/routes/index.tsx:41`
+
+- [ ] Replace the `useState(() => dayjs().endOf('day').toISOString())` initialiser for `to` with a `useMemo` that derives `from`/`to` from `dayjs().format('YYYY-MM-DD')` so the range re-computes when the date changes
+- [ ] Alternatively, invalidate the range query when a new expense is added so the UI always reflects the current day
+
+#### 10.4.2 `categoryId` accepts empty string
+
+**File:** `src/lib/schemas.ts:15` (`createExpenseSchema`)
+
+- [ ] Change `z.string()` to `z.string().min(1, 'Category is required')` for the `categoryId` field
+
+#### 10.4.3 `BudgetRow` inputs go stale after a query refetch or import
+
+**File:** `src/components/settings/BudgetTab.tsx:38`
+
+- [ ] Add `key={existingBudget?.id ?? 'new'}` to the `BudgetRow` component at its call site so React remounts the row (and re-initialises state) whenever the budget identity changes
+
+#### 10.4.4 Income list unsorted — imported historical records appear last
+
+**File:** `src/routes/income.tsx:29`
+
+- [ ] Sort the income array by `createdAt` descending before slicing for pagination, matching the sort order used in the expenses list
+
+---
+
+### 10.5 Security and privacy
+
+#### 10.5.1 Open redirect via unvalidated `redirect_to` query param
+
+**File:** `src/routes/auth.callback.tsx:18`
+
+- [ ] Before passing `redirectTo` to `throw redirect({ to: redirectTo })`, validate that it starts with `/`
+- [ ] Fall back to `'/'` if the value is missing, empty, or an absolute URL
+
+#### 10.5.2 Expense chunk keys readable before password unlock
+
+**File:** `src/lib/localDb.ts:129` (`allExpenseChunkKeys`)
+
+- [ ] Add `if (!_key || !store) return []` at the top of `allExpenseChunkKeys`, consistent with all other read helpers
+
+#### 10.5.3 User email stored in plaintext `localStorage`
+
+**File:** `src/routes/__root.tsx:44`
+
+- [ ] Change the `minima_offline_user` serialisation to store only `{ id }` — drop `email`
+- [ ] Update all read sites that previously destructured `email` from this value to derive display name from the live Supabase session instead
+
+---
+
+### 10.6 Dead code cleanup
+
+#### 10.6.1 `localStore.ts` `categoriesProvisioned` flag is never written or read
+
+**File:** `src/lib/localStore.ts`
+
+- [ ] Delete `src/lib/localStore.ts` entirely — the provisioning guard is already in `provisionDefaultCategories()` in `localDb.ts` (checks if the categories array is non-empty)
