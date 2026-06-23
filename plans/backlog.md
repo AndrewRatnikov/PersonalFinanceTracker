@@ -652,10 +652,10 @@ _The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categ
 
 ### 9.5 Verify
 
-- [ ] Export all data (Settings → Data Tools → Download CSV) — confirm four files download
-- [ ] Sign out → sign back in → IDB is now empty; in Data Tools tab, upload all four CSVs at once
-- [ ] Confirm the success alert shows per-file results with correct inserted counts
-- [ ] Navigate to Transactions, Income, and Settings → Categories, Budget — confirm all records are present and match the original data
-- [ ] Upload only `expenses.csv` when no categories exist — confirm the error `"Import categories.csv first…"` appears; upload `categories.csv` first, then `expenses.csv` — confirm success
-- [ ] Upload an `expenses.csv` row with an unrecognised category name — confirm a row-level error is shown and the row is skipped while valid rows are inserted
-- [ ] Upload a file with a non-standard name (e.g. `my-expenses.csv`) — confirm header-sniffing detects it as expenses and imports correctly
+- [x] Export all data (Settings → Data Tools → Download CSV) — confirm four files download
+- [x] Sign out → sign back in → IDB is now empty; in Data Tools tab, upload all four CSVs at once
+- [x] Confirm the success alert shows per-file results with correct inserted counts
+- [x] Navigate to Transactions, Income, and Settings → Categories, Budget — confirm all records are present and match the original data
+- [x] Upload only `expenses.csv` when no categories exist — confirm the error `"Import categories.csv first…"` appears; upload `categories.csv` first, then `expenses.csv` — confirm success
+- [x] Upload an `expenses.csv` row with an unrecognised category name — confirm a row-level error is shown and the row is skipped while valid rows are inserted
+- [x] Upload a file with a non-standard name (e.g. `my-expenses.csv`) — confirm header-sniffing detects it as expenses and imports correctly
