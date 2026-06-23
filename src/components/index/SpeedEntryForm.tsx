@@ -127,7 +127,7 @@ export default function SpeedEntryForm({
             >
               <SelectTrigger
                 id="category"
-                className="h-11"
+                className={`h-11 ${errors.categoryId ? 'border-destructive' : ''}`}
               >
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
@@ -142,6 +142,9 @@ export default function SpeedEntryForm({
                 ))}
               </SelectContent>
             </Select>
+            {errors.categoryId && (
+              <p className="text-xs text-destructive">{errors.categoryId}</p>
+            )}
           </div>
 
           {/* Description — optional */}

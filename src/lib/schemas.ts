@@ -12,6 +12,6 @@ export const createIncomeSchema = z.object({
 export const createExpenseSchema = z.object({
   amount: z.number().positive('Amount must be greater than 0'),
   currency: z.enum(CURRENCIES),
-  categoryId: z.string(),
+  categoryId: z.string().min(1, 'Category is required'),
   description: z.string().optional(),
 })

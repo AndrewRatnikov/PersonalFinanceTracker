@@ -747,7 +747,7 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/lib/schemas.ts:15` (`createExpenseSchema`)
 
-- [ ] Change `z.string()` to `z.string().min(1, 'Category is required')` for the `categoryId` field
+- [x] Change `z.string()` to `z.string().min(1, 'Category is required')` for the `categoryId` field
 
 #### 10.4.3 `BudgetRow` inputs go stale after a query refetch or import
 
