@@ -125,9 +125,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     setMounted(true)
   }, [])
 
-  const handleUnlocked = async (key: CryptoKey) => {
+  const handleUnlocked = async (key: CryptoKey, isNewUser: boolean) => {
     unlockLocalDb(key)
-    await provisionLocalCategories()
+    if (isNewUser) await provisionLocalCategories()
     setIsUnlocked(true)
     queryClient.invalidateQueries()
   }

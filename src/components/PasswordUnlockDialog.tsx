@@ -21,7 +21,7 @@ import { Label } from '@/components/ui/label'
 
 interface Props {
   userId: string
-  onUnlocked: (key: CryptoKey) => void
+  onUnlocked: (key: CryptoKey, isNewUser: boolean) => void
 }
 
 export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
@@ -54,14 +54,14 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
 
       if (isNewUser) {
         await storeKeyVerifier(key, userId)
-        onUnlocked(key)
+        onUnlocked(key, true)
       } else {
         const valid = await checkKeyVerifier(key, userId)
         if (!valid) {
           setError('Incorrect password')
           return
         }
-        onUnlocked(key)
+        onUnlocked(key, false)
       }
     } catch (err) {
       setError('Something went wrong. Please try again.')
