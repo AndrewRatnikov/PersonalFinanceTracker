@@ -722,9 +722,9 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/components/settings/DataToolsTab.tsx:57`
 
-- [ ] Replace the `Promise.all` over the non-category files with a sequential `for…of` loop (or `Promise.allSettled`) that runs each importer independently
-- [ ] Collect per-file results and errors in an array regardless of individual failures
-- [ ] Always set `importResults` with the collected results; only set `importError` for files that individually failed — never discard results from files that succeeded
+- [x] Replace the `Promise.all` over the non-category files with a sequential `for…of` loop (or `Promise.allSettled`) that runs each importer independently
+- [x] Collect per-file results and errors in an array regardless of individual failures
+- [x] Always set `importResults` with the collected results; only set `importError` for files that individually failed — never discard results from files that succeeded
 
 #### 10.3.2 `YYYY-MM-DD` dates parsed as UTC midnight — wrong day in UTC− timezones
 

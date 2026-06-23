@@ -1,17 +1,24 @@
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Download, Upload } from 'lucide-react'
+import type { ImportResult } from '@/lib/localImport'
 import { exportAllLocalData } from '@/lib/localExport'
 import { importLocalDataFile } from '@/lib/localImport'
-import type { ImportResult } from '@/lib/localImport'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface FileImportResult {
   filename: string
-  type: string
-  result: ImportResult
+  type?: string
+  result?: ImportResult
+  error?: string
 }
 
 export function DataToolsTab() {
@@ -20,7 +27,8 @@ export function DataToolsTab() {
 
   const [exportPending, setExportPending] = useState(false)
   const [importPending, setImportPending] = useState(false)
-  const [importResults, setImportResults] = useState<Array<FileImportResult> | null>(null)
+  const [importResults, setImportResults] =
+    useState<Array<FileImportResult> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
   const handleExport = async () => {
@@ -43,26 +51,43 @@ export function DataToolsTab() {
     setImportPending(true)
 
     try {
-      // Import in dependency order: categories first, then the rest in parallel
-      const categories = files.filter((f) => f.name.toLowerCase().includes('categories'))
-      const rest = files.filter((f) => !f.name.toLowerCase().includes('categories'))
+      // Import in dependency order: categories first, then the rest sequentially/independently
+      const categories = files.filter((f) =>
+        f.name.toLowerCase().includes('categories'),
+      )
+      const rest = files.filter(
+        (f) => !f.name.toLowerCase().includes('categories'),
+      )
 
       const results: Array<FileImportResult> = []
+      const fileErrors: Array<string> = []
 
       for (const file of categories) {
-        const { type, result } = await importLocalDataFile(file)
-        results.push({ filename: file.name, type, result })
+        try {
+          const { type, result } = await importLocalDataFile(file)
+          results.push({ filename: file.name, type, result })
+        } catch (err: any) {
+          const errMsg = err?.message ?? 'Import failed'
+          results.push({ filename: file.name, error: errMsg })
+          fileErrors.push(`${file.name}: ${errMsg}`)
+        }
       }
 
-      const restResults = await Promise.all(
-        rest.map(async (file) => {
+      for (const file of rest) {
+        try {
           const { type, result } = await importLocalDataFile(file)
-          return { filename: file.name, type, result }
-        }),
-      )
-      results.push(...restResults)
+          results.push({ filename: file.name, type, result })
+        } catch (err: any) {
+          const errMsg = err?.message ?? 'Import failed'
+          results.push({ filename: file.name, error: errMsg })
+          fileErrors.push(`${file.name}: ${errMsg}`)
+        }
+      }
 
       setImportResults(results)
+      if (fileErrors.length > 0) {
+        setImportError(fileErrors.join('\n'))
+      }
       queryClient.invalidateQueries()
     } catch (err: any) {
       setImportError(err?.message ?? 'Import failed')
@@ -79,7 +104,8 @@ export function DataToolsTab() {
         <CardHeader>
           <CardTitle className="text-lg">Export to CSV</CardTitle>
           <CardDescription>
-            Download all your data as CSV files: expenses, income, categories, and budgets.
+            Download all your data as CSV files: expenses, income, categories,
+            and budgets.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -100,8 +126,9 @@ export function DataToolsTab() {
         <CardHeader>
           <CardTitle className="text-lg">Import from CSV</CardTitle>
           <CardDescription>
-            Upload one or more CSV files from a Minima export (expenses.csv, income.csv,
-            categories.csv, budgets.csv). Import categories before expenses or budgets.
+            Upload one or more CSV files from a Minima export (expenses.csv,
+            income.csv, categories.csv, budgets.csv). Import categories before
+            expenses or budgets.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -134,23 +161,35 @@ export function DataToolsTab() {
 
           {importResults && (
             <Alert className="bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-              <AlertTitle className="text-sm font-medium mb-2">Import complete</AlertTitle>
+              <AlertTitle className="text-sm font-medium mb-2">
+                Import complete
+              </AlertTitle>
               <AlertDescription>
                 <ul className="flex flex-col gap-1.5">
-                  {importResults.map(({ filename, result }) => (
+                  {importResults.map(({ filename, result, error }) => (
                     <li key={filename}>
                       <span className="font-mono text-xs">{filename}</span>
                       {' — '}
-                      <span>
-                        {result.inserted} inserted
-                        {result.skipped > 0 && `, ${result.skipped} skipped`}
-                      </span>
-                      {result.errors.length > 0 && (
-                        <ul className="text-muted-foreground text-xs list-disc list-inside mt-1 space-y-0.5">
-                          {result.errors.map((err, i) => (
-                            <li key={i}>{err}</li>
-                          ))}
-                        </ul>
+                      {error ? (
+                        <span className="text-destructive font-medium">
+                          {error}
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            {result?.inserted} inserted
+                            {result?.skipped !== undefined &&
+                              result.skipped > 0 &&
+                              `, ${result.skipped} skipped`}
+                          </span>
+                          {result?.errors && result.errors.length > 0 && (
+                            <ul className="text-muted-foreground text-xs list-disc list-inside mt-1 space-y-0.5">
+                              {result.errors.map((err, i) => (
+                                <li key={i}>{err}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
                       )}
                     </li>
                   ))}
