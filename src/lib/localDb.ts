@@ -175,7 +175,7 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     currency: input.currency,
     categoryId: input.categoryId,
     description: input.description,
-    createdAt: new Date().toISOString(),
+    createdAt: input.createdAt ?? new Date().toISOString(),
   }
   const chunkKey = expenseChunkKey(entry.createdAt)
   const existing = await readChunk(chunkKey)
@@ -283,7 +283,7 @@ export async function addIncome(
     amount: input.amount,
     currency: input.currency,
     description: input.description,
-    createdAt: new Date().toISOString(),
+    createdAt: input.createdAt ?? new Date().toISOString(),
   }
   await writeStore('income', [...income, entry])
   return entry

@@ -95,6 +95,7 @@ export interface CreateExpenseInput {
   currency: Currency
   categoryId: string
   description?: string
+  createdAt?: string
 }
 
 export interface IncomeEntry {
@@ -111,6 +112,7 @@ export interface CreateIncomeInput {
   amount: number
   currency: Currency
   description?: string
+  createdAt?: string
 }
 
 export interface CreateCategoryInput {

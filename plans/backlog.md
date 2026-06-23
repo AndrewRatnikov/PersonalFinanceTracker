@@ -613,30 +613,30 @@ The existing `exportExpensesCSV` in `csvTools.ts` is a server function that read
 
 _The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categories.csv`, `budgets.csv`). The current import in `DataToolsTab` only handles a single expenses file and still calls the deprecated Supabase server function `importExpensesCSV` from `csvTools.ts`, which writes to Supabase — not IDB. This step replaces it with a client-side importer that covers all four collections._
 
-### 9.1 Local import module — `src/lib/localImport.ts` (new file)
+### 9.1 Local import module — `src/lib/localImport.ts` (new file) ✅
 
-- [ ] Add shared `parseCSV(text: string): Array<Record<string, string>>` helper — splits lines, uses the first row as column headers, handles quoted fields and escaped `""` sequences; returns objects keyed by header name
-- [ ] Add `importCategoriesFromCSV(csv: string): Promise<ImportResult>` where `ImportResult = { inserted: number; skipped: number; errors: Array<string> }`:
+- [x] Add shared `parseCSV(text: string): Array<Record<string, string>>` helper — splits lines, uses the first row as column headers, handles quoted fields and escaped `""` sequences; returns objects keyed by header name
+- [x] Add `importCategoriesFromCSV(csv: string): Promise<ImportResult>` where `ImportResult = { inserted: number; skipped: number; errors: Array<string> }`:
   - Reads existing categories from IDB once to build a name-based dedupe set
   - For each row: require non-empty `name`; skip without error if a category with the same name already exists; otherwise call `addCategory({ name, icon: icon || null })`
-- [ ] Add `importExpensesFromCSV(csv: string): Promise<ImportResult>`:
+- [x] Add `importExpensesFromCSV(csv: string): Promise<ImportResult>`:
   - Reads `getAllCategories()` once to build a case-insensitive `name → id` map
   - For each row: validate `amount` is a positive finite number; validate `currency` is in `CURRENCIES`; look up `category` name — error the row if not found; parse `date` with `new Date(dateStr)` (fall back to `new Date()` if blank/invalid); call `addExpense({ amount, currency, categoryId, description: description || undefined, createdAt: date.toISOString() })`
-- [ ] Add `importIncomeFromCSV(csv: string): Promise<ImportResult>`:
+- [x] Add `importIncomeFromCSV(csv: string): Promise<ImportResult>`:
   - For each row: require non-empty `source`; validate `amount` positive; validate `currency`; parse `date`; call `addIncome({ source, amount, currency, description: description || undefined, createdAt: date.toISOString() })`
-- [ ] Add `importBudgetsFromCSV(csv: string): Promise<ImportResult>`:
+- [x] Add `importBudgetsFromCSV(csv: string): Promise<ImportResult>`:
   - Reads `getAllCategories()` to build a name → id map
   - For each row: look up `category` name; validate `monthly_limit` positive; validate `currency`; call `upsertBudget({ categoryId, monthlyLimit, currency })`
-- [ ] Add top-level `importLocalDataFile(file: File): Promise<{ type: string; result: ImportResult }>` dispatcher:
+- [x] Add top-level `importLocalDataFile(file: File): Promise<{ type: string; result: ImportResult }>` dispatcher:
   - Detects importer by filename (case-insensitive): `categories.csv` → categories, `expenses.csv` → expenses, `income.csv` → income, `budgets.csv` → budgets
   - Falls back to header-sniffing if filename doesn't match: `source` column → income; `category` + no `source` → expenses; `monthly_limit` column → budgets; `name` + `icon` → categories
   - If the user uploads an expenses or budgets file while categories IDB store is empty, throws `"Import categories.csv first so expense/budget rows can be matched to categories."`
 
-### 9.2 Extend `addExpense` and `addIncome` — `src/lib/domain.ts` + `src/lib/localDb.ts`
+### 9.2 Extend `addExpense` and `addIncome` — `src/lib/domain.ts` + `src/lib/localDb.ts` ✅
 
-- [ ] Add optional `createdAt?: string` to `CreateExpenseInput` and `CreateIncomeInput` in `src/lib/domain.ts`
-- [ ] In `addExpense`: use `input.createdAt ?? new Date().toISOString()` when building the entry
-- [ ] In `addIncome`: same pattern
+- [x] Add optional `createdAt?: string` to `CreateExpenseInput` and `CreateIncomeInput` in `src/lib/domain.ts`
+- [x] In `addExpense`: use `input.createdAt ?? new Date().toISOString()` when building the entry
+- [x] In `addIncome`: same pattern
 
 ### 9.3 Update `DataToolsTab` — `src/components/settings/DataToolsTab.tsx`
 
