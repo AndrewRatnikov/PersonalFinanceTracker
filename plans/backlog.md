@@ -697,22 +697,22 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/lib/localDb.ts:82` (`expenseChunkKey`)
 
-- [ ] Add a guard at the top of `expenseChunkKey`: if `new Date(dateStr)` is invalid (`isNaN(date.getTime())`), throw `"expenseChunkKey: invalid date string"` immediately
-- [ ] In `addExpense`, assert that `input.createdAt` (if provided) is a valid ISO string before calling `expenseChunkKey`; throw a descriptive error if not
+- [x] Add a guard at the top of `expenseChunkKey`: if `new Date(dateStr)` is invalid (`isNaN(date.getTime())`), throw `"expenseChunkKey: invalid date string"` immediately
+- [x] In `addExpense`, assert that `input.createdAt` (if provided) is a valid ISO string before calling `expenseChunkKey`; throw a descriptive error if not
 
 #### 10.2.2 `deleteCategory` leaves orphaned budget entries
 
 **File:** `src/lib/localDb.ts:233` (`deleteCategory`)
 
-- [ ] After the existing expense-reference check, read the `'budgets'` store
-- [ ] Filter out any budget entry whose `categoryId` matches the deleted category id
-- [ ] Write the filtered array back to `'budgets'` before returning
+- [x] After the existing expense-reference check, read the `'budgets'` store
+- [x] Filter out any budget entry whose `categoryId` matches the deleted category id
+- [x] Write the filtered array back to `'budgets'` before returning
 
 #### 10.2.3 `updateCategory` non-null assertion crashes on missing id
 
 **File:** `src/lib/localDb.ts:230` (`updateCategory`)
 
-- [ ] Replace `return updated.find((c) => c.id === input.id)!` with an explicit check: if `.find()` returns `undefined`, throw `'Category not found: ' + input.id`
+- [x] Replace `return updated.find((c) => c.id === input.id)!` with an explicit check: if `.find()` returns `undefined`, throw `'Category not found: ' + input.id`
 
 ---
 

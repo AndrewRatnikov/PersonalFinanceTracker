@@ -80,6 +80,7 @@ async function writeStore<K extends LocalDbKey>(
 
 function expenseChunkKey(dateStr: string): string {
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) throw new Error(`expenseChunkKey: invalid date string "${dateStr}"`)
   const y = d.getUTCFullYear()
   const m = String(d.getUTCMonth() + 1).padStart(2, '0')
   return `expenses_${y}_${m}`
@@ -169,6 +170,9 @@ export async function getAllExpenses(): Promise<Array<Expense>> {
 }
 
 export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
+  if (input.createdAt !== undefined && isNaN(new Date(input.createdAt).getTime())) {
+    throw new Error(`addExpense: invalid createdAt "${input.createdAt}"`)
+  }
   const entry: Expense = {
     id: crypto.randomUUID(),
     amount: input.amount,
@@ -227,7 +231,9 @@ export async function updateCategory(
       : c,
   )
   await writeStore('categories', updated)
-  return updated.find((c) => c.id === input.id)!
+  const result = updated.find((c) => c.id === input.id)
+  if (!result) throw new Error(`Category not found: ${input.id}`)
+  return result
 }
 
 export async function deleteCategory(id: string): Promise<void> {
@@ -245,6 +251,12 @@ export async function deleteCategory(id: string): Promise<void> {
     'categories',
     categories.filter((c) => c.id !== id),
   )
+
+  const budgets = (await readStore('budgets')) ?? []
+  const filteredBudgets = budgets.filter((b) => b.categoryId !== id)
+  if (filteredBudgets.length !== budgets.length) {
+    await writeStore('budgets', filteredBudgets)
+  }
 }
 
 const DEFAULT_CATEGORIES: Array<Omit<Category, 'id'>> = [
