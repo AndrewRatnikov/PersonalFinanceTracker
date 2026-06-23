@@ -753,7 +753,7 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/components/settings/BudgetTab.tsx:38`
 
-- [ ] Add `key={existingBudget?.id ?? 'new'}` to the `BudgetRow` component at its call site so React remounts the row (and re-initialises state) whenever the budget identity changes
+- [x] Add `key={existingBudget?.id ?? 'new'}` to the `BudgetRow` component at its call site so React remounts the row (and re-initialises state) whenever the budget identity changes
 
 #### 10.4.4 Income list unsorted — imported historical records appear last
 

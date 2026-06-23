@@ -24,11 +24,15 @@ function IncomePage() {
     queryFn: getAllIncome,
   })
 
-  const totalCount = allIncome.length
+  const sorted = useMemo(
+    () => [...allIncome].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [allIncome],
+  )
+  const totalCount = sorted.length
   const totalPages = Math.ceil(totalCount / pageSize)
   const income = useMemo(
-    () => allIncome.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
-    [allIncome, pageIndex, pageSize],
+    () => sorted.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+    [sorted, pageIndex, pageSize],
   )
 
   const deleteMutation = useMutation({
