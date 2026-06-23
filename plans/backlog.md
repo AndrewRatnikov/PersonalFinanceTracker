@@ -730,7 +730,7 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/lib/localImport.ts:66`
 
-- [ ] Replace `new Date(dateStr)` with `new Date(dateStr + 'T00:00:00')` (no `Z` suffix) wherever a bare date string from CSV is parsed, so it is treated as local midnight rather than UTC midnight
+- [x] Replace `new Date(dateStr)` with `new Date(dateStr + 'T00:00:00')` (no `Z` suffix) wherever a bare date string from CSV is parsed, so it is treated as local midnight rather than UTC midnight
 
 ---
 

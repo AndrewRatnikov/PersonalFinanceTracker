@@ -63,7 +63,9 @@ function parseCSV(text: string): Array<Record<string, string>> {
 
 function parseDate(dateStr: string): string {
   if (!dateStr) return new Date().toISOString()
-  const d = new Date(dateStr)
+  const trimmed = dateStr.trim()
+  const target = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed + 'T00:00:00' : trimmed
+  const d = new Date(target)
   return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
 }
 
