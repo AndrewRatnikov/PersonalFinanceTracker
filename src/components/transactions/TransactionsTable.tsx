@@ -29,7 +29,7 @@ interface TransactionsTableProps {
   isError: boolean
   isDeleting: boolean
   onEdit: (id: string) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string, createdAt: string) => void
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
@@ -159,7 +159,7 @@ export function TransactionsTable({
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={() => onDelete(tx.id)}
+                          onClick={() => onDelete(tx.id, tx.createdAt)}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           Delete

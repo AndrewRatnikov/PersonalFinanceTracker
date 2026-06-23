@@ -40,16 +40,20 @@ export function SignOutDialog({ userId, open, onOpenChange }: Props) {
   }
 
   const handleSignOut = async () => {
-    wipeLocalDbKey()
-    await clearLocalDb()
+    try {
+      wipeLocalDbKey()
+      await clearLocalDb()
 
-    localStorage.removeItem(`minima_migrated_${userId}`)
-    localStorage.removeItem(OFFLINE_USER_KEY)
+      localStorage.removeItem(`minima_migrated_${userId}`)
+      localStorage.removeItem(OFFLINE_USER_KEY)
 
-    const supabase = createBrowserSupabaseClient()
-    await supabase.auth.signOut()
-
-    navigate({ to: '/login' })
+      const supabase = createBrowserSupabaseClient()
+      await supabase.auth.signOut()
+    } catch {
+      toast.error('Sign-out encountered an error. Redirecting to login.')
+    } finally {
+      navigate({ to: '/login' })
+    }
   }
 
   return (

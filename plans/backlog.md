@@ -676,16 +676,16 @@ _These break core functionality silently._
 
 **File:** `src/components/transactions/TransactionsTable.tsx:162`
 
-- [ ] Change the `onDelete` prop type from `(id: string) => void` to `(id: string, createdAt: string) => void`
-- [ ] Update the call site to `onDelete(tx.id, tx.createdAt)` so `createdAt` is never `undefined` when it reaches `deleteExpense`
+- [x] Change the `onDelete` prop type from `(id: string) => void` to `(id: string, createdAt: string) => void`
+- [x] Update the call site to `onDelete(tx.id, tx.createdAt)` so `createdAt` is never `undefined` when it reaches `deleteExpense`
 
 #### 10.1.2 No try/catch in `handleSignOut` — broken state on error
 
 **File:** `src/components/SignOutDialog.tsx:42`
 
-- [ ] Wrap the entire `handleSignOut` body in `try/catch`
-- [ ] In `catch`: show a `toast.error` describing the failure
-- [ ] In `finally`: call `navigate({ to: '/login' })` so the user is never left in a broken state even if a step throws
+- [x] Wrap the entire `handleSignOut` body in `try/catch`
+- [x] In `catch`: show a `toast.error` describing the failure
+- [x] In `finally`: call `navigate({ to: '/login' })` so the user is never left in a broken state even if a step throws
 
 ---
 
