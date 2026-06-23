@@ -638,13 +638,13 @@ _The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categ
 - [x] In `addExpense`: use `input.createdAt ?? new Date().toISOString()` when building the entry
 - [x] In `addIncome`: same pattern
 
-### 9.3 Update `DataToolsTab` — `src/components/settings/DataToolsTab.tsx`
+### 9.3 Update `DataToolsTab` — `src/components/settings/DataToolsTab.tsx` ✅
 
-- [ ] Replace `import { importExpensesCSV } from '@/lib/csvTools'` with `import { importLocalDataFile } from '@/lib/localImport'`
-- [ ] Add `multiple` attribute to the file input so the user can select all four CSVs at once
-- [ ] When multiple files are selected, import in dependency order: categories first, then expenses, income, and budgets in parallel; collect per-file results
-- [ ] Display results per file in the success alert: one line per file — `"categories.csv — 6 inserted"`, `"expenses.csv — 42 inserted, 3 skipped"` etc.; row-level errors listed below (reuse existing `errors` array rendering pattern)
-- [ ] Update `CardDescription` to: `"Upload one or more CSV files from a Minima export (expenses.csv, income.csv, categories.csv, budgets.csv). Import categories before expenses or budgets."`
+- [x] Replace `import { importExpensesCSV } from '@/lib/csvTools'` with `import { importLocalDataFile } from '@/lib/localImport'`
+- [x] Add `multiple` attribute to the file input so the user can select all four CSVs at once
+- [x] When multiple files are selected, import in dependency order: categories first, then expenses, income, and budgets in parallel; collect per-file results
+- [x] Display results per file in the success alert: one line per file — `"categories.csv — 6 inserted"`, `"expenses.csv — 42 inserted, 3 skipped"` etc.; row-level errors listed below (reuse existing `errors` array rendering pattern)
+- [x] Update `CardDescription` to: `"Upload one or more CSV files from a Minima export (expenses.csv, income.csv, categories.csv, budgets.csv). Import categories before expenses or budgets."`
 
 ### 9.4 Retire the Supabase import — `src/lib/csvTools.ts`
 
