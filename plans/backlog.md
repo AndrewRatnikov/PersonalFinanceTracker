@@ -793,4 +793,4 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/lib/localStore.ts`
 
-- [ ] Delete `src/lib/localStore.ts` entirely — the provisioning guard is already in `provisionDefaultCategories()` in `localDb.ts` (checks if the categories array is non-empty)
+- [x] Delete `src/lib/localStore.ts` entirely — the provisioning guard is already in `provisionDefaultCategories()` in `localDb.ts` (checks if the categories array is non-empty)
