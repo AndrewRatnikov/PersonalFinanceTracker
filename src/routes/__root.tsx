@@ -43,7 +43,7 @@ export const Route = createRootRouteWithContext<AuthContext>()({
       if (typeof window !== 'undefined' && user) {
         localStorage.setItem(
           OFFLINE_USER_KEY,
-          JSON.stringify({ id: user.id, email: user.email }),
+          JSON.stringify({ id: user.id }),
         )
       }
     } catch (err) {

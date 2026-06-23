@@ -128,7 +128,7 @@ async function writeChunk(
 }
 
 async function allExpenseChunkKeys(): Promise<Array<string>> {
-  if (!store) return []
+  if (!_key || !store) return []
   const allKeys = await keys<string>(store)
   return allKeys.filter((k) => k.startsWith('expenses_')).sort()
 }

@@ -769,21 +769,21 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/routes/auth.callback.tsx:18`
 
-- [ ] Before passing `redirectTo` to `throw redirect({ to: redirectTo })`, validate that it starts with `/`
-- [ ] Fall back to `'/'` if the value is missing, empty, or an absolute URL
+- [x] Before passing `redirectTo` to `throw redirect({ to: redirectTo })`, validate that it starts with `/`
+- [x] Fall back to `'/'` if the value is missing, empty, or an absolute URL
 
 #### 10.5.2 Expense chunk keys readable before password unlock
 
 **File:** `src/lib/localDb.ts:129` (`allExpenseChunkKeys`)
 
-- [ ] Add `if (!_key || !store) return []` at the top of `allExpenseChunkKeys`, consistent with all other read helpers
+- [x] Add `if (!_key || !store) return []` at the top of `allExpenseChunkKeys`, consistent with all other read helpers
 
 #### 10.5.3 User email stored in plaintext `localStorage`
 
 **File:** `src/routes/__root.tsx:44`
 
-- [ ] Change the `minima_offline_user` serialisation to store only `{ id }` — drop `email`
-- [ ] Update all read sites that previously destructured `email` from this value to derive display name from the live Supabase session instead
+- [x] Change the `minima_offline_user` serialisation to store only `{ id }` — drop `email`
+- [x] Update all read sites that previously destructured `email` from this value to derive display name from the live Supabase session instead
 
 ---
 

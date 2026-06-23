@@ -7,7 +7,8 @@ export const Route = createFileRoute('/auth/callback')({
     // We expect Supabase to have appended `code` and `redirect_to` to the URL.
     const url = new URL(location.href, 'http://localhost')
     const code = url.searchParams.get('code')
-    const redirectTo = url.searchParams.get('redirect_to') || '/'
+    const raw = url.searchParams.get('redirect_to') ?? ''
+    const redirectTo = raw.startsWith('/') ? raw : '/'
 
     if (code) {
       // Execute the server function to swap the code for cookies
