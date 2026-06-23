@@ -646,9 +646,9 @@ _The export (#8.1) produces four CSV files (`expenses.csv`, `income.csv`, `categ
 - [x] Display results per file in the success alert: one line per file — `"categories.csv — 6 inserted"`, `"expenses.csv — 42 inserted, 3 skipped"` etc.; row-level errors listed below (reuse existing `errors` array rendering pattern)
 - [x] Update `CardDescription` to: `"Upload one or more CSV files from a Minima export (expenses.csv, income.csv, categories.csv, budgets.csv). Import categories before expenses or budgets."`
 
-### 9.4 Retire the Supabase import — `src/lib/csvTools.ts`
+### 9.4 Retire the Supabase import — `src/lib/csvTools.ts` ✅
 
-- [ ] Remove the `importExpensesCSV` server function (the `exportExpensesCSV` is already deprecated; this cleans up the last active reference)
+- [x] Remove the `importExpensesCSV` server function (the `exportExpensesCSV` is already deprecated; this cleans up the last active reference)
 
 ### 9.5 Verify
 
