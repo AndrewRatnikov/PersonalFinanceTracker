@@ -193,7 +193,7 @@ export function BudgetTab({ categories }: BudgetTabProps) {
     <div className="flex flex-col gap-3">
       {categories.map((cat) => (
         <BudgetRow
-          key={cat.id}
+          key={`${cat.id}-${budgetMap.get(cat.id)?.id ?? 'new'}`}
           category={cat}
           existingBudget={budgetMap.get(cat.id)}
         />

@@ -759,7 +759,7 @@ _Bugs that silently corrupt or lose data._
 
 **File:** `src/routes/income.tsx:29`
 
-- [ ] Sort the income array by `createdAt` descending before slicing for pagination, matching the sort order used in the expenses list
+- [x] Sort the income array by `createdAt` descending before slicing for pagination, matching the sort order used in the expenses list
 
 ---
 
