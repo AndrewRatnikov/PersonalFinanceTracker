@@ -157,3 +157,30 @@ create trigger set_budgets_updated_at
   create policy "Users can update their own income" on public.income for update using (auth.uid() = user_id);
   create policy "Users can delete their own income" on public.income for delete using (auth.uid() = user_id);
 ```
+
+## 7. Account Deletion RPC
+
+**Manual step:** run this SQL in the Supabase Dashboard SQL Editor. It enables in-app account deletion (see `src/lib/account.ts`) without requiring the service-role key on the client: the authenticated user calls the `delete_own_account()` RPC, which runs with elevated (`SECURITY DEFINER`) privileges but hardcodes `auth.uid()` as the deletion target, so a caller can only ever delete their own row. Deleting the `auth.users` row cascades (via the `on delete cascade` foreign keys above) to all of that user's `categories`, `expenses`, `budgets`, and `income` rows.
+
+```sql
+create or replace function public.delete_own_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.delete_own_account() to authenticated;
+```
+
+An earlier version of this used a `public.profiles` table with an insert/delete RLS dance plus a delete-trigger as an indirect way to delete `auth.users` from the client. That approach hit a still-unexplained RLS failure on this project (see git history) and was replaced with this direct RPC, which is simpler and is the standard Supabase pattern for self-service account deletion. If `public.profiles` and its policies/trigger still exist in your project from the earlier approach, they can be dropped:
+
+```sql
+drop trigger if exists on_profile_deleted on public.profiles;
+drop function if exists public.handle_user_delete();
+drop table if exists public.profiles;
+```

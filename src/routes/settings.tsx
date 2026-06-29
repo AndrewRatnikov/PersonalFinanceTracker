@@ -14,6 +14,7 @@ export const Route = createFileRoute('/settings')({
 })
 
 function SettingsPage() {
+  const { auth } = Route.useRouteContext()
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
@@ -47,7 +48,7 @@ function SettingsPage() {
             <BudgetTab categories={categories} />
           </TabsContent>
           <TabsContent value="data" className="mt-6">
-            <DataToolsTab />
+            <DataToolsTab userId={auth.user!.id} />
           </TabsContent>
         </Tabs>
       </div>

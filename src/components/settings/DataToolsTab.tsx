@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { DeleteAccountDialog } from '@/components/settings/DeleteAccountDialog'
 
 interface FileImportResult {
   filename: string
@@ -21,7 +22,11 @@ interface FileImportResult {
   error?: string
 }
 
-export function DataToolsTab() {
+interface DataToolsTabProps {
+  userId: string
+}
+
+export function DataToolsTab({ userId }: DataToolsTabProps) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -30,6 +35,7 @@ export function DataToolsTab() {
   const [importResults, setImportResults] =
     useState<Array<FileImportResult> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
 
   const handleExport = async () => {
     setExportPending(true)
@@ -199,6 +205,36 @@ export function DataToolsTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Danger Zone */}
+      <Card
+        data-testid="danger-zone-card"
+        className="bg-destructive/5 border-destructive/30 backdrop-blur-sm"
+      >
+        <CardHeader>
+          <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
+          <CardDescription>
+            Permanently delete your account and all associated data. This
+            cannot be undone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            data-testid="delete-account-btn"
+            variant="destructive"
+            onClick={() => setDeleteAccountOpen(true)}
+            className="flex items-center gap-2"
+          >
+            Delete account
+          </Button>
+        </CardContent>
+      </Card>
+
+      <DeleteAccountDialog
+        userId={userId}
+        open={deleteAccountOpen}
+        onOpenChange={setDeleteAccountOpen}
+      />
     </div>
   )
 }
