@@ -1,3 +1,6 @@
+import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
+
+
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -81,6 +84,13 @@ function Dashboard() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <section>
+          <BudgetSummaryCard
+            totalIncome={totalIncome}
+            totalExpenses={totalExpenses}
+          />
+        </section>
+
         <section>
           <DashboardStats data={monthlyStats} />
         </section>
