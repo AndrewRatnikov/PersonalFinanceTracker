@@ -1,25 +1,43 @@
-import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
-
-
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
-
-import type { CreateExpenseInput, Expense, MonthlyExpenseSummary } from '@/lib/domain'
-import { getAllCategories, addExpense, getExpensesForRange } from '@/lib/localDb'
-import DashboardStats from '@/components/index/DashboardStats'
-import SpeedEntryForm from '@/components/index/SpeedEntryForm'
-import RecentHistoryList from '@/components/index/RecentHistoryList'
-import PageShell from '@/components/PageShell'
-import { Card, CardContent } from '@/components/ui/card'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
+import { Route as RootRoute } from './__root'
+
+import type {
+  CreateExpenseInput,
+  Expense,
+  MonthlyExpenseSummary,
+} from '@/lib/domain'
+
+import DashboardStats from '@/components/index/DashboardStats'
+import RecentHistoryList from '@/components/index/RecentHistoryList'
+import SpeedEntryForm from '@/components/index/SpeedEntryForm'
+import LandingPage from '@/components/LandingPage'
+import PageShell from '@/components/PageShell'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  addExpense,
+  getAllCategories,
+  getAllIncome,
+  getExpensesForRange,
+} from '@/lib/localDb'
+import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
+
 export const Route = createFileRoute('/')({
-  component: Dashboard,
+  component: IndexRoute,
 })
 
-function computeMonthlyStats(expenses: Array<Expense>): Array<MonthlyExpenseSummary> {
+function IndexRoute() {
+  const { auth } = RootRoute.useRouteContext()
+  return auth.user ? <Dashboard /> : <LandingPage />
+}
+
+function computeMonthlyStats(
+  expenses: Array<Expense>,
+): Array<MonthlyExpenseSummary> {
   const monthlyMap: Record<string, number> = {}
   for (let i = 11; i >= 0; i--) {
     const d = dayjs().subtract(i, 'month')
@@ -42,10 +60,16 @@ function Dashboard() {
   const [isPending, setIsPending] = useState(false)
 
   const todayStr = dayjs().format('YYYY-MM-DD')
-  const { from, to } = useMemo(() => ({
-    from: dayjs(todayStr).subtract(11, 'month').startOf('month').toISOString(),
-    to: dayjs(todayStr).endOf('day').toISOString(),
-  }), [todayStr])
+  const { from, to } = useMemo(
+    () => ({
+      from: dayjs(todayStr)
+        .subtract(11, 'month')
+        .startOf('month')
+        .toISOString(),
+      to: dayjs(todayStr).endOf('day').toISOString(),
+    }),
+    [todayStr],
+  )
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
@@ -57,8 +81,26 @@ function Dashboard() {
     queryFn: () => getExpensesForRange(from, to),
   })
 
+  const { data: income = [] } = useQuery({
+    queryKey: ['income'],
+    queryFn: getAllIncome,
+  })
+
   const monthlyStats = useMemo(() => computeMonthlyStats(expenses), [expenses])
   const recentExpenses = useMemo(() => expenses.slice(0, 10), [expenses])
+
+  const totalIncome = useMemo(
+    () =>
+      income
+        .filter((e) => e.createdAt >= from && e.createdAt <= to)
+        .reduce((sum, e) => sum + Number(e.amount), 0),
+    [income, from, to],
+  )
+
+  const totalExpenses = useMemo(
+    () => expenses.reduce((sum, e) => sum + Number(e.amount), 0),
+    [expenses],
+  )
 
   const addMutation = useMutation({
     mutationFn: (data: CreateExpenseInput) => addExpense(data),

@@ -67,6 +67,7 @@ export const Route = createRootRouteWithContext<AuthContext>()({
 
     if (
       !user &&
+      location.pathname !== '/' &&
       !location.pathname.startsWith('/login') &&
       !location.pathname.startsWith('/auth/callback')
     ) {
@@ -141,7 +142,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const showChildren = !mounted || !auth.user || isUnlocked
 
   return (
-    <html lang="en">
+    <html lang="en" className="scroll-smooth">
       <head>
         <HeadContent />
       </head>
