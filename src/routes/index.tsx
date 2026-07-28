@@ -89,18 +89,15 @@ function Dashboard() {
   const monthlyStats = useMemo(() => computeMonthlyStats(expenses), [expenses])
   const recentExpenses = useMemo(() => expenses.slice(0, 10), [expenses])
 
-  const totalIncome = useMemo(
-    () =>
-      income
-        .filter((e) => e.createdAt >= from && e.createdAt <= to)
-        .reduce((sum, e) => sum + Number(e.amount), 0),
-    [income, from, to],
-  )
+  const currentIncome = useMemo(() => {
+    const currentMonth = dayjs().month()
 
-  const totalExpenses = useMemo(
-    () => expenses.reduce((sum, e) => sum + Number(e.amount), 0),
-    [expenses],
-  )
+    return income
+      .filter((e) => dayjs(e.createdAt).month() === currentMonth)
+      .reduce((sum, e) => sum + Number(e.amount), 0)
+  }, [income])
+
+  const currentExpenses = monthlyStats[monthlyStats.length - 1].total ?? 0
 
   const addMutation = useMutation({
     mutationFn: (data: CreateExpenseInput) => addExpense(data),
@@ -128,8 +125,8 @@ function Dashboard() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <section>
           <BudgetSummaryCard
-            totalIncome={totalIncome}
-            totalExpenses={totalExpenses}
+            income={currentIncome}
+            expenses={currentExpenses}
           />
         </section>
 

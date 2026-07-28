@@ -6,45 +6,58 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
 
 interface BudgetSummaryCardProps {
-  totalIncome: number
-  totalExpenses: number
+  income: number
+  expenses: number
   currency?: Currency
 }
 
 export default function BudgetSummaryCard({
-  totalIncome,
-  totalExpenses,
+  income,
+  expenses,
   currency = 'UAH',
 }: BudgetSummaryCardProps) {
-  const netBalance = totalIncome - totalExpenses
-  const isPositive = netBalance >= 0
+  const netBalance = income - expenses
 
   return (
-    <Card data-testid="budget-summary-card" className="w-full">
-      <CardHeader>
-        <CardTitle>Budget Summary</CardTitle>
-        <CardDescription>Income, expenses, and net balance</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        <div data-testid="budget-summary-income">
-          Total Income: {totalIncome.toLocaleString()} {currency}
-        </div>
-        <div data-testid="budget-summary-expenses">
-          Total Expenses: {totalExpenses.toLocaleString()} {currency}
-        </div>
-        <div
-          data-testid="budget-summary-net-balance"
-          className={cn(
-            'font-semibold',
-            isPositive ? 'text-emerald-600' : 'text-destructive',
-          )}
-        >
-          Net Balance: {netBalance.toLocaleString()} {currency}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="w-full flex justify-around gap-3">
+      <Card className="w-1/3 gap-1">
+        <CardHeader>
+          <CardTitle className="text-sm text-muted-foreground">
+            Income
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CardDescription className="text-2xl font-semibold text-black dark:text-white">
+            {income.toLocaleString()} {currency}
+          </CardDescription>
+        </CardContent>
+      </Card>
+      <Card className="w-1/3 gap-1">
+        <CardHeader>
+          <CardTitle className="text-sm text-muted-foreground">
+            Expenses
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CardDescription className="text-2xl font-semibold text-black dark:text-white">
+            {expenses.toLocaleString()} {currency}
+          </CardDescription>
+        </CardContent>
+      </Card>
+      <Card className="w-1/3 gap-1">
+        <CardHeader>
+          <CardTitle className="text-sm text-muted-foreground">
+            Balance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CardDescription className="text-2xl font-semibold text-black dark:text-white">
+            {netBalance.toLocaleString()} {currency}
+          </CardDescription>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
