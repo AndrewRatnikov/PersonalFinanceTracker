@@ -151,7 +151,7 @@ describe('TransactionsTable inline row editing', () => {
       ).toBe('0')
     })
 
-    it('shows a different inline error for a different invalid amount, proving the message is not hardcoded to one input', () => {
+    it('shows the same inline error for another non-positive amount, proving validation is not a one-off check', () => {
       const onSave = vi.fn().mockResolvedValue(undefined)
       renderTable([txFood], { onSave })
 
@@ -241,6 +241,26 @@ describe('TransactionsTable inline row editing', () => {
         expect.objectContaining({ amount: 7.25 }),
       )
     })
+
+    it('calls onSave with the new categoryId when the edit-category-select value is changed', async () => {
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      renderTable([txFood], { onSave })
+
+      fireEvent.click(screen.getByTestId('transaction-edit-button'))
+      fireEvent.change(screen.getByTestId('edit-category-select'), {
+        target: { value: 'cat-transport' },
+      })
+      fireEvent.click(screen.getByTestId('edit-save-button'))
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledTimes(1)
+      })
+      expect(onSave).toHaveBeenCalledWith(
+        'tx-1',
+        '2026-03-15T12:00:00.000Z',
+        expect.objectContaining({ categoryId: 'cat-transport' }),
+      )
+    })
   })
 
   describe('criterion 9: a successful save returns the row to read-only mode', () => {
@@ -288,8 +308,8 @@ describe('TransactionsTable inline row editing', () => {
 
       const deleteButtons = screen.getAllByTestId('transaction-delete-button')
       expect(deleteButtons).toHaveLength(2)
-      expect(deleteButtons[0]).toBeDisabled()
-      expect(deleteButtons[1]).not.toBeDisabled()
+      expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true)
+      expect((deleteButtons[1] as HTMLButtonElement).disabled).toBe(false)
     })
 
     it('re-enables the Delete button once the row exits edit mode via Escape', () => {
@@ -298,8 +318,9 @@ describe('TransactionsTable inline row editing', () => {
       const editButtons = screen.getAllByTestId('transaction-edit-button')
       fireEvent.click(editButtons[0])
       expect(
-        screen.getAllByTestId('transaction-delete-button')[0],
-      ).toBeDisabled()
+        (screen.getAllByTestId('transaction-delete-button')[0] as HTMLButtonElement)
+          .disabled,
+      ).toBe(true)
 
       fireEvent.keyDown(screen.getByTestId('edit-amount-input'), {
         key: 'Escape',
@@ -309,7 +330,9 @@ describe('TransactionsTable inline row editing', () => {
       const deleteButtonsAfter = screen.getAllByTestId(
         'transaction-delete-button',
       )
-      expect(deleteButtonsAfter[0]).not.toBeDisabled()
+      expect((deleteButtonsAfter[0] as HTMLButtonElement).disabled).toBe(
+        false,
+      )
     })
   })
 })
