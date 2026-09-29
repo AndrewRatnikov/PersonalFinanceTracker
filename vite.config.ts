@@ -1,4 +1,4 @@
-import { readdirSync, copyFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readdirSync, copyFileSync, existsSync } from 'node:fs'
 import { URL, fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { nitro } from 'nitro/vite'
@@ -32,10 +32,6 @@ const config = defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
-  },
-  test: {
-    environment: 'jsdom',
-    globals: true,
   },
   plugins: [
     VitePWA({
