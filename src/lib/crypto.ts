@@ -6,7 +6,7 @@ function hexEncode(bytes: Uint8Array): string {
     .join('')
 }
 
-function hexDecode(hex: string): Uint8Array {
+function hexDecode(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
@@ -14,7 +14,7 @@ function hexDecode(hex: string): Uint8Array {
   return bytes
 }
 
-export function getOrCreateDeviceSalt(userId: string): Uint8Array {
+export function getOrCreateDeviceSalt(userId: string): Uint8Array<ArrayBuffer> {
   if (typeof window === 'undefined') {
     throw new Error('getOrCreateDeviceSalt must be called on the client')
   }
@@ -28,7 +28,7 @@ export function getOrCreateDeviceSalt(userId: string): Uint8Array {
 
 export async function deriveKey(
   password: string,
-  deviceSalt: Uint8Array,
+  deviceSalt: Uint8Array<ArrayBuffer>,
 ): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
