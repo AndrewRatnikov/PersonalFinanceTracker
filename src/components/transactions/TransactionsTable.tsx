@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
 import { Edit2, Loader2, Trash2, Search, WifiOff } from 'lucide-react'
+import type { Category, Expense } from '@/lib/domain'
+import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
   Table,
@@ -24,8 +26,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { ExpenseRowEditor } from '@/components/transactions/ExpenseRowEditor'
-import type { Category, Expense } from '@/lib/domain'
-import type { UpdateExpenseFormValues } from '@/lib/schemas'
 
 interface TransactionsTableProps {
   transactions: Array<Expense>
