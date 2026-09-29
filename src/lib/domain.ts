@@ -125,3 +125,11 @@ export interface UpdateCategoryInput {
   name: string
   icon?: string | null
 }
+
+export interface UpdateExpenseInput {
+  amount?: number
+  currency?: Currency
+  categoryId?: string
+  description?: string
+  createdAt?: string
+}
