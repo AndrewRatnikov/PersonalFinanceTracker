@@ -1,15 +1,15 @@
 import { useState } from 'react'
-import type { KeyboardEvent } from 'react'
 import dayjs from 'dayjs'
 import { Check, Loader2, Trash2, X } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
 
+import type { Category, Currency, Expense } from '@/lib/domain'
+import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { CURRENCIES } from '@/lib/domain'
-import type { Category, Currency, Expense } from '@/lib/domain'
 import { updateExpenseSchema } from '@/lib/schemas'
-import type { UpdateExpenseFormValues } from '@/lib/schemas'
 
 interface ExpenseRowEditorProps {
   expense: Expense
