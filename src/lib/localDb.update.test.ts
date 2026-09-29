@@ -3,6 +3,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  addCategory,
+  addExpense,
+  getAllExpenses,
+  getExpensesForRange,
+  unlockLocalDb,
+  updateExpense,
+} from '@/lib/localDb'
+
 // In-memory replacement for idb-keyval, hoisted so it exists before the
 // `vi.mock` factory (which itself is hoisted above imports) runs.
 const { mockStore } = vi.hoisted(() => ({
@@ -22,15 +31,6 @@ vi.mock('idb-keyval', () => ({
   },
   keys: async () => Array.from(mockStore.keys()),
 }))
-
-import {
-  addCategory,
-  addExpense,
-  getAllExpenses,
-  getExpensesForRange,
-  unlockLocalDb,
-  updateExpense,
-} from '@/lib/localDb'
 
 describe('localDb.updateExpense', () => {
   beforeEach(async () => {

@@ -4,8 +4,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 import type { Category, Expense } from '@/lib/domain'
+import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 
 const categories: Array<Category> = [
   { id: 'cat-food', name: 'Food', icon: '🍔' },
@@ -34,7 +34,6 @@ const txTransport: Expense = {
 
 function renderTable(
   transactions: Array<Expense>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   overrides: Partial<{ onSave: any; onDelete: any }> = {},
 ) {
   const onSave = overrides.onSave ?? vi.fn().mockResolvedValue(undefined)
@@ -63,21 +62,21 @@ describe('TransactionsTable inline row editing', () => {
 
       expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
       expect(
-        (screen.getByTestId('edit-date-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-date-input').value,
       ).toBe('2026-03-15')
       expect(
-        (screen.getByTestId('edit-amount-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('12.5')
       expect(
-        (screen.getByTestId('edit-currency-select') as HTMLSelectElement)
+        screen.getByTestId<HTMLSelectElement>('edit-currency-select')
           .value,
       ).toBe('UAH')
       expect(
-        (screen.getByTestId('edit-category-select') as HTMLSelectElement)
+        screen.getByTestId<HTMLSelectElement>('edit-category-select')
           .value,
       ).toBe('cat-food')
       expect(
-        (screen.getByTestId('edit-description-input') as HTMLInputElement)
+        screen.getByTestId<HTMLInputElement>('edit-description-input')
           .value,
       ).toBe('Lunch')
     })
@@ -89,17 +88,17 @@ describe('TransactionsTable inline row editing', () => {
       fireEvent.click(editButtons[1])
 
       expect(
-        (screen.getByTestId('edit-date-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-date-input').value,
       ).toBe('2026-04-02')
       expect(
-        (screen.getByTestId('edit-amount-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('40')
       expect(
-        (screen.getByTestId('edit-currency-select') as HTMLSelectElement)
+        screen.getByTestId<HTMLSelectElement>('edit-currency-select')
           .value,
       ).toBe('USD')
       expect(
-        (screen.getByTestId('edit-category-select') as HTMLSelectElement)
+        screen.getByTestId<HTMLSelectElement>('edit-category-select')
           .value,
       ).toBe('cat-transport')
     })
@@ -123,7 +122,7 @@ describe('TransactionsTable inline row editing', () => {
       // Still exactly one editor row, now prefilled with the second transaction.
       expect(screen.getAllByTestId('transaction-edit-row')).toHaveLength(1)
       expect(
-        (screen.getByTestId('edit-amount-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('40')
       expect(onSave).not.toHaveBeenCalled()
     })
@@ -147,7 +146,7 @@ describe('TransactionsTable inline row editing', () => {
       // Row stays in edit mode with the entered (invalid) value intact.
       expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
       expect(
-        (screen.getByTestId('edit-amount-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('0')
     })
 
@@ -294,7 +293,7 @@ describe('TransactionsTable inline row editing', () => {
       })
       expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
       expect(
-        (screen.getByTestId('edit-amount-input') as HTMLInputElement).value,
+        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('55')
     })
   })
