@@ -3,14 +3,14 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import type { UpdateExpenseInput } from '@/lib/domain'
+import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import {
   getAllCategories,
   getAllExpenses,
   deleteExpense,
   updateExpense,
 } from '@/lib/localDb'
-import type { UpdateExpenseInput } from '@/lib/domain'
-import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import PageShell from '@/components/PageShell'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
