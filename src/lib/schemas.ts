@@ -15,3 +15,12 @@ export const createExpenseSchema = z.object({
   categoryId: z.string().min(1, 'Category is required'),
   description: z.string().optional(),
 })
+
+export const updateExpenseSchema = createExpenseSchema.extend({
+  createdAt: z
+    .string()
+    .min(1, 'Date is required')
+    .refine((s) => !isNaN(new Date(s).getTime()), 'Invalid date'),
+})
+
+export type UpdateExpenseFormValues = z.infer<typeof updateExpenseSchema>
