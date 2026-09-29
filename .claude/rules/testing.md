@@ -30,3 +30,20 @@ asserts on `.toLocaleString()` output; use a local helper instead:
 ```ts
 const fmt = (n: number) => n.toLocaleString()
 ```
+
+## No jest-dom; lint runs type-aware on tests
+
+`@testing-library/jest-dom` is not installed and there is no `setupFiles`, so
+`toBeDisabled()`, `toBeInTheDocument()`, `toHaveValue()` etc. throw
+`Invalid Chai property`. Use plain properties: `.disabled`, `.value`,
+`.textContent`, `toBeTruthy()` / `toBeNull()`. `@testing-library/user-event`
+isn't installed either — use `fireEvent`, and native `<select>`s where a test
+must change a value (Radix Select can't be driven by `fireEvent` in jsdom).
+
+`npm run lint` is type-aware and covers test files:
+- `(screen.getByTestId('x') as HTMLInputElement)` is flagged by
+  `no-unnecessary-type-assertion`; write `screen.getByTestId<HTMLInputElement>('x')`.
+- Put every `import` at the top of the file, above `vi.hoisted` / `vi.mock`
+  (`import/first`). Vitest hoists those calls anyway.
+- `import type` lines from `@/lib/*` go before value imports from
+  `@/components/*` (`import/order`).
