@@ -51,7 +51,7 @@ function parseCSV(text: string): Array<Record<string, string>> {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   if (lines.length < 2) return []
   const headers = parseLine(lines[0])
-  return lines.slice(1).map((line, idx) => {
+  return lines.slice(1).map((line) => {
     const cols = parseLine(line)
     const row: Record<string, string> = {}
     headers.forEach((h, i) => {
