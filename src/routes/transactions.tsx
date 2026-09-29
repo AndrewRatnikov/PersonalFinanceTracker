@@ -3,7 +3,14 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { getAllCategories, getAllExpenses, deleteExpense } from '@/lib/localDb'
+import {
+  getAllCategories,
+  getAllExpenses,
+  deleteExpense,
+  updateExpense,
+} from '@/lib/localDb'
+import type { UpdateExpenseInput } from '@/lib/domain'
+import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import PageShell from '@/components/PageShell'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
@@ -58,8 +65,35 @@ function Transactions() {
     deleteMutation.mutate({ id, createdAt })
   }
 
-  const handleEdit = (id: string) => {
-    toast.info(`Edit mode for transaction ${id} coming soon!`)
+  const updateMutation = useMutation({
+    mutationFn: ({
+      id,
+      originalCreatedAt,
+      patch,
+    }: {
+      id: string
+      originalCreatedAt: string
+      patch: UpdateExpenseInput
+    }) => updateExpense(id, originalCreatedAt, patch),
+    onSuccess: () => {
+      // Prefix match: also refreshes ['expenses', from, to] on the dashboard.
+      queryClient.invalidateQueries({ queryKey: ['expenses'] })
+      // Analytics caches under its own key.
+      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      toast.success('Transaction updated')
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to update: ${error.message}`)
+    },
+  })
+
+  // mutateAsync rejects on failure, so the table keeps the row editable.
+  const handleSave = async (
+    id: string,
+    originalCreatedAt: string,
+    values: UpdateExpenseFormValues,
+  ) => {
+    await updateMutation.mutateAsync({ id, originalCreatedAt, patch: values })
   }
 
   const handleCategoryFilterChange = (value: string) => {
@@ -90,10 +124,11 @@ function Transactions() {
         <Card className="overflow-hidden border shadow-sm">
           <TransactionsTable
             transactions={transactions}
+            categories={categories}
             isLoading={isLoading}
             isError={isError}
             isDeleting={deleteMutation.isPending}
-            onEdit={handleEdit}
+            onSave={handleSave}
             onDelete={handleDelete}
           />
 
