@@ -7,6 +7,7 @@ import type {
   UpdateCategoryInput,
   Expense,
   CreateExpenseInput,
+  UpdateExpenseInput,
   IncomeEntry,
   CreateIncomeInput,
   BudgetEntry,
@@ -200,6 +201,70 @@ export async function deleteExpense(
     chunkKey,
     chunk.filter((e) => e.id !== id),
   )
+}
+
+// originalCreatedAt locates the current chunk; if the patch moves createdAt
+// into a different month the record is moved to that month's chunk.
+export async function updateExpense(
+  id: string,
+  originalCreatedAt: string,
+  patch: UpdateExpenseInput,
+): Promise<Expense> {
+  const oldKey = expenseChunkKey(originalCreatedAt)
+  const oldChunk = await readChunk(oldKey)
+  const index = oldChunk.findIndex((e) => e.id === id)
+  if (index === -1) {
+    throw new Error(`updateExpense: expense not found: ${id}`)
+  }
+  const existing = oldChunk[index]
+
+  const createdAt = patch.createdAt ?? existing.createdAt
+  if (isNaN(new Date(createdAt).getTime())) {
+    throw new Error(`updateExpense: invalid createdAt "${createdAt}"`)
+  }
+
+  const categories = (await readStore('categories')) ?? []
+  if (
+    patch.categoryId !== undefined &&
+    !categories.some((c) => c.id === patch.categoryId)
+  ) {
+    throw new Error(`updateExpense: unknown categoryId "${patch.categoryId}"`)
+  }
+
+  const description =
+    patch.description !== undefined
+      ? patch.description === ''
+        ? null
+        : patch.description
+      : existing.description
+
+  const updated: Expense = {
+    id: existing.id,
+    amount: patch.amount ?? existing.amount,
+    currency: patch.currency ?? existing.currency,
+    categoryId: patch.categoryId ?? existing.categoryId,
+    description,
+    createdAt,
+  }
+
+  const newKey = expenseChunkKey(createdAt)
+  if (newKey === oldKey) {
+    const next = [...oldChunk]
+    next[index] = updated
+    await writeChunk(oldKey, next)
+  } else {
+    // Append to the new chunk first: a failure in between can only duplicate
+    // the record, never lose it.
+    const newChunk = await readChunk(newKey)
+    await writeChunk(newKey, [...newChunk.filter((e) => e.id !== id), updated])
+    await writeChunk(
+      oldKey,
+      oldChunk.filter((e) => e.id !== id),
+    )
+  }
+
+  const category = categories.find((c) => c.id === updated.categoryId)
+  return { ...updated, category }
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────

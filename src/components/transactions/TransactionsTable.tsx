@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import dayjs from 'dayjs'
 import { Edit2, Loader2, Trash2, Search, WifiOff } from 'lucide-react'
+import type { Category, Expense } from '@/lib/domain'
+import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
   Table,
@@ -22,13 +25,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { ExpenseRowEditor } from '@/components/transactions/ExpenseRowEditor'
 
 interface TransactionsTableProps {
-  transactions: Array<any>
+  transactions: Array<Expense>
+  categories: Array<Category>
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
-  onEdit: (id: string) => void
+  onSave: (
+    id: string,
+    originalCreatedAt: string,
+    values: UpdateExpenseFormValues,
+  ) => Promise<void>
   onDelete: (id: string, createdAt: string) => void
 }
 
@@ -40,13 +49,22 @@ const CURRENCY_SYMBOL: Record<string, string> = {
 
 export function TransactionsTable({
   transactions,
+  categories,
   isLoading,
   isError,
   isDeleting,
-  onEdit,
+  onSave,
   onDelete,
 }: TransactionsTableProps) {
   const online = useOnlineStatus()
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  // Resolving leaves edit mode; a rejection propagates to the editor, which
+  // keeps the row (and the entered values) in edit mode.
+  const handleRowSave = async (tx: Expense, values: UpdateExpenseFormValues) => {
+    await onSave(tx.id, tx.createdAt, values)
+    setEditingId(null)
+  }
 
   return (
     <Table>
@@ -97,9 +115,19 @@ export function TransactionsTable({
             </TableCell>
           </TableRow>
         ) : (
-          transactions.map((tx) => (
+          transactions.map((tx) =>
+            tx.id === editingId ? (
+              <ExpenseRowEditor
+                key={tx.id}
+                expense={tx}
+                categories={categories}
+                onSave={(values) => handleRowSave(tx, values)}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
             <TableRow
               key={tx.id}
+              data-testid="transaction-row"
               className="hover:bg-muted/30 transition-colors group"
             >
               <TableCell className="pl-6 text-sm text-muted-foreground">
@@ -130,7 +158,8 @@ export function TransactionsTable({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => onEdit(tx.id)}
+                    data-testid="transaction-edit-button"
+                    onClick={() => setEditingId(tx.id)}
                     className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                     title="Edit transaction"
                   >
@@ -142,6 +171,7 @@ export function TransactionsTable({
                       <Button
                         variant="ghost"
                         size="icon"
+                        data-testid="transaction-delete-button"
                         disabled={isDeleting}
                         className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         title="Delete transaction"
@@ -170,7 +200,8 @@ export function TransactionsTable({
                 </div>
               </TableCell>
             </TableRow>
-          ))
+            ),
+          )
         )}
       </TableBody>
     </Table>
