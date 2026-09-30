@@ -75,7 +75,7 @@ describe('criterion 14: expense rows', () => {
     const row = screen.getAllByTestId('recent-activity-item')[0]
     const amountEl = within(row).getByTestId('recent-activity-amount')
 
-    expect(amountEl.textContent?.trim().startsWith('-')).toBe(true)
+    expect(amountEl.textContent.trim().startsWith('-')).toBe(true)
     expect(amountEl.textContent).toContain(fmt(250))
     expect(amountEl.textContent).toContain('USD')
     expect(amountEl.className).not.toContain('text-emerald')
@@ -90,7 +90,7 @@ describe('criterion 14: income rows', () => {
     const row = screen.getAllByTestId('recent-activity-item')[0]
     const amountEl = within(row).getByTestId('recent-activity-amount')
 
-    expect(amountEl.textContent?.trim().startsWith('+')).toBe(true)
+    expect(amountEl.textContent.trim().startsWith('+')).toBe(true)
     expect(amountEl.textContent).toContain(fmt(500))
     expect(amountEl.textContent).toContain('EUR')
     expect(amountEl.className).toContain('text-emerald-600')
