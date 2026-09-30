@@ -111,26 +111,32 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
 })
 
 describe('criterion 10: pace line', () => {
-  it('shows "less" text when changePct is negative', () => {
+  it('shows the rounded percentage and "less" (not the raw signed number or "more") when changePct is negative', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
-      pace: { spentSoFar: 800, lastMonthSameDay: 1000, changePct: -20 },
+      pace: { spentSoFar: 880, lastMonthSameDay: 1000, changePct: -12.4 },
     }
     render(<DashboardSummarySection summary={summary} />)
     const pace = screen.getByTestId('dashboard-pace')
+    expect(pace.textContent).toContain('12%')
     expect(pace.textContent).toContain('less')
     expect(pace.textContent).toContain('than this time last month')
-    expect(pace.textContent).toContain(fmt(800))
+    expect(pace.textContent).not.toContain('-12')
+    expect(pace.textContent).not.toContain('more')
   })
 
-  it('shows "more" text when changePct is positive', () => {
+  it('shows the rounded percentage, "more" and the spent amount (not "less") when changePct is positive', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
-      pace: { spentSoFar: 1200, lastMonthSameDay: 1000, changePct: 20 },
+      pace: { spentSoFar: 1256, lastMonthSameDay: 1000, changePct: 25.6 },
     }
     render(<DashboardSummarySection summary={summary} />)
     const pace = screen.getByTestId('dashboard-pace')
+    expect(pace.textContent).toContain('26%')
     expect(pace.textContent).toContain('more')
+    expect(pace.textContent).toContain(fmt(1256))
+    expect(pace.textContent).toContain('UAH')
+    expect(pace.textContent).not.toContain('less')
   })
 
   it('is absent when changePct is null', () => {

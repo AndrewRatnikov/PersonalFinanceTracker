@@ -233,6 +233,48 @@ describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
     expect(result.leftToSpend).toBe(-400)
     expect(result.dailyAllowance).toBe(0)
   })
+
+  it('does not reduce leftToSpend for a non-base-currency expense, even in a budgeted category', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const budgets = [mkBudget(catFood.id, 500)]
+    const expenses = [mkExpense(200, 'USD', catFood.id, dateAt(2026, 6, 10))]
+
+    const result = computeDashboardSummary({
+      expenses,
+      income: [],
+      budgets,
+      categories: [catFood],
+      now,
+    })
+
+    expect(result.leftToSpend).toBe(500)
+    expect(result.excluded).toEqual([
+      { currency: 'USD', expenses: 200, income: 0 },
+    ])
+  })
+
+  it('ignores a non-base-currency budget while still honoring a base-currency budget in the same mix', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const budgets = [
+      mkBudget(catFood.id, 500, 'UAH'),
+      mkBudget(catTransport.id, 300, 'USD'),
+    ]
+    const expenses = [
+      mkExpense(100, 'UAH', catFood.id, dateAt(2026, 6, 10)),
+      mkExpense(50, 'USD', catTransport.id, dateAt(2026, 6, 10)),
+    ]
+
+    const result = computeDashboardSummary({
+      expenses,
+      income: [],
+      budgets,
+      categories: [catFood, catTransport],
+      now,
+    })
+
+    expect(result.leftToSpend).toBe(400) // 500 - 100; the USD budget/expense is ignored
+    expect(result.budgetWatch.map((b) => b.categoryId)).toEqual([catFood.id])
+  })
 })
 
 // ---- criterion 6: pace ---------------------------------------------------
@@ -264,6 +306,7 @@ describe('criterion 6: pace', () => {
     const now = new Date(2026, 6, 31, 12, 0, 0) // July 31 (31 days); June has 30 days -> cutoff 30
     const expenses = [
       mkExpense(300, 'UAH', catFood.id, dateAt(2026, 6, 31)), // this month
+      mkExpense(40, 'UAH', catFood.id, dateAt(2026, 6, 1)), // this month, July 1: counts in spentSoFar only
       mkExpense(50, 'UAH', catFood.id, dateAt(2026, 5, 1)), // June day 1
       mkExpense(200, 'UAH', catFood.id, dateAt(2026, 5, 30)), // June day 30, still within cutoff
     ]
@@ -276,9 +319,9 @@ describe('criterion 6: pace', () => {
       now,
     })
 
-    expect(result.pace.spentSoFar).toBe(300)
-    expect(result.pace.lastMonthSameDay).toBe(250)
-    expect(result.pace.changePct).toBeCloseTo(20, 5)
+    expect(result.pace.spentSoFar).toBe(340) // 300 + 40 (July 1 counts as this month)
+    expect(result.pace.lastMonthSameDay).toBe(250) // July 1's expense does not leak into last month
+    expect(result.pace.changePct).toBeCloseTo(36, 5)
   })
 
   it('is null when last month has no spending', () => {
