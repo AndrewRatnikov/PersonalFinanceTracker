@@ -9,12 +9,27 @@ import { BudgetTab } from '@/components/settings/BudgetTab'
 import PageShell from '@/components/PageShell'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+export type SettingsTab = 'categories' | 'budget' | 'data'
+
+export type SettingsSearch = {
+  tab?: SettingsTab
+}
+
+const SETTINGS_TABS: ReadonlyArray<SettingsTab> = ['categories', 'budget', 'data']
+
 export const Route = createFileRoute('/settings')({
+  validateSearch: (search: Record<string, unknown>): SettingsSearch => {
+    const result: SettingsSearch = {}
+    const tab = SETTINGS_TABS.find((t) => t === search.tab)
+    if (tab) result.tab = tab
+    return result
+  },
   component: SettingsPage,
 })
 
 function SettingsPage() {
   const { auth } = Route.useRouteContext()
+  const search = Route.useSearch()
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
@@ -25,7 +40,7 @@ function SettingsPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
 
-        <Tabs defaultValue="categories" className="w-full">
+        <Tabs defaultValue={search.tab ?? 'categories'} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="categories">
               <Tag size={16} className="mr-2" />

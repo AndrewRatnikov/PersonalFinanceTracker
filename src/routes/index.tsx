@@ -6,25 +6,22 @@ import { toast } from 'sonner'
 
 import { Route as RootRoute } from './__root'
 
-import type {
-  CreateExpenseInput,
-  Expense,
-  MonthlyExpenseSummary,
-} from '@/lib/domain'
+import type { CreateExpenseInput } from '@/lib/domain'
 
-import DashboardStats from '@/components/index/DashboardStats'
-import RecentHistoryList from '@/components/index/RecentHistoryList'
+import DashboardSummarySection from '@/components/index/DashboardSummarySection'
+import RecentActivityList from '@/components/index/RecentActivityList'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import LandingPage from '@/components/LandingPage'
 import PageShell from '@/components/PageShell'
 import { Card, CardContent } from '@/components/ui/card'
+import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import {
   addExpense,
+  getAllBudgets,
   getAllCategories,
   getAllIncome,
   getExpensesForRange,
 } from '@/lib/localDb'
-import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
 
 export const Route = createFileRoute('/')({
   component: IndexRoute,
@@ -33,26 +30,6 @@ export const Route = createFileRoute('/')({
 function IndexRoute() {
   const { auth } = RootRoute.useRouteContext()
   return auth.user ? <Dashboard /> : <LandingPage />
-}
-
-function computeMonthlyStats(
-  expenses: Array<Expense>,
-): Array<MonthlyExpenseSummary> {
-  const monthlyMap: Record<string, number> = {}
-  for (let i = 11; i >= 0; i--) {
-    const d = dayjs().subtract(i, 'month')
-    const key = `${d.year()}-${d.format('MMM')}`
-    monthlyMap[key] = 0
-  }
-  for (const e of expenses) {
-    const d = dayjs(e.createdAt)
-    const key = `${d.year()}-${d.format('MMM')}`
-    if (key in monthlyMap) monthlyMap[key] += Number(e.amount)
-  }
-  return Object.entries(monthlyMap).map(([key, total]) => {
-    const [year, month] = key.split('-')
-    return { month, year, name: month, total }
-  })
 }
 
 function Dashboard() {
@@ -86,18 +63,23 @@ function Dashboard() {
     queryFn: getAllIncome,
   })
 
-  const monthlyStats = useMemo(() => computeMonthlyStats(expenses), [expenses])
-  const recentExpenses = useMemo(() => expenses.slice(0, 10), [expenses])
+  const { data: budgets = [] } = useQuery({
+    queryKey: ['budgets'],
+    queryFn: getAllBudgets,
+  })
 
-  const currentIncome = useMemo(() => {
-    const currentMonth = dayjs().month()
-
-    return income
-      .filter((e) => dayjs(e.createdAt).month() === currentMonth)
-      .reduce((sum, e) => sum + Number(e.amount), 0)
-  }, [income])
-
-  const currentExpenses = monthlyStats[monthlyStats.length - 1].total ?? 0
+  const summary = useMemo(
+    () =>
+      computeDashboardSummary({
+        expenses,
+        income,
+        budgets,
+        categories,
+        now: new Date(),
+      }),
+    // todayStr recomputes the summary when the day changes.
+    [expenses, income, budgets, categories, todayStr],
+  )
 
   const addMutation = useMutation({
     mutationFn: (data: CreateExpenseInput) => addExpense(data),
@@ -123,16 +105,7 @@ function Dashboard() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
-        <section>
-          <BudgetSummaryCard
-            income={currentIncome}
-            expenses={currentExpenses}
-          />
-        </section>
-
-        <section>
-          <DashboardStats data={monthlyStats} />
-        </section>
+        <DashboardSummarySection summary={summary} />
 
         <section>
           <h2 className="text-xl font-bold mb-4">Quick Add</h2>
@@ -152,7 +125,7 @@ function Dashboard() {
         </section>
 
         <section>
-          <RecentHistoryList expenses={recentExpenses} />
+          <RecentActivityList items={summary.recent} />
         </section>
       </div>
     </PageShell>

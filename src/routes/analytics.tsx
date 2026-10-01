@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { Loader2 } from 'lucide-react'
+import { useMemo } from 'react'
 
 import { computeRangeAnalytics } from '../lib/localAnalytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
@@ -8,7 +10,10 @@ import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
+import type { Expense, MonthlyExpenseSummary } from '@/lib/domain'
+import DashboardStats from '@/components/index/DashboardStats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getExpensesForRange } from '@/lib/localDb'
 
 export type AnalyticsSearch = {
   from?: string
@@ -24,6 +29,27 @@ export const Route = createFileRoute('/analytics')({
   },
   component: AnalyticsPage,
 })
+
+function computeMonthlyStats(
+  expenses: Array<Expense>,
+  now: dayjs.Dayjs,
+): Array<MonthlyExpenseSummary> {
+  const monthlyMap: Record<string, number> = {}
+  for (let i = 11; i >= 0; i--) {
+    const d = now.subtract(i, 'month')
+    const key = `${d.year()}-${d.format('MMM')}`
+    monthlyMap[key] = 0
+  }
+  for (const e of expenses) {
+    const d = dayjs(e.createdAt)
+    const key = `${d.year()}-${d.format('MMM')}`
+    if (key in monthlyMap) monthlyMap[key] += Number(e.amount)
+  }
+  return Object.entries(monthlyMap).map(([key, total]) => {
+    const [year, month] = key.split('-')
+    return { month, year, name: month, total }
+  })
+}
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
@@ -49,6 +75,28 @@ function AnalyticsPage() {
     queryKey: ['analytics', search.from, search.to],
     queryFn: () => computeRangeAnalytics({ from: search.from, to: search.to }),
   })
+
+  const todayStr = dayjs().format('YYYY-MM-DD')
+  const { from, to } = useMemo(
+    () => ({
+      from: dayjs(todayStr)
+        .subtract(11, 'month')
+        .startOf('month')
+        .toISOString(),
+      to: dayjs(todayStr).endOf('day').toISOString(),
+    }),
+    [todayStr],
+  )
+
+  const { data: monthlyExpenses = [] } = useQuery({
+    queryKey: ['expenses', from, to],
+    queryFn: () => getExpensesForRange(from, to),
+  })
+
+  const monthlyStats = useMemo(
+    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr)),
+    [monthlyExpenses, todayStr],
+  )
 
   if (isLoading || !analytics) {
     return (
@@ -112,6 +160,10 @@ function AnalyticsPage() {
             </Card>
           </section>
         )}
+
+        <section>
+          <DashboardStats data={monthlyStats} />
+        </section>
       </div>
     </PageShell>
   )
