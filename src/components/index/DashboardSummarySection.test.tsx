@@ -35,6 +35,11 @@ vi.mock('@tanstack/react-router', () => ({
 // Locale-independent thousands-separator assertions, per the repo's testing rule.
 const fmt = (n: number) => n.toLocaleString()
 
+// Counts non-overlapping occurrences of `needle` in `haystack` (no RegExp, so
+// no escaping concerns with non-ASCII separators).
+const countOccurrences = (haystack: string, needle: string) =>
+  haystack.split(needle).length - 1
+
 const baseSummary: DashboardSummary = {
   baseCurrency: 'UAH',
   monthIncome: 1000,
@@ -77,7 +82,7 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(screen.queryByTestId('dashboard-no-budget-fallback')).toBeNull()
   })
 
-  it('shows the no-budget fallback (income/expenses/net + Settings link) when leftToSpend is null', () => {
+  it('no budget: shows only the Settings link in the fallback, and each month figure exactly once', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
       leftToSpend: null,
@@ -85,28 +90,92 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
       monthIncome: 1234,
       monthExpenses: 321,
       net: 913,
+      // No pace figure so its amount cannot add a stray occurrence.
+      pace: { spentSoFar: 0, lastMonthSameDay: 0, changePct: null },
     }
     render(<DashboardSummarySection summary={summary} />)
 
     expect(screen.queryByTestId('dashboard-left-to-spend')).toBeNull()
     expect(screen.queryByTestId('dashboard-daily-allowance')).toBeNull()
 
-    expect(screen.getByTestId('dashboard-no-budget-fallback')).toBeTruthy()
-
-    const incomeEl = screen.getByTestId('dashboard-month-income')
-    expect(incomeEl.textContent).toContain(fmt(1234))
-    expect(incomeEl.textContent).toContain('UAH')
-
-    const expensesEl = screen.getByTestId('dashboard-month-expenses')
-    expect(expensesEl.textContent).toContain(fmt(321))
-    expect(expensesEl.textContent).toContain('UAH')
-
-    const netEl = screen.getByTestId('dashboard-month-net')
-    expect(netEl.textContent).toContain(fmt(913))
-    expect(netEl.textContent).toContain('UAH')
-
-    const link = screen.getByTestId('dashboard-budget-setup-link')
+    // Fallback container and link are kept (criterion 3).
+    const fallback = screen.getByTestId('dashboard-no-budget-fallback')
+    const link = within(fallback).getByTestId('dashboard-budget-setup-link')
     expect(link.getAttribute('href')).toBe('/settings')
+
+    // Duplicate hero figures are gone (criterion 2).
+    expect(screen.queryByTestId('dashboard-month-income')).toBeNull()
+    expect(screen.queryByTestId('dashboard-month-expenses')).toBeNull()
+    expect(screen.queryByTestId('dashboard-month-net')).toBeNull()
+
+    // The fallback holds no month figures.
+    for (const value of [1234, 321, 913]) {
+      expect(fallback.textContent).not.toContain(fmt(value))
+    }
+
+    // BudgetSummaryCard shows each figure once (criterion 1).
+    const income = screen.getAllByTestId('budget-summary-income')
+    const expenses = screen.getAllByTestId('budget-summary-expenses')
+    const net = screen.getAllByTestId('budget-summary-net-balance')
+    expect(income).toHaveLength(1)
+    expect(expenses).toHaveLength(1)
+    expect(net).toHaveLength(1)
+    expect(income[0].textContent).toContain(fmt(1234))
+    expect(income[0].textContent).toContain('UAH')
+    expect(expenses[0].textContent).toContain(fmt(321))
+    expect(expenses[0].textContent).toContain('UAH')
+    expect(net[0].textContent).toContain(fmt(913))
+    expect(net[0].textContent).toContain('UAH')
+
+    // Each value appears exactly once in the whole rendered section.
+    const all = screen.getByTestId('dashboard-summary').textContent
+    expect(countOccurrences(all, fmt(1234))).toBe(1)
+    expect(countOccurrences(all, fmt(321))).toBe(1)
+    expect(countOccurrences(all, fmt(913))).toBe(1)
+  })
+
+  it('no budget: the occurrence count follows the data (different values, still once each)', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      monthIncome: 5678,
+      monthExpenses: 432,
+      net: 5246,
+      pace: { spentSoFar: 0, lastMonthSameDay: 0, changePct: null },
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    const all = screen.getByTestId('dashboard-summary').textContent
+    expect(countOccurrences(all, fmt(5678))).toBe(1)
+    expect(countOccurrences(all, fmt(432))).toBe(1)
+    expect(countOccurrences(all, fmt(5246))).toBe(1)
+    expect(countOccurrences(all, fmt(1234))).toBe(0)
+  })
+
+  it('with budget: hero shows left-to-spend and allowance, and each month figure still appears once', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      leftToSpend: 1100,
+      dailyAllowance: 1100 / 17,
+      monthIncome: 1234,
+      monthExpenses: 321,
+      net: 913,
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    expect(screen.getByTestId('dashboard-left-to-spend')).toBeTruthy()
+    expect(screen.getByTestId('dashboard-daily-allowance')).toBeTruthy()
+    expect(screen.queryByTestId('dashboard-month-income')).toBeNull()
+    expect(screen.queryByTestId('dashboard-month-expenses')).toBeNull()
+    expect(screen.queryByTestId('dashboard-month-net')).toBeNull()
+
+    expect(screen.getAllByTestId('budget-summary-income')).toHaveLength(1)
+    expect(screen.getAllByTestId('budget-summary-expenses')).toHaveLength(1)
+    expect(screen.getAllByTestId('budget-summary-net-balance')).toHaveLength(1)
+
+    const all = screen.getByTestId('dashboard-summary').textContent
+    expect(countOccurrences(all, fmt(1234))).toBe(1)
+    expect(countOccurrences(all, fmt(321))).toBe(1)
+    expect(countOccurrences(all, fmt(913))).toBe(1)
   })
 })
 
