@@ -34,4 +34,3 @@ export const exportExpensesCSV = createServerFn({ method: 'GET' }).handler(
     return [header, ...rows].join('\n')
   },
 )
-

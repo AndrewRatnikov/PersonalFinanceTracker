@@ -16,7 +16,10 @@ export function getDefaultRange(): { from: string; to: string } {
   }
 }
 
-export function normalizeRange(input: RangeInput): { from: string; to: string } {
+export function normalizeRange(input: RangeInput): {
+  from: string
+  to: string
+} {
   const fallback = getDefaultRange()
 
   if (!input.from && !input.to) {

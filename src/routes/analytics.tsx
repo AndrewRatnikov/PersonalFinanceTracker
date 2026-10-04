@@ -146,7 +146,9 @@ function AnalyticsPage() {
 
             {analytics.budgetVariance.length > 0 && (
               <section>
-                <h2 className="text-sm font-semibold mb-2">Budget vs. Actual</h2>
+                <h2 className="text-sm font-semibold mb-2">
+                  Budget vs. Actual
+                </h2>
                 <BudgetVarianceBarChart data={analytics.budgetVariance} />
               </section>
             )}

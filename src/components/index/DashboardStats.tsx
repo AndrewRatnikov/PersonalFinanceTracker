@@ -8,7 +8,13 @@ import {
 } from 'recharts'
 
 import type { MonthlyExpenseSummary } from '@/lib/domain'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
 interface DashboardStatsProps {
   data: Array<MonthlyExpenseSummary>
@@ -29,7 +35,8 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
           Spent This Month ({currentMonthData.name})
         </CardDescription>
         <CardTitle className="mt-2 text-6xl font-black tracking-tighter text-foreground">
-          {currentTotal.toLocaleString()} <span className="text-2xl text-primary font-bold">UAH</span>
+          {currentTotal.toLocaleString()}{' '}
+          <span className="text-2xl text-primary font-bold">UAH</span>
         </CardTitle>
       </CardHeader>
 
@@ -64,7 +71,10 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
                 color: 'hsl(var(--popover-foreground))',
               }}
               itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 'bold' }}
-              labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
+              labelStyle={{
+                color: 'hsl(var(--muted-foreground))',
+                marginBottom: '4px',
+              }}
               formatter={(value: any) => [
                 `${value.toLocaleString()} UAH`,
                 'Spent',

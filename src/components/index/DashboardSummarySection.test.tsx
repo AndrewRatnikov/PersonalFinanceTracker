@@ -272,7 +272,10 @@ describe('criterion 12: budget watch', () => {
   })
 
   it('renders one item per entry, in order, with status/category attributes and correctly colored bars', () => {
-    const summary: DashboardSummary = { ...baseSummary, budgetWatch: budgetWatchItems }
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      budgetWatch: budgetWatchItems,
+    }
     render(<DashboardSummarySection summary={summary} />)
 
     expect(screen.getByTestId('budget-watch')).toBeTruthy()

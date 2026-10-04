@@ -62,8 +62,9 @@ export function SignOutDialog({ userId, open, onOpenChange }: Props) {
         <AlertDialogHeader>
           <AlertDialogTitle>Sign out?</AlertDialogTitle>
           <AlertDialogDescription>
-            All locally stored data — expenses, categories, income, and budgets — will be
-            permanently deleted from this device. Export your data first if you want to keep a copy.
+            All locally stored data — expenses, categories, income, and budgets
+            — will be permanently deleted from this device. Export your data
+            first if you want to keep a copy.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-col sm:flex-row gap-2">

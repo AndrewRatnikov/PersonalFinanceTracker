@@ -212,10 +212,12 @@ export function DataToolsTab({ userId }: DataToolsTabProps) {
         className="bg-destructive/5 border-destructive/30 backdrop-blur-sm"
       >
         <CardHeader>
-          <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
+          <CardTitle className="text-lg text-destructive">
+            Danger Zone
+          </CardTitle>
           <CardDescription>
-            Permanently delete your account and all associated data. This
-            cannot be undone.
+            Permanently delete your account and all associated data. This cannot
+            be undone.
           </CardDescription>
         </CardHeader>
         <CardContent>

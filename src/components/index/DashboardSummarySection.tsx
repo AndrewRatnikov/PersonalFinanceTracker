@@ -88,7 +88,10 @@ export default function DashboardSummarySection({
         </Card>
 
         {pace.changePct !== null && (
-          <p className="text-sm text-muted-foreground" data-testid="dashboard-pace">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="dashboard-pace"
+          >
             {`${pace.spentSoFar.toLocaleString()} ${cur} spent, ${Math.abs(
               Math.round(pace.changePct),
             )}% ${pace.changePct < 0 ? 'less' : 'more'} than this time last month`}

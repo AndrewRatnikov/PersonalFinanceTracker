@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
-import { Card, CardContent } from '@/components/ui/card'
 import type { Expense } from '@/lib/domain'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface RecentHistoryListProps {
   expenses: Array<Expense>
@@ -21,9 +21,7 @@ export default function RecentHistoryList({
 
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="text-lg font-semibold tracking-tight">
-        Recent History
-      </h3>
+      <h3 className="text-lg font-semibold tracking-tight">Recent History</h3>
       <div className="grid gap-3">
         {expenses.map((expense) => {
           const date = dayjs(expense.createdAt)
@@ -31,7 +29,10 @@ export default function RecentHistoryList({
           const dateString = date.format('MMM D')
 
           return (
-            <Card key={expense.id} className="overflow-hidden transition-colors hover:bg-accent/50 group">
+            <Card
+              key={expense.id}
+              className="overflow-hidden transition-colors hover:bg-accent/50 group"
+            >
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-xl shadow-sm border border-border">

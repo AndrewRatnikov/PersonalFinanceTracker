@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
-import { deleteCategory, updateCategory } from '@/lib/localDb'
 import type { Category } from '../../lib/domain'
+import { deleteCategory, updateCategory } from '@/lib/localDb'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -32,7 +32,11 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const save = async () => {
     setIsPending(true)
     try {
-      await updateCategory({ id: category.id, name: editName, icon: editIcon || null })
+      await updateCategory({
+        id: category.id,
+        name: editName,
+        icon: editIcon || null,
+      })
       onMutate()
       setIsEditing(false)
     } catch (e: any) {
@@ -105,7 +109,9 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
             {category.icon}
           </div>
         )}
-        <span className="flex-1 text-sm font-medium text-foreground">{category.name}</span>
+        <span className="flex-1 text-sm font-medium text-foreground">
+          {category.name}
+        </span>
 
         <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <Button
@@ -133,13 +139,14 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Category</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to delete <strong>{category.name}</strong>? 
-                  Expenses in this category will become uncategorized.
+                  Are you sure you want to delete{' '}
+                  <strong>{category.name}</strong>? Expenses in this category
+                  will become uncategorized.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
+                <AlertDialogAction
                   onClick={remove}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >

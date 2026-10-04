@@ -1,8 +1,8 @@
 import {
-  getAllCategories,
   addCategory,
   addExpense,
   addIncome,
+  getAllCategories,
   upsertBudget,
 } from './localDb'
 import { CURRENCIES } from './domain'
@@ -48,7 +48,10 @@ function parseLine(line: string): Array<string> {
 }
 
 function parseCSV(text: string): Array<Record<string, string>> {
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
   if (lines.length < 2) return []
   const headers = parseLine(lines[0])
   return lines.slice(1).map((line) => {
@@ -64,12 +67,16 @@ function parseCSV(text: string): Array<Record<string, string>> {
 function parseDate(dateStr: string): string {
   if (!dateStr) return new Date().toISOString()
   const trimmed = dateStr.trim()
-  const target = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed + 'T00:00:00' : trimmed
+  const target = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? trimmed + 'T00:00:00'
+    : trimmed
   const d = new Date(target)
   return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
 }
 
-export async function importCategoriesFromCSV(csv: string): Promise<ImportResult> {
+export async function importCategoriesFromCSV(
+  csv: string,
+): Promise<ImportResult> {
   const rows = parseCSV(csv)
   const existing = await getAllCategories()
   const existingNames = new Set(existing.map((c) => c.name.toLowerCase()))
@@ -97,14 +104,18 @@ export async function importCategoriesFromCSV(csv: string): Promise<ImportResult
   return { inserted, skipped, errors }
 }
 
-export async function importExpensesFromCSV(csv: string): Promise<ImportResult> {
+export async function importExpensesFromCSV(
+  csv: string,
+): Promise<ImportResult> {
   const categories = await getAllCategories()
   if (categories.length === 0) {
     throw new Error(
       'Import categories.csv first so expense/budget rows can be matched to categories.',
     )
   }
-  const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]))
+  const categoryMap = new Map(
+    categories.map((c) => [c.name.toLowerCase(), c.id]),
+  )
 
   const rows = parseCSV(csv)
   let inserted = 0
@@ -112,7 +123,13 @@ export async function importExpensesFromCSV(csv: string): Promise<ImportResult> 
   const errors: Array<string> = []
 
   for (let i = 0; i < rows.length; i++) {
-    const { date, amount: amountStr, currency, category: categoryName, description } = rows[i]
+    const {
+      date,
+      amount: amountStr,
+      currency,
+      category: categoryName,
+      description,
+    } = rows[i]
 
     const amount = Number(amountStr)
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -195,7 +212,9 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
       'Import categories.csv first so expense/budget rows can be matched to categories.',
     )
   }
-  const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]))
+  const categoryMap = new Map(
+    categories.map((c) => [c.name.toLowerCase(), c.id]),
+  )
 
   const rows = parseCSV(csv)
   let inserted = 0
@@ -203,7 +222,11 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
   const errors: Array<string> = []
 
   for (let i = 0; i < rows.length; i++) {
-    const { category: categoryName, monthly_limit: limitStr, currency } = rows[i]
+    const {
+      category: categoryName,
+      monthly_limit: limitStr,
+      currency,
+    } = rows[i]
 
     const categoryId = categoryMap.get(categoryName?.toLowerCase() ?? '')
     if (!categoryId) {
@@ -225,7 +248,11 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
       continue
     }
 
-    await upsertBudget({ categoryId, monthlyLimit, currency: currency as Currency })
+    await upsertBudget({
+      categoryId,
+      monthlyLimit,
+      currency: currency as Currency,
+    })
     inserted++
   }
 
@@ -254,7 +281,9 @@ export async function importLocalDataFile(
   // Header-sniff fallback
   const rows = parseCSV(text)
   if (rows.length === 0) {
-    throw new Error(`Cannot detect file type for "${file.name}": file is empty or has no data rows`)
+    throw new Error(
+      `Cannot detect file type for "${file.name}": file is empty or has no data rows`,
+    )
   }
   const headers = Object.keys(rows[0])
 

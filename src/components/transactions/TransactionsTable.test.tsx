@@ -54,7 +54,7 @@ function renderTable(
 
 describe('TransactionsTable inline row editing', () => {
   describe('criterion 6: entering edit mode', () => {
-    it('turns the clicked row into an editor prefilled with that row\'s own values', () => {
+    it("turns the clicked row into an editor prefilled with that row's own values", () => {
       renderTable([txFood, txTransport])
 
       const editButtons = screen.getAllByTestId('transaction-edit-button')
@@ -68,16 +68,13 @@ describe('TransactionsTable inline row editing', () => {
         screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('12.5')
       expect(
-        screen.getByTestId<HTMLSelectElement>('edit-currency-select')
-          .value,
+        screen.getByTestId<HTMLSelectElement>('edit-currency-select').value,
       ).toBe('UAH')
       expect(
-        screen.getByTestId<HTMLSelectElement>('edit-category-select')
-          .value,
+        screen.getByTestId<HTMLSelectElement>('edit-category-select').value,
       ).toBe('cat-food')
       expect(
-        screen.getByTestId<HTMLInputElement>('edit-description-input')
-          .value,
+        screen.getByTestId<HTMLInputElement>('edit-description-input').value,
       ).toBe('Lunch')
     })
 
@@ -94,12 +91,10 @@ describe('TransactionsTable inline row editing', () => {
         screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
       ).toBe('40')
       expect(
-        screen.getByTestId<HTMLSelectElement>('edit-currency-select')
-          .value,
+        screen.getByTestId<HTMLSelectElement>('edit-currency-select').value,
       ).toBe('USD')
       expect(
-        screen.getByTestId<HTMLSelectElement>('edit-category-select')
-          .value,
+        screen.getByTestId<HTMLSelectElement>('edit-category-select').value,
       ).toBe('cat-transport')
     })
   })
@@ -299,7 +294,7 @@ describe('TransactionsTable inline row editing', () => {
   })
 
   describe('criterion 11: Delete is disabled only on the row currently in edit mode', () => {
-    it('disables the editing row\'s Delete button while other rows stay enabled', () => {
+    it("disables the editing row's Delete button while other rows stay enabled", () => {
       renderTable([txFood, txTransport])
 
       const editButtons = screen.getAllByTestId('transaction-edit-button')
@@ -317,8 +312,11 @@ describe('TransactionsTable inline row editing', () => {
       const editButtons = screen.getAllByTestId('transaction-edit-button')
       fireEvent.click(editButtons[0])
       expect(
-        (screen.getAllByTestId('transaction-delete-button')[0] as HTMLButtonElement)
-          .disabled,
+        (
+          screen.getAllByTestId(
+            'transaction-delete-button',
+          )[0] as HTMLButtonElement
+        ).disabled,
       ).toBe(true)
 
       fireEvent.keyDown(screen.getByTestId('edit-amount-input'), {
@@ -329,9 +327,7 @@ describe('TransactionsTable inline row editing', () => {
       const deleteButtonsAfter = screen.getAllByTestId(
         'transaction-delete-button',
       )
-      expect((deleteButtonsAfter[0] as HTMLButtonElement).disabled).toBe(
-        false,
-      )
+      expect((deleteButtonsAfter[0] as HTMLButtonElement).disabled).toBe(false)
     })
   })
 })

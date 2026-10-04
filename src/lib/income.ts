@@ -29,9 +29,15 @@ export const getIncomePaginated = createServerFn({ method: 'GET' })
     const from = pageIndex * pageSize
     const to = from + pageSize - 1
 
-    const { data: results, count, error } = await supabase
+    const {
+      data: results,
+      count,
+      error,
+    } = await supabase
       .from('income')
-      .select('id, source, amount, currency, description, created_at', { count: 'exact' })
+      .select('id, source, amount, currency, description, created_at', {
+        count: 'exact',
+      })
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(from, to)
@@ -71,12 +77,17 @@ export const createIncome = createServerFn({ method: 'POST' })
       throw new Error('Amount must be a positive number')
     }
 
-    if (typeof currency !== 'string' || !CURRENCIES.includes(currency as Currency)) {
+    if (
+      typeof currency !== 'string' ||
+      !CURRENCIES.includes(currency as Currency)
+    ) {
       throw new Error('Unsupported currency')
     }
 
     const trimmedDescription =
-      typeof description === 'string' && description.trim() ? description.trim() : undefined
+      typeof description === 'string' && description.trim()
+        ? description.trim()
+        : undefined
 
     return {
       source: source.trim(),
@@ -131,4 +142,3 @@ export const deleteIncome = createServerFn({ method: 'POST' })
 
     if (error) throw error
   })
-

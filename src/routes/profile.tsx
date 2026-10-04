@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Mail, User2 } from 'lucide-react'
 
-import { getServerUserProfile } from '@/lib/auth'
 import type { UserProfile } from '@/lib/auth'
+import { getServerUserProfile } from '@/lib/auth'
 import PageShell from '@/components/PageShell'
 import { SignOutDialog } from '@/components/SignOutDialog'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,7 +30,9 @@ function ProfilePage() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Profile</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Profile
+        </h1>
 
         <Card className="overflow-hidden">
           <CardContent className="flex flex-col items-center gap-8 py-12">

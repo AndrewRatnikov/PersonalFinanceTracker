@@ -1,4 +1,9 @@
-import { getAllBudgets, getAllCategories, getAllExpenses, getAllIncome } from './localDb'
+import {
+  getAllBudgets,
+  getAllCategories,
+  getAllExpenses,
+  getAllIncome,
+} from './localDb'
 
 function csvEscape(value: string | number | null | undefined): string {
   const str = String(value ?? '')
@@ -27,28 +32,40 @@ export async function exportAllLocalData(): Promise<void> {
   const expenseRows = expenses.map((e) => {
     const date = e.createdAt.slice(0, 10)
     const category = e.category?.name ?? ''
-    return [date, e.amount, e.currency, category, e.description ?? ''].map(csvEscape).join(',')
+    return [date, e.amount, e.currency, category, e.description ?? '']
+      .map(csvEscape)
+      .join(',')
   })
   triggerDownload(
     'expenses.csv',
-    ['"date","amount","currency","category","description"', ...expenseRows].join('\n'),
+    [
+      '"date","amount","currency","category","description"',
+      ...expenseRows,
+    ].join('\n'),
   )
 
   // income.csv — date, source, amount, currency, description
   const incomeRows = income.map((i) => {
     const date = i.createdAt.slice(0, 10)
-    return [date, i.source, i.amount, i.currency, i.description ?? ''].map(csvEscape).join(',')
+    return [date, i.source, i.amount, i.currency, i.description ?? '']
+      .map(csvEscape)
+      .join(',')
   })
   triggerDownload(
     'income.csv',
-    ['"date","source","amount","currency","description"', ...incomeRows].join('\n'),
+    ['"date","source","amount","currency","description"', ...incomeRows].join(
+      '\n',
+    ),
   )
 
   // categories.csv — name, icon
   const categoryRows = categories.map((c) =>
     [c.name, c.icon ?? ''].map(csvEscape).join(','),
   )
-  triggerDownload('categories.csv', ['"name","icon"', ...categoryRows].join('\n'))
+  triggerDownload(
+    'categories.csv',
+    ['"name","icon"', ...categoryRows].join('\n'),
+  )
 
   // budgets.csv — category, monthly_limit, currency
   const budgetRows = budgets.map((b) =>

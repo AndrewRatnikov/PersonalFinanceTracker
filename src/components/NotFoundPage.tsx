@@ -11,9 +11,7 @@ export default function NotFoundPage() {
           The page you're looking for doesn't exist.
         </p>
         <Button asChild size="lg" className="mt-4">
-          <Link to="/">
-            Go Home
-          </Link>
+          <Link to="/">Go Home</Link>
         </Button>
       </div>
     </PageShell>

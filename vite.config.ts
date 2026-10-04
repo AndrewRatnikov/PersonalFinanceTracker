@@ -1,4 +1,4 @@
-import { readdirSync, copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync } from 'node:fs'
 import { URL, fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { nitro } from 'nitro/vite'

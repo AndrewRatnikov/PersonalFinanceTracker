@@ -1,6 +1,10 @@
 export type Currency = 'UAH' | 'USD' | 'EUR'
 
-export const CURRENCIES = ['UAH', 'USD', 'EUR'] as const satisfies ReadonlyArray<Currency>
+export const CURRENCIES = [
+  'UAH',
+  'USD',
+  'EUR',
+] as const satisfies ReadonlyArray<Currency>
 
 export interface Category {
   id: string

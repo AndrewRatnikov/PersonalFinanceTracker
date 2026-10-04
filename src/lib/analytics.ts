@@ -71,7 +71,6 @@ export const getMonthlyExpenses = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-
 export const getRangeAnalytics = createServerFn({ method: 'GET' })
   .inputValidator((input: RangeInput | undefined): RangeInput => {
     if (!input || typeof input !== 'object') return {}
@@ -92,7 +91,9 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     ] = await Promise.all([
       supabase
         .from('expenses')
-        .select('id, amount, currency, category_id, created_at, categories (id, name, icon)')
+        .select(
+          'id, amount, currency, category_id, created_at, categories (id, name, icon)',
+        )
         .eq('user_id', user.id)
         .gte('created_at', range.from)
         .lte('created_at', range.to),
@@ -104,7 +105,9 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
         .lte('created_at', range.to),
       supabase
         .from('budgets')
-        .select('category_id, monthly_limit, currency, categories (id, name, icon)')
+        .select(
+          'category_id, monthly_limit, currency, categories (id, name, icon)',
+        )
         .eq('user_id', user.id),
     ])
 
@@ -164,18 +167,20 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
       }
     })
 
-    const budgetVariance: Array<BudgetVarianceItem> = (budgetRows ?? []).map((b: any) => {
-      const actual = categoryMap.get(b.category_id)?.total ?? 0
-      const budget = Number(b.monthly_limit)
-      return {
-        categoryId: b.category_id,
-        name: b.categories?.name ?? '',
-        icon: b.categories?.icon ?? null,
-        budget,
-        actual,
-        overBudget: actual > budget,
-      }
-    })
+    const budgetVariance: Array<BudgetVarianceItem> = (budgetRows ?? []).map(
+      (b: any) => {
+        const actual = categoryMap.get(b.category_id)?.total ?? 0
+        const budget = Number(b.monthly_limit)
+        return {
+          categoryId: b.category_id,
+          name: b.categories?.name ?? '',
+          icon: b.categories?.icon ?? null,
+          budget,
+          actual,
+          overBudget: actual > budget,
+        }
+      },
+    )
 
     return {
       from: range.from,

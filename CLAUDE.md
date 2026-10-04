@@ -26,6 +26,7 @@ There are currently no test files in the repo.
 The app migrated away from Supabase for data. **Supabase is auth-only.** All data lives in IndexedDB, encrypted at rest.
 
 The primary data module is `src/lib/localDb.ts`:
+
 - A module-level `let _key: CryptoKey | null = null` holds the AES-GCM key in memory only — never persisted.
 - `readStore` silently returns `undefined` when `_key` is null; `writeStore` throws `"LocalDb not initialized"`.
 - **Expense storage is chunked by month** (`expenses_YYYY_MM`). Categories, income, and budgets are single IDB keys.
@@ -48,12 +49,12 @@ The `beforeLoad` in `__root.tsx` also calls `provisionServerCategories()` (the S
 
 All routes use React Query (`useQuery` / `useMutation`) against `localDb` functions — not server functions:
 
-| Query key | Source function |
-|-----------|----------------|
-| `['categories']` | `getAllCategories()` |
+| Query key                | Source function         |
+| ------------------------ | ----------------------- |
+| `['categories']`         | `getAllCategories()`    |
 | `['expenses', from, to]` | `getExpensesForRange()` |
-| `['income']` | `getAllIncome()` |
-| `['budgets']` | `getAllBudgets()` |
+| `['income']`             | `getAllIncome()`        |
+| `['budgets']`            | `getAllBudgets()`       |
 
 Analytics are computed client-side in `src/lib/localAnalytics.ts` via `computeRangeAnalytics()`.
 

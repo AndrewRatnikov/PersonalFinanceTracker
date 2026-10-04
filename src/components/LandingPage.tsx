@@ -120,7 +120,13 @@ const CSV_PREVIEW = [
   '2024-01-13,850.00,UAH,Rent,Jan rent',
 ]
 
-function GetStartedButton({ className, children }: { className?: string; children: React.ReactNode }) {
+function GetStartedButton({
+  className,
+  children,
+}: {
+  className?: string
+  children: React.ReactNode
+}) {
   return (
     <Button
       asChild
@@ -163,7 +169,9 @@ function DashboardPreview() {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[11px] text-muted-foreground mb-2">12-month spending</p>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              12-month spending
+            </p>
             <div className="flex items-end gap-1 h-14">
               {[40, 55, 45, 65, 50, 60, 70, 58, 48, 62, 52, 100].map((h, i) => (
                 <div
@@ -175,7 +183,9 @@ function DashboardPreview() {
             </div>
           </div>
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[11px] text-muted-foreground mb-2">By category</p>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              By category
+            </p>
             <div className="flex flex-col gap-1.5">
               {[
                 { pct: 32, color: 'bg-[#6366f1]' },
@@ -185,9 +195,14 @@ function DashboardPreview() {
               ].map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className={`h-full rounded-full ${row.color}`} style={{ width: `${row.pct}%` }} />
+                    <div
+                      className={`h-full rounded-full ${row.color}`}
+                      style={{ width: `${row.pct}%` }}
+                    />
                   </div>
-                  <span className="text-[10px] text-muted-foreground w-7 text-right">{row.pct}%</span>
+                  <span className="text-[10px] text-muted-foreground w-7 text-right">
+                    {row.pct}%
+                  </span>
                 </div>
               ))}
             </div>
@@ -203,7 +218,10 @@ function DashboardPreview() {
             <div className="rounded-md border border-input px-3 py-2 text-xs text-muted-foreground">
               Coffee
             </div>
-            <Button size="sm" className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0">
+            <Button
+              size="sm"
+              className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
+            >
               Add
             </Button>
           </div>
@@ -215,15 +233,31 @@ function DashboardPreview() {
             {[
               { label: 'Coffee', time: '2m ago', amount: '-$4.80' },
               { label: 'Server Costs', time: '1h ago', amount: '-$12.00' },
-              { label: 'Freelance', time: '3h ago', amount: '+$420.00', positive: true },
+              {
+                label: 'Freelance',
+                time: '3h ago',
+                amount: '+$420.00',
+                positive: true,
+              },
               { label: 'Transport', time: '5h ago', amount: '-$2.50' },
             ].map((row) => (
-              <div key={row.label} className="flex items-center justify-between">
+              <div
+                key={row.label}
+                className="flex items-center justify-between"
+              >
                 <div>
                   <p className="font-medium">{row.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{row.time}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {row.time}
+                  </p>
                 </div>
-                <span className={row.positive ? 'text-emerald-500 font-medium' : 'font-medium'}>
+                <span
+                  className={
+                    row.positive
+                      ? 'text-emerald-500 font-medium'
+                      : 'font-medium'
+                  }
+                >
                   {row.amount}
                 </span>
               </div>
@@ -253,9 +287,9 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-lg text-muted-foreground mb-8 max-w-md">
-            A minimal personal finance tracker that keeps every expense,
-            budget, and income entry encrypted on your device — not on
-            someone else's server.
+            A minimal personal finance tracker that keeps every expense, budget,
+            and income entry encrypted on your device — not on someone else's
+            server.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -295,14 +329,17 @@ export default function LandingPage() {
           </h2>
           <p className="text-muted-foreground max-w-2xl mb-10">
             Mint, YNAB, Copilot — they all want read access to your bank
-            accounts and store your complete spending history on their
-            servers. One breach, one acquisition, one pivot to ads, and your
-            financial life is exposed.
+            accounts and store your complete spending history on their servers.
+            One breach, one acquisition, one pivot to ads, and your financial
+            life is exposed.
           </p>
 
           <div className="grid sm:grid-cols-3 gap-4">
             {PROBLEMS.map((p) => (
-              <Card key={p.title} className="gap-3 bg-destructive/5 ring-destructive/20">
+              <Card
+                key={p.title}
+                className="gap-3 bg-destructive/5 ring-destructive/20"
+              >
                 <div className="px-6 flex flex-col gap-3">
                   <div className="flex items-center justify-center h-7 w-7 shrink-0 rounded-full bg-destructive/10">
                     <X className="h-4 w-4 text-destructive" />
@@ -329,9 +366,9 @@ export default function LandingPage() {
               <h3 className="text-lg font-semibold">AES-GCM encryption</h3>
               <p className="text-sm text-muted-foreground">
                 Your password never leaves your device. It's used to derive a
-                key via PBKDF2 (200,000 iterations) with a device-scoped salt
-                — industry-standard key stretching that makes brute-force
-                attacks impractical.
+                key via PBKDF2 (200,000 iterations) with a device-scoped salt —
+                industry-standard key stretching that makes brute-force attacks
+                impractical.
               </p>
 
               <div className="flex flex-col gap-4 mt-2">
@@ -342,7 +379,9 @@ export default function LandingPage() {
                     </span>
                     <div>
                       <p className="text-sm font-medium">{step.title}</p>
-                      <p className="text-xs text-muted-foreground">{step.body}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {step.body}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -359,9 +398,9 @@ export default function LandingPage() {
             </h2>
             <p className="text-muted-foreground mb-8">
               We use Supabase only for Google sign-in — so you don't need a
-              password manager to log in. But your financial data never
-              touches Supabase or any server. It lives in your browser's
-              IndexedDB, encrypted before it's written.
+              password manager to log in. But your financial data never touches
+              Supabase or any server. It lives in your browser's IndexedDB,
+              encrypted before it's written.
             </p>
 
             <div className="flex flex-col gap-3">
@@ -393,8 +432,8 @@ export default function LandingPage() {
               </h2>
             </div>
             <p className="text-muted-foreground max-w-sm">
-              No bank linking, no ads, no algorithmic nudges. Just a fast,
-              clear view of where money goes.
+              No bank linking, no ads, no algorithmic nudges. Just a fast, clear
+              view of where money goes.
             </p>
           </div>
 
@@ -421,13 +460,18 @@ export default function LandingPage() {
               Leave anytime. Take everything with you.
             </h2>
             <p className="text-muted-foreground mb-8">
-              Every record you've created exports to clean, standard CSV
-              files. Import them into Excel, Google Sheets, or a future app.
-              No proprietary format, no export fee, no friction.
+              Every record you've created exports to clean, standard CSV files.
+              Import them into Excel, Google Sheets, or a future app. No
+              proprietary format, no export fee, no friction.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
-              {['Expenses CSV', 'Income CSV', 'Budgets CSV', 'Categories CSV'].map((label) => (
+              {[
+                'Expenses CSV',
+                'Income CSV',
+                'Budgets CSV',
+                'Categories CSV',
+              ].map((label) => (
                 <div
                   key={label}
                   className="flex items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm"
@@ -467,8 +511,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-muted-foreground max-w-md mb-10">
             MinimaSpend is free to use. There's no premium tier, no feature
-            gating, and no ads — because the model doesn't depend on your
-            data.
+            gating, and no ads — because the model doesn't depend on your data.
           </p>
 
           <Card className="w-full max-w-sm bg-card/60 backdrop-blur-sm">
@@ -487,7 +530,9 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              <GetStartedButton className="w-full">Continue with Google</GetStartedButton>
+              <GetStartedButton className="w-full">
+                Continue with Google
+              </GetStartedButton>
             </div>
           </Card>
         </div>
@@ -501,10 +546,12 @@ export default function LandingPage() {
               Start tracking in 30 seconds.
             </h2>
             <p className="text-muted-foreground max-w-md">
-              One Google sign-in, zero bank credentials, and your first
-              expense logged before you forget it.
+              One Google sign-in, zero bank credentials, and your first expense
+              logged before you forget it.
             </p>
-            <GetStartedButton className="mt-4">Get started free</GetStartedButton>
+            <GetStartedButton className="mt-4">
+              Get started free
+            </GetStartedButton>
           </div>
         </div>
       </section>
@@ -512,7 +559,10 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>Google sign-in is used for identity only. No financial data is stored on any server.</p>
+          <p>
+            Google sign-in is used for identity only. No financial data is
+            stored on any server.
+          </p>
           <p>&copy; {new Date().getFullYear()} MinimaSpend</p>
         </div>
       </footer>

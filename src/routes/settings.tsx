@@ -15,7 +15,11 @@ export type SettingsSearch = {
   tab?: SettingsTab
 }
 
-const SETTINGS_TABS: ReadonlyArray<SettingsTab> = ['categories', 'budget', 'data']
+const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
+  'categories',
+  'budget',
+  'data',
+]
 
 export const Route = createFileRoute('/settings')({
   validateSearch: (search: Record<string, unknown>): SettingsSearch => {
@@ -38,7 +42,9 @@ function SettingsPage() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Settings
+        </h1>
 
         <Tabs defaultValue={search.tab ?? 'categories'} className="w-full">
           <TabsList className="grid w-full grid-cols-3">

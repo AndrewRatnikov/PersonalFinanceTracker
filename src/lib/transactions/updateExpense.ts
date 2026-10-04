@@ -3,7 +3,6 @@ import dayjs from 'dayjs'
 import { getAuthenticatedClient } from '../serverClient'
 import type { Currency } from '../domain'
 
-
 export interface UpdateExpenseInput {
   id: string
   amount?: number
@@ -24,9 +23,14 @@ export const updateExpense = createServerFn({ method: 'POST' })
     return {
       id: payload.id,
       amount: typeof payload.amount === 'number' ? payload.amount : undefined,
-      currency: typeof payload.currency === 'string' ? payload.currency : undefined,
-      categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
-      description: typeof payload.description === 'string' ? payload.description : undefined,
+      currency:
+        typeof payload.currency === 'string' ? payload.currency : undefined,
+      categoryId:
+        typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
+      description:
+        typeof payload.description === 'string'
+          ? payload.description
+          : undefined,
     }
   })
   .handler(async ({ data }: { data: UpdateExpenseInput }): Promise<void> => {

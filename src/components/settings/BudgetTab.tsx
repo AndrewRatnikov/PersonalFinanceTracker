@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { getAllBudgets, upsertBudget, deleteBudget } from '@/lib/localDb'
 import type { BudgetEntry, Category, Currency } from '@/lib/domain'
+import { deleteBudget, getAllBudgets, upsertBudget } from '@/lib/localDb'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,7 +30,9 @@ import { Card, CardContent } from '@/components/ui/card'
 
 interface BudgetRowProps {
   category: Category
-  existingBudget: (BudgetEntry & { categoryName: string; categoryIcon: string | null }) | undefined
+  existingBudget:
+    | (BudgetEntry & { categoryName: string; categoryIcon: string | null })
+    | undefined
 }
 
 function BudgetRow({ category, existingBudget }: BudgetRowProps) {

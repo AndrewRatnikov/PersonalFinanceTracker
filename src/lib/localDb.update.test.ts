@@ -37,11 +37,10 @@ describe('localDb.updateExpense', () => {
     mockStore.clear()
     // Real WebCrypto AES-GCM key, per the plan's unlock procedure.
     unlockLocalDb(
-      await crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt'],
-      ),
+      await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+        'encrypt',
+        'decrypt',
+      ]),
     )
   })
 

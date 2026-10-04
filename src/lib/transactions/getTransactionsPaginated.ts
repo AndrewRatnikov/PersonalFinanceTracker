@@ -21,12 +21,22 @@ export const getTransactionsPaginated = createServerFn({ method: 'GET' })
     return {
       pageIndex: typeof payload.pageIndex === 'number' ? payload.pageIndex : 0,
       pageSize: typeof payload.pageSize === 'number' ? payload.pageSize : 10,
-      categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : null,
-      dateRange: payload.dateRange && typeof payload.dateRange.from === 'string' && typeof payload.dateRange.to === 'string' ? payload.dateRange : null,
+      categoryId:
+        typeof payload.categoryId === 'string' ? payload.categoryId : null,
+      dateRange:
+        payload.dateRange &&
+        typeof payload.dateRange.from === 'string' &&
+        typeof payload.dateRange.to === 'string'
+          ? payload.dateRange
+          : null,
     }
   })
   .handler(
-    async ({ data }: { data: GetTransactionsPaginatedInput }): Promise<GetTransactionsPaginatedOutput> => {
+    async ({
+      data,
+    }: {
+      data: GetTransactionsPaginatedInput
+    }): Promise<GetTransactionsPaginatedOutput> => {
       const { supabase, user } = await getAuthenticatedClient()
       const { pageIndex = 0, pageSize = 10, categoryId, dateRange } = data
 
@@ -43,15 +53,19 @@ export const getTransactionsPaginated = createServerFn({ method: 'GET' })
       }
 
       if (dateRange) {
-        query = query.gte('created_at', dateRange.from).lte('created_at', dateRange.to)
+        query = query
+          .gte('created_at', dateRange.from)
+          .lte('created_at', dateRange.to)
       }
 
       const from = pageIndex * pageSize
       const to = from + pageSize - 1
 
-      const { data: results, count, error } = await query
-        .order('created_at', { ascending: false })
-        .range(from, to)
+      const {
+        data: results,
+        count,
+        error,
+      } = await query.order('created_at', { ascending: false }).range(from, to)
 
       if (error) {
         throw error

@@ -1,4 +1,6 @@
-import { useState, SubmitEvent } from 'react'
+import { useState } from 'react'
+import type { SubmitEvent } from 'react';
+import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,7 +13,6 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 
-import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 import { createExpenseSchema } from '@/lib/schemas'
 
 interface SpeedEntryFormProps {
@@ -62,7 +63,6 @@ export default function SpeedEntryForm({
     <Card className="border-border bg-card/50 backdrop-blur-sm">
       <form onSubmit={handleSubmit}>
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-
           {/* Amount + Currency */}
           <div className="space-y-2">
             <Label
@@ -71,7 +71,9 @@ export default function SpeedEntryForm({
             >
               Amount
             </Label>
-            <div className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}>
+            <div
+              className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}
+            >
               <input
                 id="amount"
                 type="number"
@@ -135,7 +137,9 @@ export default function SpeedEntryForm({
                 {categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     <div className="flex items-center gap-2">
-                      {cat.icon && <span className="text-base">{cat.icon}</span>}
+                      {cat.icon && (
+                        <span className="text-base">{cat.icon}</span>
+                      )}
                       <span>{cat.name}</span>
                     </div>
                   </SelectItem>
@@ -154,7 +158,9 @@ export default function SpeedEntryForm({
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
               Description{' '}
-              <span className="normal-case font-normal opacity-50">(optional)</span>
+              <span className="normal-case font-normal opacity-50">
+                (optional)
+              </span>
             </Label>
             <Input
               id="description"
@@ -176,7 +182,6 @@ export default function SpeedEntryForm({
           >
             {isPending ? 'Saving…' : 'Save Expense'}
           </Button>
-
         </CardContent>
       </form>
     </Card>
