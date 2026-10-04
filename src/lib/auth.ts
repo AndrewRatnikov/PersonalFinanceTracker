@@ -41,9 +41,9 @@ export const getServerUserProfile = createServerFn({ method: 'GET' }).handler(
     const user = await getAuthenticatedUser()
     if (!user) return null
     return {
-      full_name: user.user_metadata?.full_name ?? '',
+      full_name: user.user_metadata.full_name ?? '',
       email: user.email ?? '',
-      avatar_url: user.user_metadata?.avatar_url ?? null,
+      avatar_url: user.user_metadata.avatar_url ?? null,
     }
   },
 )

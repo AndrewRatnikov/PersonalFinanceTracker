@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SubmitEvent } from 'react';
+import type { SubmitEvent } from 'react'
 import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'

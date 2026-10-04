@@ -16,7 +16,7 @@ export interface GetIncomePaginatedOutput {
 
 export const getIncomePaginated = createServerFn({ method: 'GET' })
   .inputValidator((input: unknown): GetIncomePaginatedInput => {
-    const payload = (input as GetIncomePaginatedInput) || {}
+    const payload = (input ?? {}) as GetIncomePaginatedInput
     return {
       pageIndex: typeof payload.pageIndex === 'number' ? payload.pageIndex : 0,
       pageSize: typeof payload.pageSize === 'number' ? payload.pageSize : 10,

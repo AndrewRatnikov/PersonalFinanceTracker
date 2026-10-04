@@ -144,7 +144,7 @@ export async function importExpensesFromCSV(
       continue
     }
 
-    const categoryId = categoryMap.get(categoryName?.toLowerCase() ?? '')
+    const categoryId = categoryMap.get((categoryName || '').toLowerCase())
     if (!categoryId) {
       errors.push(`Row ${i + 2}: unknown category "${categoryName}"`)
       skipped++
@@ -228,7 +228,7 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
       currency,
     } = rows[i]
 
-    const categoryId = categoryMap.get(categoryName?.toLowerCase() ?? '')
+    const categoryId = categoryMap.get((categoryName || '').toLowerCase())
     if (!categoryId) {
       errors.push(`Row ${i + 2}: unknown category "${categoryName}"`)
       skipped++

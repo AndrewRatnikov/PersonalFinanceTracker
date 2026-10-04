@@ -54,22 +54,22 @@ export async function clearLocalDb(): Promise<void> {
 
 // ── Generic encrypted read/write ──────────────────────────────────────────────
 
-async function readStore<K extends LocalDbKey>(
-  key: K,
-): Promise<LocalDbMap[K] | undefined> {
+async function readStore<TKey extends LocalDbKey>(
+  key: TKey,
+): Promise<LocalDbMap[TKey] | undefined> {
   if (!_key || !store) return undefined
   const raw = await get<unknown>(key, store)
   if (!(raw instanceof Uint8Array)) return undefined
   try {
-    return (await decryptValue(_key, raw)) as LocalDbMap[K]
+    return (await decryptValue(_key, raw)) as LocalDbMap[TKey]
   } catch {
     return undefined
   }
 }
 
-async function writeStore<K extends LocalDbKey>(
-  key: K,
-  data: LocalDbMap[K],
+async function writeStore<TKey extends LocalDbKey>(
+  key: TKey,
+  data: LocalDbMap[TKey],
 ): Promise<void> {
   if (!_key) throw new Error('LocalDb not initialized')
   if (!store) return

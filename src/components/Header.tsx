@@ -48,7 +48,7 @@ function scrollToHash(hash: string) {
 
 export default function Header() {
   const { auth } = Route.useRouteContext()
-  const user = auth?.user
+  const user = auth.user
 
   if (!user) {
     return (

@@ -17,7 +17,7 @@ export interface GetTransactionsPaginatedOutput {
 export const getTransactionsPaginated = createServerFn({ method: 'GET' })
   .inputValidator((input: unknown): GetTransactionsPaginatedInput => {
     // Basic validation, since Zod is not yet fully installed/integrated across the board implicitly
-    const payload = (input as GetTransactionsPaginatedInput) || {}
+    const payload = (input ?? {}) as GetTransactionsPaginatedInput
     return {
       pageIndex: typeof payload.pageIndex === 'number' ? payload.pageIndex : 0,
       pageSize: typeof payload.pageSize === 'number' ? payload.pageSize : 10,

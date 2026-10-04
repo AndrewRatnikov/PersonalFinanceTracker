@@ -115,7 +115,7 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
     if (incomeError) throw incomeError
     if (budgetError) throw budgetError
 
-    const totalIncome = (incomeRows ?? []).reduce(
+    const totalIncome = incomeRows.reduce(
       (sum: number, row: any) => sum + Number(row.amount),
       0,
     )
@@ -167,7 +167,7 @@ export const getRangeAnalytics = createServerFn({ method: 'GET' })
       }
     })
 
-    const budgetVariance: Array<BudgetVarianceItem> = (budgetRows ?? []).map(
+    const budgetVariance: Array<BudgetVarianceItem> = budgetRows.map(
       (b: any) => {
         const actual = categoryMap.get(b.category_id)?.total ?? 0
         const budget = Number(b.monthly_limit)
