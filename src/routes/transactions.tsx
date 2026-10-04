@@ -1,14 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import type { UpdateExpenseInput } from '@/lib/domain'
 import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import {
+  deleteExpense,
   getAllCategories,
   getAllExpenses,
-  deleteExpense,
   updateExpense,
 } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
@@ -32,7 +32,11 @@ function Transactions() {
     queryFn: getAllCategories,
   })
 
-  const { data: allExpenses = [], isLoading, isError } = useQuery({
+  const {
+    data: allExpenses = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['expenses'],
     queryFn: getAllExpenses,
   })

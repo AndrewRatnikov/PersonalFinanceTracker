@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import type { CreateIncomeInput, Currency } from '@/lib/domain'
 import { addIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
-import type { CreateIncomeInput, Currency } from '@/lib/domain'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -72,12 +72,13 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
     <Card className="border-border bg-card/50 backdrop-blur-sm">
       <form onSubmit={handleSubmit}>
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-
           <div className="space-y-2">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Amount
             </Label>
-            <div className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}>
+            <div
+              className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}
+            >
               <input
                 type="number"
                 step="0.01"
@@ -132,7 +133,9 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
           <div className="space-y-2">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Description{' '}
-              <span className="normal-case font-normal opacity-50">(optional)</span>
+              <span className="normal-case font-normal opacity-50">
+                (optional)
+              </span>
             </Label>
             <Input
               type="text"
@@ -151,7 +154,6 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
           >
             {mutation.isPending ? 'Saving…' : 'Save Income'}
           </Button>
-
         </CardContent>
       </form>
     </Card>

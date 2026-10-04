@@ -9,7 +9,6 @@ import {
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { User } from '@supabase/supabase-js'
 
 import { getServerUser } from '../lib/auth'
 import {
@@ -17,13 +16,14 @@ import {
   provisionDefaultCategories as provisionLocalCategories,
   unlockLocalDb,
 } from '../lib/localDb'
-import type { AuthContext } from '../lib/authContext'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
 import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
 import NotFoundPage from '../components/NotFoundPage'
 
 import appCss from '../styles.css?url'
+import type { AuthContext } from '../lib/authContext'
+import type { User } from '@supabase/supabase-js'
 
 const OFFLINE_USER_KEY = 'minima_offline_user'
 
@@ -41,10 +41,7 @@ export const Route = createRootRouteWithContext<AuthContext>()({
     try {
       user = await getServerUser()
       if (typeof window !== 'undefined' && user) {
-        localStorage.setItem(
-          OFFLINE_USER_KEY,
-          JSON.stringify({ id: user.id }),
-        )
+        localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({ id: user.id }))
       }
     } catch (err) {
       if (typeof window !== 'undefined') {

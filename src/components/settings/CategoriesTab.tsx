@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 
-import { getAllCategories, addCategory } from '@/lib/localDb'
-import type { Category } from '@/lib/domain'
 import { CategoryRow } from './CategoryRow'
+import type { Category } from '@/lib/domain'
+import { addCategory, getAllCategories } from '@/lib/localDb'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -22,7 +22,8 @@ export function CategoriesTab() {
     queryFn: getAllCategories,
   })
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['categories'] })
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: ['categories'] })
 
   const withPending = async (fn: () => Promise<void>) => {
     setError(null)

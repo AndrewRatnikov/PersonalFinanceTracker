@@ -69,7 +69,10 @@ export function DeleteAccountDialog({
         </AlertDialogHeader>
 
         {error && (
-          <p data-testid="delete-account-error" className="text-sm text-destructive">
+          <p
+            data-testid="delete-account-error"
+            className="text-sm text-destructive"
+          >
             {error}
           </p>
         )}

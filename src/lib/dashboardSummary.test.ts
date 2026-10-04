@@ -4,8 +4,17 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { BudgetEntry, Category, Currency, Expense, IncomeEntry } from '@/lib/domain'
-import { computeDashboardSummary, getBudgetStatus } from '@/lib/dashboardSummary'
+import type {
+  BudgetEntry,
+  Category,
+  Currency,
+  Expense,
+  IncomeEntry,
+} from '@/lib/domain'
+import {
+  computeDashboardSummary,
+  getBudgetStatus,
+} from '@/lib/dashboardSummary'
 
 // ---- fixture helpers -------------------------------------------------
 
@@ -24,7 +33,13 @@ function mkExpense(
   createdAt: string,
   overrideId?: string,
 ): Expense {
-  return { id: overrideId ?? id('exp'), amount, currency, categoryId, createdAt }
+  return {
+    id: overrideId ?? id('exp'),
+    amount,
+    currency,
+    categoryId,
+    createdAt,
+  }
 }
 
 function mkIncome(
@@ -33,7 +48,13 @@ function mkIncome(
   createdAt: string,
   overrideId?: string,
 ): IncomeEntry {
-  return { id: overrideId ?? id('inc'), source: 'Salary', amount, currency, createdAt }
+  return {
+    id: overrideId ?? id('inc'),
+    source: 'Salary',
+    amount,
+    currency,
+    createdAt,
+  }
 }
 
 function mkBudget(
@@ -74,7 +95,7 @@ describe('getBudgetStatus', () => {
 // ---- criterion 2: month + year totals (bug 1 fix) -----------------------
 
 describe('criterion 2: this-month totals exclude the same month in an earlier year (bug 1)', () => {
-  it('sums only entries whose createdAt is in now\'s calendar month AND year', () => {
+  it("sums only entries whose createdAt is in now's calendar month AND year", () => {
     const now = new Date(2026, 6, 15, 12, 0, 0) // July 2026
 
     const expenses = [
@@ -302,7 +323,7 @@ describe('criterion 6: pace', () => {
     expect(result.pace.changePct).toBeCloseTo(75, 5)
   })
 
-  it('caps the cutoff at the previous month\'s own day count (31-day month vs 30-day last month)', () => {
+  it("caps the cutoff at the previous month's own day count (31-day month vs 30-day last month)", () => {
     const now = new Date(2026, 6, 31, 12, 0, 0) // July 31 (31 days); June has 30 days -> cutoff 30
     const expenses = [
       mkExpense(300, 'UAH', catFood.id, dateAt(2026, 6, 31)), // this month
@@ -365,11 +386,7 @@ describe('criterion 7: budgetWatch', () => {
   const now = new Date(2026, 6, 15, 12, 0, 0)
 
   it('orders entries by spent/limit ratio descending', () => {
-    const categories = [
-      catFood,
-      catTransport,
-      { id: 'cat-rent', name: 'Rent' },
-    ]
+    const categories = [catFood, catTransport, { id: 'cat-rent', name: 'Rent' }]
     const budgets = [
       mkBudget(catFood.id, 1000),
       mkBudget(catTransport.id, 1000),
@@ -579,7 +596,13 @@ describe('criterion 8: recent', () => {
     const expensesBefore = expenses.map((e) => e.id)
     const incomeBefore = income.map((i) => i.id)
 
-    computeDashboardSummary({ expenses, income, budgets: [], categories: [], now })
+    computeDashboardSummary({
+      expenses,
+      income,
+      budgets: [],
+      categories: [],
+      now,
+    })
 
     expect(expenses.map((e) => e.id)).toEqual(expensesBefore)
     expect(income.map((i) => i.id)).toEqual(incomeBefore)

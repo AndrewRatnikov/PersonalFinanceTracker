@@ -51,34 +51,51 @@ export function IncomeTable({
         <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
           <TableHead className="pl-6 font-semibold">Date</TableHead>
           <TableHead className="font-semibold">Source</TableHead>
-          <TableHead className="hidden md:table-cell font-semibold">Description</TableHead>
+          <TableHead className="hidden md:table-cell font-semibold">
+            Description
+          </TableHead>
           <TableHead className="text-right font-semibold">Amount</TableHead>
-          <TableHead className="pr-6 text-right font-semibold">Actions</TableHead>
+          <TableHead className="pr-6 text-right font-semibold">
+            Actions
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {isLoading ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-12 text-center text-muted-foreground">
+            <TableCell
+              colSpan={5}
+              className="p-12 text-center text-muted-foreground"
+            >
               <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
             </TableCell>
           </TableRow>
         ) : isError ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-12 text-center text-destructive">
+            <TableCell
+              colSpan={5}
+              className="p-12 text-center text-destructive"
+            >
               Failed to load income. Please try again later.
             </TableCell>
           </TableRow>
         ) : income.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={5} className="p-16 text-center text-muted-foreground">
+            <TableCell
+              colSpan={5}
+              className="p-16 text-center text-muted-foreground"
+            >
               <div className="flex flex-col items-center justify-center space-y-4">
                 <div className="p-4 bg-muted rounded-full">
                   <Search className="w-8 h-8 text-muted-foreground opacity-50" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-medium text-foreground">No income recorded yet</p>
-                  <p className="text-sm">Add your first income entry using the form.</p>
+                  <p className="font-medium text-foreground">
+                    No income recorded yet
+                  </p>
+                  <p className="text-sm">
+                    Add your first income entry using the form.
+                  </p>
                 </div>
               </div>
             </TableCell>
@@ -118,9 +135,12 @@ export function IncomeTable({
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogTitle>
+                          Are you absolutely sure?
+                        </AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently delete this income entry. This action cannot be undone.
+                          This will permanently delete this income entry. This
+                          action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

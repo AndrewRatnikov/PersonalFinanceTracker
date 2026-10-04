@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { getAllIncome, deleteIncome } from '@/lib/localDb'
+import { deleteIncome, getAllIncome } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
 import { Card } from '@/components/ui/card'
 import { AddIncomeForm } from '@/components/income/AddIncomeForm'
@@ -19,7 +19,11 @@ function IncomePage() {
   const pageSize = 15
   const queryClient = useQueryClient()
 
-  const { data: allIncome = [], isLoading, isError } = useQuery({
+  const {
+    data: allIncome = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['income'],
     queryFn: getAllIncome,
   })

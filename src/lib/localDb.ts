@@ -1,16 +1,16 @@
-import { createStore, get, set, clear, keys } from 'idb-keyval'
+import { clear, createStore, get, keys, set } from 'idb-keyval'
 
-import { encryptValue, decryptValue, getOrCreateDeviceSalt } from './crypto'
+import { decryptValue, encryptValue, getOrCreateDeviceSalt } from './crypto'
 import type {
+  BudgetEntry,
   Category,
   CreateCategoryInput,
-  UpdateCategoryInput,
-  Expense,
   CreateExpenseInput,
-  UpdateExpenseInput,
-  IncomeEntry,
   CreateIncomeInput,
-  BudgetEntry,
+  Expense,
+  IncomeEntry,
+  UpdateCategoryInput,
+  UpdateExpenseInput,
   UpsertBudgetInput,
 } from './domain'
 
@@ -54,22 +54,22 @@ export async function clearLocalDb(): Promise<void> {
 
 // ── Generic encrypted read/write ──────────────────────────────────────────────
 
-async function readStore<K extends LocalDbKey>(
-  key: K,
-): Promise<LocalDbMap[K] | undefined> {
+async function readStore<TKey extends LocalDbKey>(
+  key: TKey,
+): Promise<LocalDbMap[TKey] | undefined> {
   if (!_key || !store) return undefined
   const raw = await get<unknown>(key, store)
   if (!(raw instanceof Uint8Array)) return undefined
   try {
-    return (await decryptValue(_key, raw)) as LocalDbMap[K]
+    return (await decryptValue(_key, raw)) as LocalDbMap[TKey]
   } catch {
     return undefined
   }
 }
 
-async function writeStore<K extends LocalDbKey>(
-  key: K,
-  data: LocalDbMap[K],
+async function writeStore<TKey extends LocalDbKey>(
+  key: TKey,
+  data: LocalDbMap[TKey],
 ): Promise<void> {
   if (!_key) throw new Error('LocalDb not initialized')
   if (!store) return
@@ -81,7 +81,8 @@ async function writeStore<K extends LocalDbKey>(
 
 function expenseChunkKey(dateStr: string): string {
   const d = new Date(dateStr)
-  if (isNaN(d.getTime())) throw new Error(`expenseChunkKey: invalid date string "${dateStr}"`)
+  if (isNaN(d.getTime()))
+    throw new Error(`expenseChunkKey: invalid date string "${dateStr}"`)
   const y = d.getUTCFullYear()
   const m = String(d.getUTCMonth() + 1).padStart(2, '0')
   return `expenses_${y}_${m}`
@@ -171,7 +172,10 @@ export async function getAllExpenses(): Promise<Array<Expense>> {
 }
 
 export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
-  if (input.createdAt !== undefined && isNaN(new Date(input.createdAt).getTime())) {
+  if (
+    input.createdAt !== undefined &&
+    isNaN(new Date(input.createdAt).getTime())
+  ) {
     throw new Error(`addExpense: invalid createdAt "${input.createdAt}"`)
   }
   const entry: Expense = {

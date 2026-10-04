@@ -72,43 +72,9 @@ export default function DashboardSummarySection({
             </>
           ) : (
             <CardContent
-              className="flex flex-col gap-4"
+              className="flex flex-col"
               data-testid="dashboard-no-budget-fallback"
             >
-              <div className="grid grid-cols-3 gap-3">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground">Income</span>
-                  <span
-                    className="font-semibold tabular-nums break-words"
-                    data-testid="dashboard-month-income"
-                  >
-                    {summary.monthIncome.toLocaleString()} {cur}
-                  </span>
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground">
-                    Expenses
-                  </span>
-                  <span
-                    className="font-semibold tabular-nums break-words"
-                    data-testid="dashboard-month-expenses"
-                  >
-                    {summary.monthExpenses.toLocaleString()} {cur}
-                  </span>
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground">Net</span>
-                  <span
-                    className={cn(
-                      'font-semibold tabular-nums break-words',
-                      summary.net < 0 && 'text-destructive',
-                    )}
-                    data-testid="dashboard-month-net"
-                  >
-                    {summary.net.toLocaleString()} {cur}
-                  </span>
-                </div>
-              </div>
               <Link
                 to="/settings"
                 search={{ tab: 'budget' }}
@@ -122,7 +88,10 @@ export default function DashboardSummarySection({
         </Card>
 
         {pace.changePct !== null && (
-          <p className="text-sm text-muted-foreground" data-testid="dashboard-pace">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="dashboard-pace"
+          >
             {`${pace.spentSoFar.toLocaleString()} ${cur} spent, ${Math.abs(
               Math.round(pace.changePct),
             )}% ${pace.changePct < 0 ? 'less' : 'more'} than this time last month`}

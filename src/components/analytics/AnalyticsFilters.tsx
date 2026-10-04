@@ -2,20 +2,22 @@ import { useMemo, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { formatRangeLabel, toDateInputValue } from '../../lib/analyticsUtils'
+import type { AnalyticsRangeSummary } from '../../lib/domain'
+import type { AnalyticsSearch } from '../../routes/analytics'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-
-import type { AnalyticsRangeSummary } from '../../lib/domain'
-import type { AnalyticsSearch } from '../../routes/analytics'
 
 type AnalyticsFiltersProps = {
   analytics: AnalyticsRangeSummary
   search: AnalyticsSearch
 }
 
-export default function AnalyticsFilters({ analytics, search }: AnalyticsFiltersProps) {
+export default function AnalyticsFilters({
+  analytics,
+  search,
+}: AnalyticsFiltersProps) {
   const router = useRouter()
 
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -78,7 +80,9 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
     <Card className="shadow-sm border">
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <div className="space-y-1">
-          <CardTitle className="text-xl font-bold tracking-tight">Analytics</CardTitle>
+          <CardTitle className="text-xl font-bold tracking-tight">
+            Analytics
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
             Showing expenses from {formatRangeLabel(analytics)}
           </p>
@@ -101,7 +105,9 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
 
       <CardContent className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">From</Label>
+          <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
+            From
+          </Label>
           <Input
             type="date"
             value={fromValue}
@@ -111,7 +117,9 @@ export default function AnalyticsFilters({ analytics, search }: AnalyticsFilters
           />
         </div>
         <div className="space-y-2">
-          <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">To</Label>
+          <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
+            To
+          </Label>
           <Input
             type="date"
             value={toValue}

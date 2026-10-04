@@ -8,8 +8,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Card, CardContent } from '@/components/ui/card'
 import type { BudgetVarianceItem } from '@/lib/domain'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
   data: Array<BudgetVarianceItem>

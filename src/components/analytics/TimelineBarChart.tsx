@@ -7,8 +7,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Card, CardContent } from '@/components/ui/card'
 import type { AnalyticsTimelinePoint } from '@/lib/domain'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
   data: Array<AnalyticsTimelinePoint>
@@ -54,7 +54,9 @@ export default function TimelineBarChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-56 flex items-center justify-center">
-        <CardContent className="text-muted-foreground text-sm">No data found.</CardContent>
+        <CardContent className="text-muted-foreground text-sm">
+          No data found.
+        </CardContent>
       </Card>
     )
   }
@@ -95,7 +97,10 @@ export default function TimelineBarChart({ data }: Props) {
               fontSize: '12px',
             }}
             itemStyle={{ fontWeight: 600, padding: '0 4px' }}
-            labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
+            labelStyle={{
+              color: 'hsl(var(--muted-foreground))',
+              marginBottom: '4px',
+            }}
             formatter={(value) => [
               `${Number(value ?? 0).toLocaleString()} UAH`,
               'Spent',

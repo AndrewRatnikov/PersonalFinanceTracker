@@ -1,14 +1,22 @@
 import { Link } from '@tanstack/react-router'
-import { BarChart3, Home, Menu, Settings, TrendingUp, User2, List } from 'lucide-react'
+import {
+  BarChart3,
+  Home,
+  List,
+  Menu,
+  Settings,
+  TrendingUp,
+  User2,
+} from 'lucide-react'
 import { Route } from '../routes/__root'
 import { BrandIcon } from './BrandIcon'
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-  SheetClose,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 
@@ -40,7 +48,7 @@ function scrollToHash(hash: string) {
 
 export default function Header() {
   const { auth } = Route.useRouteContext()
-  const user = auth?.user
+  const user = auth.user
 
   if (!user) {
     return (
@@ -174,7 +182,10 @@ export default function Header() {
           </SheetContent>
         </Sheet>
         <h1 className="text-xl font-bold tracking-tight">
-          <Link to="/" className="flex items-center gap-2 hover:text-primary transition-colors">
+          <Link
+            to="/"
+            className="flex items-center gap-2 hover:text-primary transition-colors"
+          >
             <BrandIcon size={22} />
             MinimaSpend
           </Link>

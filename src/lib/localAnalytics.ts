@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 
-import { getExpensesForRange, getAllIncome, getAllBudgets } from './localDb'
+import { getAllBudgets, getAllIncome, getExpensesForRange } from './localDb'
 import { normalizeRange } from './analyticsUtils'
 import type { RangeInput } from './analyticsUtils'
 import type {

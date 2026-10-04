@@ -22,14 +22,16 @@ const { mockStore } = vi.hoisted(() => ({
 // of createStore/get/set/clear/keys, per the plan's Tests section.
 vi.mock('idb-keyval', () => ({
   createStore: () => 'mock-store',
-  get: async (key: string) => mockStore.get(key),
-  set: async (key: string, value: unknown) => {
+  get: (key: string) => Promise.resolve(mockStore.get(key)),
+  set: (key: string, value: unknown) => {
     mockStore.set(key, value)
+    return Promise.resolve()
   },
-  clear: async () => {
+  clear: () => {
     mockStore.clear()
+    return Promise.resolve()
   },
-  keys: async () => Array.from(mockStore.keys()),
+  keys: () => Promise.resolve(Array.from(mockStore.keys())),
 }))
 
 describe('localDb.updateExpense', () => {
@@ -37,11 +39,10 @@ describe('localDb.updateExpense', () => {
     mockStore.clear()
     // Real WebCrypto AES-GCM key, per the plan's unlock procedure.
     unlockLocalDb(
-      await crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt'],
-      ),
+      await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+        'encrypt',
+        'decrypt',
+      ]),
     )
   })
 

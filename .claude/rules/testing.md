@@ -1,9 +1,9 @@
 ---
 paths:
-  - "vitest.config.ts"
-  - "vite.config.ts"
-  - "src/**/*.test.tsx"
-  - "src/**/*.test.ts"
+  - 'vitest.config.ts'
+  - 'vite.config.ts'
+  - 'src/**/*.test.tsx'
+  - 'src/**/*.test.ts'
 ---
 
 # Testing gotchas
@@ -41,6 +41,7 @@ isn't installed either — use `fireEvent`, and native `<select>`s where a test
 must change a value (Radix Select can't be driven by `fireEvent` in jsdom).
 
 `npm run lint` is type-aware and covers test files:
+
 - `(screen.getByTestId('x') as HTMLInputElement)` is flagged by
   `no-unnecessary-type-assertion`; write `screen.getByTestId<HTMLInputElement>('x')`.
 - Put every `import` at the top of the file, above `vi.hoisted` / `vi.mock`

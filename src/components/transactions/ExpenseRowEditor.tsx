@@ -24,7 +24,10 @@ const SELECT_CLASS =
 function FieldError({ field, message }: { field: string; message?: string }) {
   if (!message) return null
   return (
-    <p data-testid={`edit-error-${field}`} className="text-xs text-destructive mt-1">
+    <p
+      data-testid={`edit-error-${field}`}
+      className="text-xs text-destructive mt-1"
+    >
       {message}
     </p>
   )
@@ -35,7 +38,11 @@ function FieldError({ field, message }: { field: string; message?: string }) {
  * passes the original timestamp through untouched; a changed date keeps the
  * original local time of day.
  */
-function buildCreatedAt(date: string, initialDate: string, original: string): string {
+function buildCreatedAt(
+  date: string,
+  initialDate: string,
+  original: string,
+): string {
   if (date === initialDate) return original
   if (date === '') return ''
   const picked = dayjs(date)

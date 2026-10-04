@@ -33,8 +33,7 @@ export interface BudgetWatchItem {
 }
 
 export type RecentItem =
-  | (Expense & { kind: 'expense' })
-  | (IncomeEntry & { kind: 'income' })
+  (Expense & { kind: 'expense' }) | (IncomeEntry & { kind: 'income' })
 
 export interface DashboardSummaryInput {
   expenses: Array<Expense>

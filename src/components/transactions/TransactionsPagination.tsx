@@ -37,7 +37,8 @@ export function TransactionsPagination({
         <span className="font-medium text-foreground">
           {Math.min((pageIndex + 1) * pageSize, totalCount)}
         </span>{' '}
-        of <span className="font-medium text-foreground">{totalCount}</span> results
+        of <span className="font-medium text-foreground">{totalCount}</span>{' '}
+        results
       </span>
 
       <Pagination className="w-auto mx-0">
@@ -50,7 +51,11 @@ export function TransactionsPagination({
                 if (!isPrevDisabled) onPageChange(pageIndex - 1)
               }}
               aria-disabled={isPrevDisabled}
-              className={isPrevDisabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              className={
+                isPrevDisabled
+                  ? 'pointer-events-none opacity-50'
+                  : 'cursor-pointer'
+              }
             />
           </PaginationItem>
           <PaginationItem>
@@ -66,7 +71,11 @@ export function TransactionsPagination({
                 if (!isNextDisabled) onPageChange(pageIndex + 1)
               }}
               aria-disabled={isNextDisabled}
-              className={isNextDisabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              className={
+                isNextDisabled
+                  ? 'pointer-events-none opacity-50'
+                  : 'cursor-pointer'
+              }
             />
           </PaginationItem>
         </PaginationContent>

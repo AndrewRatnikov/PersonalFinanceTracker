@@ -66,7 +66,9 @@ export default function BudgetSummaryCard({
           <CardDescription
             className={cn(
               'text-2xl font-semibold',
-              netBalance < 0 ? 'text-destructive' : 'text-black dark:text-white',
+              netBalance < 0
+                ? 'text-destructive'
+                : 'text-black dark:text-white',
             )}
             data-testid="budget-summary-net-balance"
           >

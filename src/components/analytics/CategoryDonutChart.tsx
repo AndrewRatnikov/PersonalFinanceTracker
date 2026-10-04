@@ -1,6 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import { Card, CardContent } from '@/components/ui/card'
 import type { CategoryBreakdownItem } from '@/lib/domain'
+import { Card, CardContent } from '@/components/ui/card'
 
 const COLORS = [
   '#6366f1',
@@ -32,7 +32,9 @@ export default function CategoryDonutChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-48 flex items-center justify-center">
-        <CardContent className="text-muted-foreground text-sm">No data found.</CardContent>
+        <CardContent className="text-muted-foreground text-sm">
+          No data found.
+        </CardContent>
       </Card>
     )
   }
@@ -51,7 +53,15 @@ export default function CategoryDonutChart({ data }: Props) {
       value: item.total,
     })),
     ...(otherTotal > 0
-      ? [{ categoryId: 'other', name: 'Other', shortName: 'Other', icon: null, value: otherTotal }]
+      ? [
+          {
+            categoryId: 'other',
+            name: 'Other',
+            shortName: 'Other',
+            icon: null,
+            value: otherTotal,
+          },
+        ]
       : []),
   ]
 
@@ -92,7 +102,8 @@ export default function CategoryDonutChart({ data }: Props) {
               itemStyle={{ fontWeight: 600, padding: '0 4px' }}
               formatter={(value, name) => {
                 const n = Number(value ?? 0)
-                const pct = grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
+                const pct =
+                  grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
                 return [`${n.toLocaleString()} UAH (${pct}%)`, name ?? '']
               }}
             />
@@ -103,7 +114,10 @@ export default function CategoryDonutChart({ data }: Props) {
       {/* Custom legend — wraps naturally inside the card, never overflows */}
       <div className="px-4 pb-4 flex flex-wrap gap-x-4 gap-y-2">
         {chartData.map((item, index) => (
-          <div key={item.categoryId} className="flex items-center gap-1.5 min-w-0">
+          <div
+            key={item.categoryId}
+            className="flex items-center gap-1.5 min-w-0"
+          >
             <span
               className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: COLORS[index % COLORS.length] }}

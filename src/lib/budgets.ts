@@ -15,7 +15,9 @@ export const getBudgets = createServerFn({ method: 'GET' }).handler(
 
     const { data: rows, error } = await supabase
       .from('budgets')
-      .select('id, category_id, monthly_limit, currency, categories (id, name, icon)')
+      .select(
+        'id, category_id, monthly_limit, currency, categories (id, name, icon)',
+      )
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
 
@@ -48,11 +50,18 @@ export const upsertBudget = createServerFn({ method: 'POST' })
       throw new Error('Category is required')
     }
 
-    if (typeof monthlyLimit !== 'number' || !Number.isFinite(monthlyLimit) || monthlyLimit <= 0) {
+    if (
+      typeof monthlyLimit !== 'number' ||
+      !Number.isFinite(monthlyLimit) ||
+      monthlyLimit <= 0
+    ) {
       throw new Error('Monthly limit must be a positive number')
     }
 
-    if (typeof currency !== 'string' || !CURRENCIES.includes(currency as Currency)) {
+    if (
+      typeof currency !== 'string' ||
+      !CURRENCIES.includes(currency as Currency)
+    ) {
       throw new Error('Unsupported currency')
     }
 

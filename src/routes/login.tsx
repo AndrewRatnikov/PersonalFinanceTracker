@@ -4,7 +4,13 @@ import { Loader2 } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { GoogleIcon } from '@/components/icons/GoogleIcon'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export const Route = createFileRoute('/login')({
@@ -48,7 +54,9 @@ function Login() {
     <div className="flex h-screen w-screen items-center justify-center bg-background">
       <Card className="w-full max-w-sm border shadow-xl">
         <CardHeader className="text-center space-y-2">
-          <CardTitle className="text-3xl font-bold tracking-tight">MinimaSpend</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight">
+            MinimaSpend
+          </CardTitle>
           <CardDescription>
             Sign in to manage your core expenses instantly.
           </CardDescription>

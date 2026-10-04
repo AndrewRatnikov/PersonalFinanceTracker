@@ -55,9 +55,7 @@ describe('BudgetSummaryCard', () => {
     })
 
     it('respects an explicit currency prop other than the default', () => {
-      render(
-        <BudgetSummaryCard income={500} expenses={200} currency="USD" />,
-      )
+      render(<BudgetSummaryCard income={500} expenses={200} currency="USD" />)
       expect(screen.getByTestId('budget-summary-income').textContent).toContain(
         'USD',
       )
