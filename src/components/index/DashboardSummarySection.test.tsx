@@ -82,7 +82,7 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(screen.queryByTestId('dashboard-no-budget-fallback')).toBeNull()
   })
 
-  it('no budget: shows only the Settings link in the fallback, and each month figure exactly once', () => {
+  it('no budget: each month figure appears exactly once, inside the hero, with currency', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
       leftToSpend: null,
@@ -98,34 +98,18 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(screen.queryByTestId('dashboard-left-to-spend')).toBeNull()
     expect(screen.queryByTestId('dashboard-daily-allowance')).toBeNull()
 
-    // Fallback container and link are kept (criterion 3).
-    const fallback = screen.getByTestId('dashboard-no-budget-fallback')
-    const link = within(fallback).getByTestId('dashboard-budget-setup-link')
-    expect(link.getAttribute('href')).toBe('/settings')
-
-    // Duplicate hero figures are gone (criterion 2).
-    expect(screen.queryByTestId('dashboard-month-income')).toBeNull()
-    expect(screen.queryByTestId('dashboard-month-expenses')).toBeNull()
-    expect(screen.queryByTestId('dashboard-month-net')).toBeNull()
-
-    // The fallback holds no month figures.
-    for (const value of [1234, 321, 913]) {
-      expect(fallback.textContent).not.toContain(fmt(value))
+    const hero = screen.getByTestId('dashboard-hero')
+    const cases: Array<[string, number]> = [
+      ['dashboard-month-income', 1234],
+      ['dashboard-month-expenses', 321],
+      ['dashboard-month-net', 913],
+    ]
+    for (const [id, value] of cases) {
+      expect(screen.getAllByTestId(id)).toHaveLength(1)
+      const el = within(hero).getByTestId(id)
+      expect(el.textContent).toContain(fmt(value))
+      expect(el.textContent).toContain('UAH')
     }
-
-    // BudgetSummaryCard shows each figure once (criterion 1).
-    const income = screen.getAllByTestId('budget-summary-income')
-    const expenses = screen.getAllByTestId('budget-summary-expenses')
-    const net = screen.getAllByTestId('budget-summary-net-balance')
-    expect(income).toHaveLength(1)
-    expect(expenses).toHaveLength(1)
-    expect(net).toHaveLength(1)
-    expect(income[0].textContent).toContain(fmt(1234))
-    expect(income[0].textContent).toContain('UAH')
-    expect(expenses[0].textContent).toContain(fmt(321))
-    expect(expenses[0].textContent).toContain('UAH')
-    expect(net[0].textContent).toContain(fmt(913))
-    expect(net[0].textContent).toContain('UAH')
 
     // Each value appears exactly once in the whole rendered section.
     const all = screen.getByTestId('dashboard-summary').textContent
@@ -134,7 +118,7 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(countOccurrences(all, fmt(913))).toBe(1)
   })
 
-  it('no budget: the occurrence count follows the data (different values, still once each)', () => {
+  it('no budget: figures follow the data (different values, still once each)', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
       monthIncome: 5678,
@@ -144,6 +128,17 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     }
     render(<DashboardSummarySection summary={summary} />)
 
+    const hero = screen.getByTestId('dashboard-hero')
+    expect(
+      within(hero).getByTestId('dashboard-month-income').textContent,
+    ).toContain(fmt(5678))
+    expect(
+      within(hero).getByTestId('dashboard-month-expenses').textContent,
+    ).toContain(fmt(432))
+    expect(
+      within(hero).getByTestId('dashboard-month-net').textContent,
+    ).toContain(fmt(5246))
+
     const all = screen.getByTestId('dashboard-summary').textContent
     expect(countOccurrences(all, fmt(5678))).toBe(1)
     expect(countOccurrences(all, fmt(432))).toBe(1)
@@ -151,7 +146,82 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(countOccurrences(all, fmt(1234))).toBe(0)
   })
 
-  it('with budget: hero shows left-to-spend and allowance, and each month figure still appears once', () => {
+  it('no budget: the setup link is in the hero alongside the figures and points to /settings', () => {
+    render(<DashboardSummarySection summary={baseSummary} />)
+
+    const hero = screen.getByTestId('dashboard-hero')
+    const fallback = within(hero).getByTestId('dashboard-no-budget-fallback')
+    const link = within(fallback).getByTestId('dashboard-budget-setup-link')
+    expect(link.getAttribute('href')).toBe('/settings')
+    expect(within(fallback).getByTestId('dashboard-month-income')).toBeTruthy()
+    expect(
+      within(fallback).getByTestId('dashboard-month-expenses'),
+    ).toBeTruthy()
+    expect(within(fallback).getByTestId('dashboard-month-net')).toBeTruthy()
+  })
+
+  it('no budget: BudgetSummaryCard is not rendered', () => {
+    render(<DashboardSummarySection summary={baseSummary} />)
+
+    expect(screen.queryByTestId('budget-summary-card')).toBeNull()
+    expect(screen.queryByTestId('budget-summary-income')).toBeNull()
+    expect(screen.queryByTestId('budget-summary-expenses')).toBeNull()
+    expect(screen.queryByTestId('budget-summary-net-balance')).toBeNull()
+  })
+
+  it('no budget: net is red when negative', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      monthIncome: 100,
+      monthExpenses: 250,
+      net: -150,
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    const net = screen.getByTestId('dashboard-month-net')
+    expect(net.className).toContain('text-destructive')
+    expect(net.textContent).toContain(fmt(-150))
+  })
+
+  it('no budget: net is not red when positive or zero', () => {
+    const { unmount } = render(
+      <DashboardSummarySection summary={{ ...baseSummary, net: 600 }} />,
+    )
+    expect(screen.getByTestId('dashboard-month-net').className).not.toContain(
+      'text-destructive',
+    )
+    unmount()
+
+    render(
+      <DashboardSummarySection
+        summary={{
+          ...baseSummary,
+          monthIncome: 300,
+          monthExpenses: 300,
+          net: 0,
+        }}
+      />,
+    )
+    expect(screen.getByTestId('dashboard-month-net').className).not.toContain(
+      'text-destructive',
+    )
+  })
+
+  it('no budget with excluded currencies: the note still renders and BudgetSummaryCard stays absent', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      excluded: [{ currency: 'USD', expenses: 120, income: 0 }],
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    const el = screen.getByTestId('dashboard-excluded')
+    expect(el.textContent).toContain(fmt(120))
+    expect(el.textContent).toContain('USD')
+    expect(screen.queryByTestId('budget-summary-card')).toBeNull()
+    expect(screen.getByTestId('dashboard-month-income')).toBeTruthy()
+  })
+
+  it('with budget: hero shows left-to-spend and allowance, no month testids or setup link, BudgetSummaryCard present once per figure', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
       leftToSpend: 1100,
@@ -167,10 +237,19 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(screen.queryByTestId('dashboard-month-income')).toBeNull()
     expect(screen.queryByTestId('dashboard-month-expenses')).toBeNull()
     expect(screen.queryByTestId('dashboard-month-net')).toBeNull()
+    expect(screen.queryByTestId('dashboard-no-budget-fallback')).toBeNull()
+    expect(screen.queryByTestId('dashboard-budget-setup-link')).toBeNull()
 
-    expect(screen.getAllByTestId('budget-summary-income')).toHaveLength(1)
-    expect(screen.getAllByTestId('budget-summary-expenses')).toHaveLength(1)
-    expect(screen.getAllByTestId('budget-summary-net-balance')).toHaveLength(1)
+    expect(screen.getByTestId('budget-summary-card')).toBeTruthy()
+    const income = screen.getAllByTestId('budget-summary-income')
+    const expenses = screen.getAllByTestId('budget-summary-expenses')
+    const net = screen.getAllByTestId('budget-summary-net-balance')
+    expect(income).toHaveLength(1)
+    expect(expenses).toHaveLength(1)
+    expect(net).toHaveLength(1)
+    expect(income[0].textContent).toContain(fmt(1234))
+    expect(expenses[0].textContent).toContain(fmt(321))
+    expect(net[0].textContent).toContain(fmt(913))
 
     const all = screen.getByTestId('dashboard-summary').textContent
     expect(countOccurrences(all, fmt(1234))).toBe(1)
@@ -235,6 +314,19 @@ describe('criterion 11: excluded-currency line', () => {
   it('is absent when excluded is empty', () => {
     render(<DashboardSummarySection summary={baseSummary} />)
     expect(screen.queryByTestId('dashboard-excluded')).toBeNull()
+  })
+
+  it('also renders with a budget set', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      leftToSpend: 1100,
+      dailyAllowance: 1100 / 17,
+      excluded: [{ currency: 'USD', expenses: 120, income: 0 }],
+    }
+    render(<DashboardSummarySection summary={summary} />)
+    expect(screen.getByTestId('dashboard-excluded').textContent).toContain(
+      'USD',
+    )
   })
 })
 
@@ -323,6 +415,9 @@ describe('criterion 20: empty-data render', () => {
 
     expect(screen.getByTestId('dashboard-summary')).toBeTruthy()
     expect(screen.getByTestId('dashboard-no-budget-fallback')).toBeTruthy()
+    expect(screen.getByTestId('dashboard-month-income')).toBeTruthy()
+    expect(screen.getByTestId('dashboard-month-expenses')).toBeTruthy()
+    expect(screen.getByTestId('dashboard-month-net')).toBeTruthy()
     expect(screen.queryByTestId('dashboard-pace')).toBeNull()
     expect(screen.queryByTestId('dashboard-excluded')).toBeNull()
     expect(screen.queryByTestId('budget-watch')).toBeNull()
