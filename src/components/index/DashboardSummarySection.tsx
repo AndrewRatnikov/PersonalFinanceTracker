@@ -72,9 +72,43 @@ export default function DashboardSummarySection({
             </>
           ) : (
             <CardContent
-              className="flex flex-col"
+              className="flex flex-col gap-4"
               data-testid="dashboard-no-budget-fallback"
             >
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-muted-foreground">Income</span>
+                  <span
+                    className="font-semibold tabular-nums break-words"
+                    data-testid="dashboard-month-income"
+                  >
+                    {summary.monthIncome.toLocaleString()} {cur}
+                  </span>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-muted-foreground">
+                    Expenses
+                  </span>
+                  <span
+                    className="font-semibold tabular-nums break-words"
+                    data-testid="dashboard-month-expenses"
+                  >
+                    {summary.monthExpenses.toLocaleString()} {cur}
+                  </span>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-muted-foreground">Net</span>
+                  <span
+                    className={cn(
+                      'font-semibold tabular-nums break-words',
+                      summary.net < 0 && 'text-destructive',
+                    )}
+                    data-testid="dashboard-month-net"
+                  >
+                    {summary.net.toLocaleString()} {cur}
+                  </span>
+                </div>
+              </div>
               <Link
                 to="/settings"
                 search={{ tab: 'budget' }}
@@ -99,21 +133,25 @@ export default function DashboardSummarySection({
         )}
       </section>
 
-      <section className="flex flex-col gap-2">
-        <BudgetSummaryCard
-          income={summary.monthIncome}
-          expenses={summary.monthExpenses}
-          currency={cur}
-        />
-        {excludedText !== '' && (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="dashboard-excluded"
-          >
-            Not included: {excludedText}
-          </p>
-        )}
-      </section>
+      {(leftToSpend !== null || excludedText !== '') && (
+        <section className="flex flex-col gap-2">
+          {leftToSpend !== null && (
+            <BudgetSummaryCard
+              income={summary.monthIncome}
+              expenses={summary.monthExpenses}
+              currency={cur}
+            />
+          )}
+          {excludedText !== '' && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="dashboard-excluded"
+            >
+              Not included: {excludedText}
+            </p>
+          )}
+        </section>
+      )}
 
       {budgetWatch.length > 0 && (
         <section data-testid="budget-watch">
