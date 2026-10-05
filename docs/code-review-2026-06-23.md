@@ -2,11 +2,13 @@
 
 Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simplification/efficiency/altitude), 1 verifier pass, 1 gap sweep. 15 findings ranked by severity.
 
+**Status: all 15 findings resolved.**
+
 ---
 
 ## 🔴 Critical
 
-### 1. Every expense delete silently fails
+### 1. Every expense delete silently fails — ✅ Resolved
 
 **File:** `src/components/transactions/TransactionsTable.tsx:162`
 
@@ -16,7 +18,7 @@ Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simp
 
 ---
 
-### 2. Open redirect after OAuth login
+### 2. Open redirect after OAuth login — ✅ Resolved
 
 **File:** `src/routes/auth.callback.tsx:18`
 
@@ -26,7 +28,7 @@ Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simp
 
 ---
 
-### 3. No try/catch in handleSignOut — broken state on error
+### 3. No try/catch in handleSignOut — broken state on error — ✅ Resolved
 
 **File:** `src/components/SignOutDialog.tsx:42`
 
@@ -38,7 +40,7 @@ Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simp
 
 ## 🟠 Data Loss / Data Integrity
 
-### 4. `expenseChunkKey` silently writes to `expenses_NaN_NaN` on invalid date
+### 4. `expenseChunkKey` silently writes to `expenses_NaN_NaN` on invalid date — ✅ Resolved
 
 **File:** `src/lib/localDb.ts:82`
 
@@ -48,7 +50,7 @@ Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simp
 
 ---
 
-### 5. `deleteCategory` does not cascade to orphaned budget entries
+### 5. `deleteCategory` does not cascade to orphaned budget entries — ✅ Resolved
 
 **File:** `src/lib/localDb.ts:233`
 
@@ -58,7 +60,7 @@ Full-codebase max-effort review. 9 finder angles (A–E correctness + reuse/simp
 
 ---
 
-### 6. `DataToolsTab` `Promise.all` hides partial import success on error
+### 6. `DataToolsTab` `Promise.all` hides partial import success on error — ✅ Resolved
 
 **File:** `src/components/settings/DataToolsTab.tsx:57`
 
@@ -68,7 +70,7 @@ Non-category files are imported with `Promise.all`. If one importer throws (e.g.
 
 ---
 
-### 7. `updateCategory` non-null assertion crashes when id is not found
+### 7. `updateCategory` non-null assertion crashes when id is not found — ✅ Resolved
 
 **File:** `src/lib/localDb.ts:230`
 
@@ -84,7 +86,7 @@ If `input.id` matches nothing (race condition, stale data), `.find()` returns `u
 
 ## 🟡 Import / UX Bugs
 
-### 8. Imported date-only strings shift one day for UTC− timezone users
+### 8. Imported date-only strings shift one day for UTC− timezone users — ✅ Resolved
 
 **File:** `src/lib/localImport.ts:66`
 
@@ -94,7 +96,7 @@ The export emits `createdAt.slice(0, 10)` — a `YYYY-MM-DD` string. On re-impor
 
 ---
 
-### 9. `from`/`to` range is frozen at mount — new expenses invisible after midnight
+### 9. `from`/`to` range is frozen at mount — new expenses invisible after midnight — ✅ Resolved
 
 **File:** `src/routes/index.tsx:41`
 
@@ -108,7 +110,7 @@ const [to] = useState(() => dayjs().endOf('day').toISOString())
 
 ---
 
-### 10. `categoryId: z.string()` accepts empty string
+### 10. `categoryId: z.string()` accepts empty string — ✅ Resolved
 
 **File:** `src/lib/schemas.ts:15`
 
@@ -118,7 +120,7 @@ const [to] = useState(() => dayjs().endOf('day').toISOString())
 
 ---
 
-### 11. `BudgetRow` inputs go stale after a query refetch or import
+### 11. `BudgetRow` inputs go stale after a query refetch or import — ✅ Resolved
 
 **File:** `src/components/settings/BudgetTab.tsx:38`
 
@@ -128,7 +130,7 @@ const [to] = useState(() => dayjs().endOf('day').toISOString())
 
 ---
 
-### 12. Income list has no sort — imported historical records appear last
+### 12. Income list has no sort — imported historical records appear last — ✅ Resolved
 
 **File:** `src/routes/income.tsx:29`
 
@@ -140,7 +142,7 @@ Income is displayed in IDB insertion order. After importing historical entries t
 
 ## 🔵 Security / Privacy
 
-### 13. Expense month metadata is readable before password unlock
+### 13. Expense month metadata is readable before password unlock — ✅ Resolved
 
 **File:** `src/lib/localDb.ts:129`
 
@@ -150,7 +152,7 @@ Income is displayed in IDB insertion order. After importing historical entries t
 
 ---
 
-### 14. User email stored in plaintext localStorage
+### 14. User email stored in plaintext localStorage — ✅ Resolved
 
 **File:** `src/routes/__root.tsx:44`
 
@@ -162,7 +164,7 @@ The offline auth fallback serialises `{ id, email }` into `localStorage` under `
 
 ## ⚪ Dead Code
 
-### 15. `localStore.ts` `categoriesProvisioned` flag is never written or read
+### 15. `localStore.ts` `categoriesProvisioned` flag is never written or read — ✅ Resolved
 
 **File:** `src/lib/localStore.ts:7`
 
@@ -174,20 +176,20 @@ The `categoriesProvisioned` key and the `localStore` module are defined but neve
 
 ## Summary table
 
-| #   | Severity      | File                        | Issue                                                                    |
-| --- | ------------- | --------------------------- | ------------------------------------------------------------------------ |
-| 1   | 🔴 Critical   | `TransactionsTable.tsx:162` | Expense delete always no-ops — missing `createdAt` in `onDelete`         |
-| 2   | 🔴 Security   | `auth.callback.tsx:18`      | Open redirect via unvalidated `redirect_to` param                        |
-| 3   | 🔴 Critical   | `SignOutDialog.tsx:42`      | No try/catch — broken state if sign-out throws                           |
-| 4   | 🟠 Data loss  | `localDb.ts:82`             | Invalid date → `expenses_NaN_NaN` chunk, data permanently lost           |
-| 5   | 🟠 Integrity  | `localDb.ts:233`            | `deleteCategory` leaves orphaned budget entries                          |
-| 6   | 🟠 Import     | `DataToolsTab.tsx:57`       | `Promise.all` discards partial success, causes data duplication on retry |
-| 7   | 🟠 Crash      | `localDb.ts:230`            | `updateCategory` non-null assertion crashes on missing id                |
-| 8   | 🟡 Import     | `localImport.ts:66`         | `YYYY-MM-DD` parsed as UTC midnight, wrong day in UTC− timezones         |
-| 9   | 🟡 UX         | `routes/index.tsx:41`       | `from`/`to` stale after midnight — new expenses invisible                |
-| 10  | 🟡 Validation | `schemas.ts:15`             | `categoryId` allows empty string                                         |
-| 11  | 🟡 UX         | `BudgetTab.tsx:38`          | `BudgetRow` state never syncs to updated prop                            |
-| 12  | 🟡 UX         | `routes/income.tsx:29`      | Income list unsorted — imports appear in wrong order                     |
-| 13  | 🔵 Privacy    | `localDb.ts:129`            | Chunk key names readable before unlock                                   |
-| 14  | 🔵 Privacy    | `__root.tsx:44`             | User email in plaintext localStorage                                     |
-| 15  | ⚪ Dead code  | `localStore.ts:7`           | `categoriesProvisioned` flag never written or read                       |
+| #   | Severity      | File                        | Issue                                                                    | Status |
+| --- | ------------- | --------------------------- | ------------------------------------------------------------------------ | -------- |
+| 1   | 🔴 Critical   | `TransactionsTable.tsx:162` | Expense delete always no-ops — missing `createdAt` in `onDelete`         | ✅ Resolved |
+| 2   | 🔴 Security   | `auth.callback.tsx:18`      | Open redirect via unvalidated `redirect_to` param                        | ✅ Resolved |
+| 3   | 🔴 Critical   | `SignOutDialog.tsx:42`      | No try/catch — broken state if sign-out throws                           | ✅ Resolved |
+| 4   | 🟠 Data loss  | `localDb.ts:82`             | Invalid date → `expenses_NaN_NaN` chunk, data permanently lost           | ✅ Resolved |
+| 5   | 🟠 Integrity  | `localDb.ts:233`            | `deleteCategory` leaves orphaned budget entries                          | ✅ Resolved |
+| 6   | 🟠 Import     | `DataToolsTab.tsx:57`       | `Promise.all` discards partial success, causes data duplication on retry | ✅ Resolved |
+| 7   | 🟠 Crash      | `localDb.ts:230`            | `updateCategory` non-null assertion crashes on missing id                | ✅ Resolved |
+| 8   | 🟡 Import     | `localImport.ts:66`         | `YYYY-MM-DD` parsed as UTC midnight, wrong day in UTC− timezones         | ✅ Resolved |
+| 9   | 🟡 UX         | `routes/index.tsx:41`       | `from`/`to` stale after midnight — new expenses invisible                | ✅ Resolved |
+| 10  | 🟡 Validation | `schemas.ts:15`             | `categoryId` allows empty string                                         | ✅ Resolved |
+| 11  | 🟡 UX         | `BudgetTab.tsx:38`          | `BudgetRow` state never syncs to updated prop                            | ✅ Resolved |
+| 12  | 🟡 UX         | `routes/income.tsx:29`      | Income list unsorted — imports appear in wrong order                     | ✅ Resolved |
+| 13  | 🔵 Privacy    | `localDb.ts:129`            | Chunk key names readable before unlock                                   | ✅ Resolved |
+| 14  | 🔵 Privacy    | `__root.tsx:44`             | User email in plaintext localStorage                                     | ✅ Resolved |
+| 15  | ⚪ Dead code  | `localStore.ts:7`           | `categoriesProvisioned` flag never written or read                       | ✅ Resolved |
