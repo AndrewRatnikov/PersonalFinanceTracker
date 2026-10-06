@@ -1,5 +1,5 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import type { CategoryBreakdownItem } from '@/lib/domain'
+import type { CategoryBreakdownItem, Currency } from '@/lib/domain'
 import { Card, CardContent } from '@/components/ui/card'
 
 const COLORS = [
@@ -26,9 +26,10 @@ const MAX_SLICES = 10
 
 interface Props {
   data: Array<CategoryBreakdownItem>
+  currency: Currency
 }
 
-export default function CategoryDonutChart({ data }: Props) {
+export default function CategoryDonutChart({ data, currency }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-48 flex items-center justify-center">
@@ -104,7 +105,10 @@ export default function CategoryDonutChart({ data }: Props) {
                 const n = Number(value ?? 0)
                 const pct =
                   grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
-                return [`${n.toLocaleString()} UAH (${pct}%)`, name ?? '']
+                return [
+                  `${n.toLocaleString()} ${currency} (${pct}%)`,
+                  name ?? '',
+                ]
               }}
             />
           </PieChart>
