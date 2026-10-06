@@ -17,7 +17,7 @@ function openDeleteDialog(category: Category): string {
     <CategoryRow category={category} onMutate={vi.fn()} onError={vi.fn()} />,
   )
   fireEvent.click(screen.getByTestId('category-delete-btn'))
-  return screen.getByTestId('category-delete-description').textContent ?? ''
+  return screen.getByTestId('category-delete-description').textContent
 }
 
 describe('CategoryRow delete dialog copy (#9)', () => {
