@@ -17,7 +17,7 @@ import { createExpenseSchema } from '@/lib/schemas'
 
 interface SpeedEntryFormProps {
   categories: Array<Category>
-  onSubmit: (data: CreateExpenseInput) => void
+  onSubmit: (data: CreateExpenseInput) => Promise<void>
   isPending?: boolean
 }
 
@@ -32,7 +32,7 @@ export default function SpeedEntryForm({
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleSubmit = (e: SubmitEvent) => {
+  const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault()
     setErrors({})
 
@@ -53,7 +53,12 @@ export default function SpeedEntryForm({
       return
     }
 
-    onSubmit(result.data)
+    try {
+      await onSubmit(result.data)
+    } catch {
+      // The caller's mutation onError already shows a toast; keep what the user typed.
+      return
+    }
     setAmount('')
     setDescription('')
     setErrors({})
@@ -61,7 +66,7 @@ export default function SpeedEntryForm({
 
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm">
-      <form onSubmit={handleSubmit}>
+      <form data-testid="speed-entry-form" onSubmit={handleSubmit}>
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
           {/* Amount + Currency */}
           <div className="space-y-2">
@@ -76,6 +81,7 @@ export default function SpeedEntryForm({
             >
               <input
                 id="amount"
+                data-testid="speed-entry-amount"
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -164,6 +170,7 @@ export default function SpeedEntryForm({
             </Label>
             <Input
               id="description"
+              data-testid="speed-entry-description"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
