@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { Loader2 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { computeRangeAnalytics } from '../lib/localAnalytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
@@ -10,9 +10,11 @@ import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
-import type { Expense, MonthlyExpenseSummary } from '@/lib/domain'
+import type { ExcludedCurrencyTotal } from '@/lib/dashboardSummary'
+import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
 import DashboardStats from '@/components/index/DashboardStats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CURRENCIES } from '@/lib/domain'
 import { getExpensesForRange } from '@/lib/localDb'
 
 export type AnalyticsSearch = {
@@ -33,6 +35,7 @@ export const Route = createFileRoute('/analytics')({
 function computeMonthlyStats(
   expenses: Array<Expense>,
   now: dayjs.Dayjs,
+  currency: Currency,
 ): Array<MonthlyExpenseSummary> {
   const monthlyMap: Record<string, number> = {}
   for (let i = 11; i >= 0; i--) {
@@ -41,6 +44,7 @@ function computeMonthlyStats(
     monthlyMap[key] = 0
   }
   for (const e of expenses) {
+    if (e.currency !== currency) continue
     const d = dayjs(e.createdAt)
     const key = `${d.year()}-${d.format('MMM')}`
     if (key in monthlyMap) monthlyMap[key] += Number(e.amount)
@@ -52,6 +56,19 @@ function computeMonthlyStats(
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
+
+function formatExcluded(excluded: Array<ExcludedCurrencyTotal>): string {
+  const parts: Array<string> = []
+  for (const item of excluded) {
+    if (item.expenses !== 0) {
+      parts.push(`${item.expenses.toLocaleString()} ${item.currency}`)
+    }
+    if (item.income !== 0) {
+      parts.push(`+${item.income.toLocaleString()} ${item.currency}`)
+    }
+  }
+  return parts.join(', ')
+}
 
 function StatCard({ title, value }: { title: string; value: string }) {
   return (
@@ -70,10 +87,12 @@ function StatCard({ title, value }: { title: string; value: string }) {
 
 function AnalyticsPage() {
   const search = Route.useSearch()
+  const [currency, setCurrency] = useState<Currency>('UAH')
 
   const { data: analytics, isLoading } = useQuery({
-    queryKey: ['analytics', search.from, search.to],
-    queryFn: () => computeRangeAnalytics({ from: search.from, to: search.to }),
+    queryKey: ['analytics', search.from, search.to, currency],
+    queryFn: () =>
+      computeRangeAnalytics({ from: search.from, to: search.to }, currency),
   })
 
   const todayStr = dayjs().format('YYYY-MM-DD')
@@ -94,8 +113,8 @@ function AnalyticsPage() {
   })
 
   const monthlyStats = useMemo(
-    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr)),
-    [monthlyExpenses, todayStr],
+    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), currency),
+    [monthlyExpenses, todayStr, currency],
   )
 
   if (isLoading || !analytics) {
@@ -116,32 +135,66 @@ function AnalyticsPage() {
     0,
   )
 
+  const excludedText = formatExcluded(analytics.excluded)
+
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <AnalyticsFilters analytics={analytics} search={search} />
 
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Currency</span>
+          <select
+            data-testid="analytics-currency-select"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as Currency)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="grid grid-cols-2 gap-4">
-          <StatCard
-            title="Total Spent"
-            value={`${CURRENCY_SYMBOL['UAH']}${totalSpent.toFixed(2)}`}
-          />
-          <StatCard
-            title="Total Income"
-            value={`${CURRENCY_SYMBOL['UAH']}${analytics.totalIncome.toFixed(2)}`}
-          />
+          <div data-testid="analytics-total-spent">
+            <StatCard
+              title="Total Spent"
+              value={`${CURRENCY_SYMBOL[currency]}${totalSpent.toFixed(2)}`}
+            />
+          </div>
+          <div data-testid="analytics-total-income">
+            <StatCard
+              title="Total Income"
+              value={`${CURRENCY_SYMBOL[currency]}${analytics.totalIncome.toFixed(2)}`}
+            />
+          </div>
         </div>
+
+        {excludedText !== '' && (
+          <p
+            data-testid="analytics-excluded"
+            className="text-xs text-muted-foreground"
+          >
+            Not included: {excludedText}
+          </p>
+        )}
 
         {hasData ? (
           <>
             <section>
               <h2 className="text-sm font-semibold mb-2">By Category</h2>
-              <CategoryDonutChart data={analytics.categoryBreakdown} />
+              <CategoryDonutChart
+                data={analytics.categoryBreakdown}
+                currency={currency}
+              />
             </section>
 
             <section>
               <h2 className="text-sm font-semibold mb-2">Over Time</h2>
-              <TimelineBarChart data={analytics.timeline} />
+              <TimelineBarChart data={analytics.timeline} currency={currency} />
             </section>
 
             {analytics.budgetVariance.length > 0 && (
@@ -149,7 +202,10 @@ function AnalyticsPage() {
                 <h2 className="text-sm font-semibold mb-2">
                   Budget vs. Actual
                 </h2>
-                <BudgetVarianceBarChart data={analytics.budgetVariance} />
+                <BudgetVarianceBarChart
+                  data={analytics.budgetVariance}
+                  currency={currency}
+                />
               </section>
             )}
           </>
@@ -164,7 +220,7 @@ function AnalyticsPage() {
         )}
 
         <section>
-          <DashboardStats data={monthlyStats} />
+          <DashboardStats data={monthlyStats} currency={currency} />
         </section>
       </div>
     </PageShell>
