@@ -34,7 +34,7 @@ function Login() {
         provider: 'google',
         options: {
           // Tell Supabase where to redirect after Google auth
-          redirectTo: `${window.location.origin}/auth/callback?redirect_to=${fallback}`,
+          redirectTo: `${window.location.origin}/auth/callback?redirect_to=${encodeURIComponent(fallback)}`,
         },
       })
 
@@ -69,6 +69,7 @@ function Login() {
           )}
 
           <Button
+            data-testid="login-google-btn"
             onClick={handleGoogleLogin}
             disabled={isLoading}
             variant="outline"
