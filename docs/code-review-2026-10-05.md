@@ -12,6 +12,8 @@ All 15 findings from `code-review-2026-06-23.md` are fixed in the current code (
 
 ### 1. Decryption failures are swallowed and then overwritten
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/lib/localDb.ts:57-68`, `src/lib/localDb.ts:111-120`, `src/lib/localDb.ts:340-349`, `src/components/PasswordUnlockDialog.tsx:26`
 
 `readStore` and `readChunk` catch every decrypt error and return `undefined` / `[]`. Every mutation is read-modify-write on top of that (`addExpense` → `writeChunk(chunkKey, [...existing, entry])`, `addCategory`, `addIncome`, `upsertBudget`, …), so a chunk that cannot be decrypted is silently replaced by one containing only the new record.
@@ -23,6 +25,8 @@ The state is reachable: `isNewUser` is derived solely from `localStorage['minima
 ---
 
 ### 2. Analytics add amounts across currencies and label them all UAH
+
+**Status:** Fixed in run_20261005_215952
 
 **Files:** `src/lib/localAnalytics.ts:31-47`, `:69-71`, `:73-84`; `src/routes/analytics.tsx:36-50`, `:127`, `:131`; `src/components/index/DashboardStats.tsx:39`, `:79`; `src/components/analytics/CategoryDonutChart.tsx:107`; `TimelineBarChart.tsx:105`; `BudgetVarianceBarChart.tsx:100`
 
@@ -36,6 +40,8 @@ A user with 100 USD + 1000 UAH of food sees "1,100 UAH" and a budget bar that is
 
 ### 3. Export → import shifts dates by one day
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/lib/localExport.ts:30`, `:42`; `src/lib/localImport.ts:67-75`
 
 Export writes `createdAt.slice(0, 10)`, which is the **UTC** calendar date of the ISO string. Import (after the fix for the earlier #8) parses `YYYY-MM-DD` as **local** midnight. The two disagree whenever local date ≠ UTC date. Verified with `TZ=Europe/Kyiv`: an expense at 2024-01-15 01:00 local exports as `2024-01-14` and re-imports as Jan 14. For UTC− users the shift goes forward for evening entries. Around month boundaries the record lands in a different month, so monthly totals and budget variance change after a restore.
@@ -45,6 +51,8 @@ Export writes `createdAt.slice(0, 10)`, which is the **UTC** calendar date of th
 ---
 
 ### 4. Account deletion can leave the user in a half-deleted state
+
+**Status:** Fixed in run_20261005_215952
 
 **File:** `src/components/settings/DeleteAccountDialog.tsx:36-52`
 
@@ -58,6 +66,8 @@ Export writes `createdAt.slice(0, 10)`, which is the **UTC** calendar date of th
 
 ### 5. Deleting the last row on the last page leaves an empty, un-navigable page
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/routes/transactions.tsx:25`, `:36-43`, `:139`; `src/routes/income.tsx:18`, `:38`, `:84`
 
 `pageIndex` is never clamped. With 16 transactions on page 2, deleting the single row there leaves `pageIndex = 1` with zero rows: the table shows "No transactions found" and the pagination is hidden because it is only rendered when `transactions.length > 0`. The user has to reload or change the category filter to get back. Same on the Income page.
@@ -67,6 +77,8 @@ Export writes `createdAt.slice(0, 10)`, which is the **UTC** calendar date of th
 ---
 
 ### 6. Timeline buckets days by UTC date, not local date
+
+**Status:** Fixed in run_20261005_215952
 
 **File:** `src/lib/localAnalytics.ts:48-53`
 
@@ -78,6 +90,8 @@ The range is built from local day boundaries (`normalizeRange`), but each expens
 
 ### 7. Quick Add clears the form before the save succeeds and leaks a rejection
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/components/index/SpeedEntryForm.tsx:56-59`, `src/routes/index.tsx:96-104`
 
 `SpeedEntryForm` calls `onSubmit(result.data)` and immediately resets amount/description, without awaiting. `handleCreateExpense` uses `mutateAsync` in a `try/finally` with no `catch`, and the form's `onSubmit` is typed `void`, so a failed write (e.g. the IDB write throws) produces an unhandled promise rejection in addition to the error toast. The user has already lost what they typed.
@@ -87,6 +101,8 @@ The range is built from local day boundaries (`normalizeRange`), but each expens
 ---
 
 ### 8. Login `redirect_to` is not URL-encoded, so query strings are truncated
+
+**Status:** Fixed in run_20261005_215952
 
 **File:** `src/routes/login.tsx:37`
 
@@ -98,6 +114,8 @@ The range is built from local day boundaries (`normalizeRange`), but each expens
 
 ### 9. Delete-category dialog promises the opposite of what happens
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/components/settings/CategoryRow.tsx:143`, `src/lib/localDb.ts:308-316`
 
 The confirmation says "Expenses in this category will become uncategorized", but `deleteCategory` throws `"N expenses use this category"` and deletes nothing when any expense references it. The user confirms, then gets an error banner at the top of the page.
@@ -108,6 +126,8 @@ The confirmation says "Expenses in this category will become uncategorized", but
 
 ### 10. Category names are not trimmed or de-duplicated outside CSV import
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/lib/localDb.ts:280-306`, `src/components/settings/CategoriesTab.tsx:43`, `src/lib/localImport.ts:116-118`, `:215-217`
 
 `CategoriesTab` only checks `newName.trim()` for the button state, then saves the untrimmed string; `addCategory` / `updateCategory` accept duplicates ("Food" and "food"). `importCategoriesFromCSV` dedupes case-insensitively, but `importExpensesFromCSV` / `importBudgetsFromCSV` build `new Map(name.toLowerCase() → id)`, so with duplicates the later category silently wins and rows are attributed to the wrong one. A trailing-space name also never matches a re-imported (CSV-trimmed) name.
@@ -117,6 +137,8 @@ The confirmation says "Expenses in this category will become uncategorized", but
 ---
 
 ### 11. CSV import replaces a bad or missing date with "now"
+
+**Status:** Fixed in run_20261005_215952
 
 **File:** `src/lib/localImport.ts:67-75`
 
@@ -130,6 +152,8 @@ The confirmation says "Expenses in this category will become uncategorized", but
 
 ### 12. Stale offline identity is never cleared, and a corrupt cache throws
 
+**Status:** Fixed in run_20261005_215952
+
 **File:** `src/routes/__root.tsx:43-52`
 
 `minima_offline_user` is written when `getServerUser()` returns a user but is not removed when it returns `null` (session expired or revoked). A later request that fails (offline, server error) takes the `catch` branch, reads the old cache and treats the user as signed in, so the unlock dialog and data pages are reachable for a session the server has already ended. `JSON.parse(raw)` there is also unguarded: a corrupt value throws from inside the `catch`, surfacing as a route error instead of a login redirect.
@@ -139,6 +163,8 @@ The confirmation says "Expenses in this category will become uncategorized", but
 ---
 
 ### 13. Sign-out / delete leave the per-user key material behind
+
+**Status:** Fixed in run_20261005_215952
 
 **Files:** `src/components/SignOutDialog.tsx:44-50`, `src/components/settings/DeleteAccountDialog.tsx:42-49`
 
@@ -154,6 +180,8 @@ Both flows wipe IndexedDB but keep `minima_device_salt_<id>` and `minima_key_ver
 
 ### 14. Legacy Supabase data layer is unreachable
 
+**Status:** Fixed in run_20261005_215952
+
 **Files:** `src/lib/database.ts`, `src/lib/categories.ts`, `src/lib/expenses.ts`, `src/lib/income.ts`, `src/lib/budgets.ts`, `src/lib/analytics.ts`, `src/lib/csvTools.ts`, `src/lib/serverClient.ts`, `src/lib/transactions/` (`index.ts`, `getTransactionsPaginated.ts`, `deleteExpense.ts`, `updateExpense.ts`)
 
 No source file imports `database.ts`, `income.ts`, `budgets.ts`, `csvTools.ts` or `lib/transactions/*`. `categories.ts`, `expenses.ts` and `analytics.ts` are imported only by `database.ts`, and `serverClient.ts` only by those legacy modules. (`AnalyticsFilters.tsx` imports `analyticsUtils` and the _route_ `routes/analytics`, not `lib/analytics.ts`.) All routes use `localDb.ts`. These files still ship server functions (`createServerFn`) that read and write Supabase tables, so they are attack surface and bundle weight with no callers.
@@ -164,6 +192,8 @@ No source file imports `database.ts`, `income.ts`, `budgets.ts`, `csvTools.ts` o
 
 ### 15. `RecentHistoryList` component is unused
 
+**Status:** Fixed in run_20261005_215952
+
 **File:** `src/components/index/RecentHistoryList.tsx`
 
 Not imported by any route, component or test; the dashboard uses `RecentActivityList`.
@@ -173,6 +203,8 @@ Not imported by any route, component or test; the dashboard uses `RecentActivity
 ---
 
 ### 16. Cleanup of a localStorage key that nothing writes
+
+**Status:** Fixed in run_20261005_215952
 
 **Files:** `src/components/SignOutDialog.tsx:47`, `src/components/settings/DeleteAccountDialog.tsx:45`
 
