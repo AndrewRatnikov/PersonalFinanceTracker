@@ -34,9 +34,14 @@ function IncomePage() {
   )
   const totalCount = sorted.length
   const totalPages = Math.ceil(totalCount / pageSize)
+  const currentPageIndex = Math.min(pageIndex, Math.max(totalPages - 1, 0))
   const income = useMemo(
-    () => sorted.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
-    [sorted, pageIndex, pageSize],
+    () =>
+      sorted.slice(
+        currentPageIndex * pageSize,
+        (currentPageIndex + 1) * pageSize,
+      ),
+    [sorted, currentPageIndex, pageSize],
   )
 
   const deleteMutation = useMutation({
@@ -83,7 +88,7 @@ function IncomePage() {
 
               {!isLoading && !isError && income.length > 0 && (
                 <TransactionsPagination
-                  pageIndex={pageIndex}
+                  pageIndex={currentPageIndex}
                   pageSize={pageSize}
                   totalCount={totalCount}
                   totalPages={totalPages}
