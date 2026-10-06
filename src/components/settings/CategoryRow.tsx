@@ -127,6 +127,7 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
+                data-testid="category-delete-btn"
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
@@ -138,10 +139,10 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Category</AlertDialogTitle>
-                <AlertDialogDescription>
+                <AlertDialogDescription data-testid="category-delete-description">
                   Are you sure you want to delete{' '}
-                  <strong>{category.name}</strong>? Expenses in this category
-                  will become uncategorized.
+                  <strong>{category.name}</strong>? A category that is still
+                  used by expenses cannot be deleted.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

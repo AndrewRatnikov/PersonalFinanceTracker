@@ -44,8 +44,9 @@ export function SignOutDialog({ userId, open, onOpenChange }: Props) {
       wipeLocalDbKey()
       await clearLocalDb()
 
-      localStorage.removeItem(`minima_migrated_${userId}`)
       localStorage.removeItem(OFFLINE_USER_KEY)
+      localStorage.removeItem(`minima_device_salt_${userId}`)
+      localStorage.removeItem(`minima_key_verify_${userId}`)
 
       const supabase = createBrowserSupabaseClient()
       await supabase.auth.signOut()
@@ -78,6 +79,7 @@ export function SignOutDialog({ userId, open, onOpenChange }: Props) {
           </Button>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            data-testid="sign-out-confirm-btn"
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={handleSignOut}
           >

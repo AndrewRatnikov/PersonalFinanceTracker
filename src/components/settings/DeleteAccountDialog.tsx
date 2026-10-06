@@ -38,23 +38,30 @@ export function DeleteAccountDialog({
 
     try {
       await deleteCurrentUserAccount()
-
-      wipeLocalDbKey()
-      await clearLocalDb()
-
-      localStorage.removeItem(`minima_migrated_${userId}`)
-      localStorage.removeItem(OFFLINE_USER_KEY)
-
-      const supabase = createBrowserSupabaseClient()
-      await supabase.auth.signOut()
-
-      navigate({ to: '/login' })
     } catch (e: any) {
       const message = e?.message ?? 'Account deletion failed'
       setError(message)
       toast.error(message)
-    } finally {
       setDeleting(false)
+      return
+    }
+
+    try {
+      wipeLocalDbKey()
+      await clearLocalDb()
+
+      localStorage.removeItem(OFFLINE_USER_KEY)
+      localStorage.removeItem(`minima_device_salt_${userId}`)
+      localStorage.removeItem(`minima_key_verify_${userId}`)
+
+      const supabase = createBrowserSupabaseClient()
+      await supabase.auth.signOut()
+    } catch (e) {
+      console.error('Local cleanup after account deletion failed:', e)
+    } finally {
+      toast.success('Account deleted')
+      setDeleting(false)
+      navigate({ to: '/login' })
     }
   }
 

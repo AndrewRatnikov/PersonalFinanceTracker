@@ -54,6 +54,15 @@ export async function clearLocalDb(): Promise<void> {
 
 // ── Generic encrypted read/write ──────────────────────────────────────────────
 
+export class DecryptError extends Error {
+  readonly storageKey: string
+  constructor(storageKey: string, cause?: unknown) {
+    super(`Could not decrypt local data "${storageKey}"`, { cause })
+    this.name = 'DecryptError'
+    this.storageKey = storageKey
+  }
+}
+
 async function readStore<TKey extends LocalDbKey>(
   key: TKey,
 ): Promise<LocalDbMap[TKey] | undefined> {
@@ -62,8 +71,8 @@ async function readStore<TKey extends LocalDbKey>(
   if (!(raw instanceof Uint8Array)) return undefined
   try {
     return (await decryptValue(_key, raw)) as LocalDbMap[TKey]
-  } catch {
-    return undefined
+  } catch (err) {
+    throw new DecryptError(key, err)
   }
 }
 
@@ -114,8 +123,8 @@ async function readChunk(chunkKey: string): Promise<Array<Expense>> {
   if (!(raw instanceof Uint8Array)) return []
   try {
     return (await decryptValue(_key, raw)) as Array<Expense>
-  } catch {
-    return []
+  } catch (err) {
+    throw new DecryptError(chunkKey, err)
   }
 }
 
@@ -281,9 +290,16 @@ export async function addCategory(
   input: CreateCategoryInput,
 ): Promise<Category> {
   const categories = (await readStore('categories')) ?? []
+  const name = input.name.trim()
+  if (!name) throw new Error('Category name is required')
+  if (
+    categories.some((c) => c.name.trim().toLowerCase() === name.toLowerCase())
+  ) {
+    throw new Error(`Category "${name}" already exists`)
+  }
   const entry: Category = {
     id: crypto.randomUUID(),
-    name: input.name,
+    name,
     icon: input.icon ?? null,
   }
   await writeStore('categories', [...categories, entry])
@@ -294,10 +310,18 @@ export async function updateCategory(
   input: UpdateCategoryInput,
 ): Promise<Category> {
   const categories = (await readStore('categories')) ?? []
+  const name = input.name.trim()
+  if (!name) throw new Error('Category name is required')
+  if (
+    categories.some(
+      (c) =>
+        c.id !== input.id && c.name.trim().toLowerCase() === name.toLowerCase(),
+    )
+  ) {
+    throw new Error(`Category "${name}" already exists`)
+  }
   const updated = categories.map((c) =>
-    c.id === input.id
-      ? { ...c, name: input.name, icon: input.icon ?? null }
-      : c,
+    c.id === input.id ? { ...c, name, icon: input.icon ?? null } : c,
   )
   await writeStore('categories', updated)
   const result = updated.find((c) => c.id === input.id)

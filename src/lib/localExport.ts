@@ -1,3 +1,5 @@
+import dayjs from 'dayjs'
+
 import {
   getAllBudgets,
   getAllCategories,
@@ -30,7 +32,7 @@ export async function exportAllLocalData(): Promise<void> {
 
   // expenses.csv — date, amount, currency, category, description
   const expenseRows = expenses.map((e) => {
-    const date = e.createdAt.slice(0, 10)
+    const date = dayjs(e.createdAt).format('YYYY-MM-DD')
     const category = e.category?.name ?? ''
     return [date, e.amount, e.currency, category, e.description ?? '']
       .map(csvEscape)
@@ -46,7 +48,7 @@ export async function exportAllLocalData(): Promise<void> {
 
   // income.csv — date, source, amount, currency, description
   const incomeRows = income.map((i) => {
-    const date = i.createdAt.slice(0, 10)
+    const date = dayjs(i.createdAt).format('YYYY-MM-DD')
     return [date, i.source, i.amount, i.currency, i.description ?? '']
       .map(csvEscape)
       .join(',')

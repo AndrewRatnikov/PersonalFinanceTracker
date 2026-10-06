@@ -8,11 +8,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { BudgetVarianceItem } from '@/lib/domain'
+import type { BudgetVarianceItem, Currency } from '@/lib/domain'
 import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
   data: Array<BudgetVarianceItem>
+  currency: Currency
 }
 
 const ROW_HEIGHT = 48
@@ -34,7 +35,7 @@ const tooltipStyle = {
   fontSize: '12px',
 }
 
-export default function BudgetVarianceBarChart({ data }: Props) {
+export default function BudgetVarianceBarChart({ data, currency }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-24 flex items-center justify-center">
@@ -97,7 +98,7 @@ export default function BudgetVarianceBarChart({ data }: Props) {
               marginBottom: '4px',
             }}
             formatter={(value, name) => [
-              `${Number(value ?? 0).toLocaleString()} UAH`,
+              `${Number(value ?? 0).toLocaleString()} ${currency}`,
               name ?? '',
             ]}
           />

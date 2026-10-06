@@ -48,9 +48,14 @@ function Transactions() {
 
   const totalCount = filtered.length
   const totalPages = Math.ceil(totalCount / pageSize)
+  const currentPageIndex = Math.min(pageIndex, Math.max(totalPages - 1, 0))
   const transactions = useMemo(
-    () => filtered.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
-    [filtered, pageIndex, pageSize],
+    () =>
+      filtered.slice(
+        currentPageIndex * pageSize,
+        (currentPageIndex + 1) * pageSize,
+      ),
+    [filtered, currentPageIndex, pageSize],
   )
 
   const deleteMutation = useMutation({
@@ -138,7 +143,7 @@ function Transactions() {
 
           {!isLoading && !isError && transactions.length > 0 && (
             <TransactionsPagination
-              pageIndex={pageIndex}
+              pageIndex={currentPageIndex}
               pageSize={pageSize}
               totalCount={totalCount}
               totalPages={totalPages}
