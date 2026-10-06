@@ -64,14 +64,14 @@ function parseCSV(text: string): Array<Record<string, string>> {
   })
 }
 
-function parseDate(dateStr: string): string {
-  if (!dateStr) return new Date().toISOString()
+function parseDate(dateStr: string): string | null {
+  if (!dateStr) return null
   const trimmed = dateStr.trim()
   const target = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
     ? trimmed + 'T00:00:00'
     : trimmed
   const d = new Date(target)
-  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
 
 export async function importCategoriesFromCSV(
@@ -79,14 +79,17 @@ export async function importCategoriesFromCSV(
 ): Promise<ImportResult> {
   const rows = parseCSV(csv)
   const existing = await getAllCategories()
-  const existingNames = new Set(existing.map((c) => c.name.toLowerCase()))
+  const existingNames = new Set(
+    existing.map((c) => c.name.trim().toLowerCase()),
+  )
 
   let inserted = 0
   let skipped = 0
   const errors: Array<string> = []
 
   for (let i = 0; i < rows.length; i++) {
-    const { name, icon } = rows[i]
+    const { icon } = rows[i]
+    const name = (rows[i].name || '').trim()
     if (!name) {
       errors.push(`Row ${i + 2}: missing name`)
       skipped++
@@ -151,12 +154,19 @@ export async function importExpensesFromCSV(
       continue
     }
 
+    const createdAt = parseDate(date)
+    if (!createdAt) {
+      errors.push(`Row ${i + 2}: invalid date "${date}"`)
+      skipped++
+      continue
+    }
+
     await addExpense({
       amount,
       currency: currency as Currency,
       categoryId,
       description: description || undefined,
-      createdAt: parseDate(date),
+      createdAt,
     })
     inserted++
   }
@@ -192,12 +202,19 @@ export async function importIncomeFromCSV(csv: string): Promise<ImportResult> {
       continue
     }
 
+    const createdAt = parseDate(date)
+    if (!createdAt) {
+      errors.push(`Row ${i + 2}: invalid date "${date}"`)
+      skipped++
+      continue
+    }
+
     await addIncome({
       source,
       amount,
       currency: currency as Currency,
       description: description || undefined,
-      createdAt: parseDate(date),
+      createdAt,
     })
     inserted++
   }
