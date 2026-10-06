@@ -7,11 +7,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { AnalyticsTimelinePoint } from '@/lib/domain'
+import type { AnalyticsTimelinePoint, Currency } from '@/lib/domain'
 import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
   data: Array<AnalyticsTimelinePoint>
+  currency: Currency
 }
 
 /** Abbreviate large numbers for the Y-axis: 70000 → 70k, 1500000 → 1.5M */
@@ -50,7 +51,7 @@ function maybeGroupByMonth(
   }))
 }
 
-export default function TimelineBarChart({ data }: Props) {
+export default function TimelineBarChart({ data, currency }: Props) {
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-56 flex items-center justify-center">
@@ -102,7 +103,7 @@ export default function TimelineBarChart({ data }: Props) {
               marginBottom: '4px',
             }}
             formatter={(value) => [
-              `${Number(value ?? 0).toLocaleString()} UAH`,
+              `${Number(value ?? 0).toLocaleString()} ${currency}`,
               'Spent',
             ]}
           />
