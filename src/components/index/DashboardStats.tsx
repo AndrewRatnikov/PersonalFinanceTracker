@@ -7,7 +7,7 @@ import {
   YAxis,
 } from 'recharts'
 
-import type { MonthlyExpenseSummary } from '@/lib/domain'
+import type { Currency, MonthlyExpenseSummary } from '@/lib/domain'
 import {
   Card,
   CardContent,
@@ -18,9 +18,13 @@ import {
 
 interface DashboardStatsProps {
   data: Array<MonthlyExpenseSummary>
+  currency: Currency
 }
 
-export default function DashboardStats({ data }: DashboardStatsProps) {
+export default function DashboardStats({
+  data,
+  currency,
+}: DashboardStatsProps) {
   // If no data, return nothing or empty skeleton
   if (data.length === 0) return null
 
@@ -34,9 +38,12 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
         <CardDescription className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
           Spent This Month ({currentMonthData.name})
         </CardDescription>
-        <CardTitle className="mt-2 text-6xl font-black tracking-tighter text-foreground">
+        <CardTitle
+          data-testid="dashboard-stats-total"
+          className="mt-2 text-6xl font-black tracking-tighter text-foreground"
+        >
           {currentTotal.toLocaleString()}{' '}
-          <span className="text-2xl text-primary font-bold">UAH</span>
+          <span className="text-2xl text-primary font-bold">{currency}</span>
         </CardTitle>
       </CardHeader>
 
@@ -76,7 +83,7 @@ export default function DashboardStats({ data }: DashboardStatsProps) {
                 marginBottom: '4px',
               }}
               formatter={(value: any) => [
-                `${value.toLocaleString()} UAH`,
+                `${value.toLocaleString()} ${currency}`,
                 'Spent',
               ]}
             />
