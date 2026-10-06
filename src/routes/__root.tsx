@@ -40,16 +40,31 @@ export const Route = createRootRouteWithContext<AuthContext>()({
 
     try {
       user = await getServerUser()
-      if (typeof window !== 'undefined' && user) {
-        localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({ id: user.id }))
+      if (typeof window !== 'undefined') {
+        if (user) {
+          localStorage.setItem(
+            OFFLINE_USER_KEY,
+            JSON.stringify({ id: user.id }),
+          )
+        } else {
+          localStorage.removeItem(OFFLINE_USER_KEY)
+        }
       }
     } catch (err) {
       if (typeof window !== 'undefined') {
         const raw = localStorage.getItem(OFFLINE_USER_KEY)
+        let cached: User | null = null
         if (raw) {
+          try {
+            cached = JSON.parse(raw) as User
+          } catch {
+            cached = null
+          }
+        }
+        if (cached) {
           // Use cached identity regardless of navigator.onLine — the flag is
           // unreliable; a failed fetch is enough signal to fall back.
-          user = JSON.parse(raw) as User
+          user = cached
         } else if (!navigator.onLine) {
           user = null // offline, no cache → redirect to login
         } else {
