@@ -10,6 +10,7 @@ import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
+import { QueryErrorState } from '../components/QueryErrorState'
 import type { ExcludedCurrencyTotal } from '@/lib/dashboardSummary'
 import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
 import DashboardStats from '@/components/index/DashboardStats'
@@ -89,7 +90,7 @@ function AnalyticsPage() {
   const search = Route.useSearch()
   const [currency, setCurrency] = useState<Currency>('UAH')
 
-  const { data: analytics, isLoading } = useQuery({
+  const analyticsQuery = useQuery({
     queryKey: ['analytics', search.from, search.to, currency],
     queryFn: () =>
       computeRangeAnalytics({ from: search.from, to: search.to }, currency),
@@ -107,20 +108,44 @@ function AnalyticsPage() {
     [todayStr],
   )
 
-  const { data: monthlyExpenses = [] } = useQuery({
+  const monthlyExpensesQuery = useQuery({
     queryKey: ['expenses', from, to],
     queryFn: () => getExpensesForRange(from, to),
   })
+  const monthlyExpenses = useMemo(
+    () => monthlyExpensesQuery.data ?? [],
+    [monthlyExpensesQuery.data],
+  )
+  const analytics = analyticsQuery.data
 
   const monthlyStats = useMemo(
     () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), currency),
     [monthlyExpenses, todayStr, currency],
   )
 
-  if (isLoading || !analytics) {
+  // Check for errors before the spinner: a failed query must never spin forever.
+  const failedQueries = [analyticsQuery, monthlyExpensesQuery].filter(
+    (q) => q.isError,
+  )
+  if (failedQueries.length > 0) {
     return (
       <PageShell>
-        <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+          <QueryErrorState
+            onRetry={() => failedQueries.forEach((q) => void q.refetch())}
+          />
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (analyticsQuery.isLoading || !analytics) {
+    return (
+      <PageShell>
+        <div
+          data-testid="analytics-loading"
+          className="flex items-center justify-center min-h-[60vh]"
+        >
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       </PageShell>
