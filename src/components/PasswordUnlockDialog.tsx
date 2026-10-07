@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Lock, TriangleAlert } from 'lucide-react'
+import { KeyRound, Loader2, TriangleAlert } from 'lucide-react'
 
-import {
-  checkKeyVerifier,
-  deriveKey,
-  getOrCreateDeviceSalt,
-  storeKeyVerifier,
-} from '@/lib/crypto'
-import { clearLocalDb, hasLocalData } from '@/lib/localDb'
+import type { UnlockResult } from '@/lib/vault'
+import { clearLegacyKeys, getVaultState } from '@/lib/vault'
+import { clearLocalDb } from '@/lib/localDb'
+import { CreateVaultScreen } from '@/components/vault/CreateVaultScreen'
+import { RecoverScreen } from '@/components/vault/RecoverScreen'
+import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
+import { UnlockScreen } from '@/components/vault/UnlockScreen'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -20,86 +20,75 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-interface Props {
-  userId: string
-  onUnlocked: (key: CryptoKey, isNewUser: boolean) => void
+interface PasswordUnlockDialogProps {
+  onUnlocked: (result: { isNewVault: boolean }) => void
 }
 
-// Without a verifier we first check IndexedDB: if data already exists there,
-// "Create password" would make it unreadable, so we offer recovery instead.
-type NoVerifierMode = 'checking' | 'create' | 'recovery'
+// checking  -> getVaultState() pending
+// create    -> no vault and no data ('none'), or after erasing orphaned data
+// unlock    -> 'v1' (legacy, migrates on unlock) or 'v2'
+// recover   -> "Forgot password?" (v2 only)
+// migrated  -> a v1 unlock migrated the store; show the new recovery key
+// recovery  -> data keys without a vault ('orphaned') or the state check
+//              failed: never offer "Create password" over data that may exist
+type Mode =
+  | { kind: 'checking' }
+  | { kind: 'create' }
+  | { kind: 'unlock'; legacy: boolean }
+  | { kind: 'recover' }
+  | { kind: 'migrated'; recoveryKey: string }
+  | { kind: 'recovery' }
 
 const ERASE_CONFIRMATION = 'DELETE'
 
-export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
-  const hasVerifier = !!localStorage.getItem('minima_key_verify_' + userId)
-  const isNewUser = !hasVerifier
-
-  const [mode, setMode] = useState<NoVerifierMode>('checking')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+export function PasswordUnlockDialog({ onUnlocked }: PasswordUnlockDialogProps) {
+  const [mode, setMode] = useState<Mode>({ kind: 'checking' })
   const [eraseValue, setEraseValue] = useState('')
   const [eraseError, setEraseError] = useState<string | null>(null)
   const [erasing, setErasing] = useState(false)
+  const [finishing, setFinishing] = useState(false)
 
   useEffect(() => {
-    if (hasVerifier) return
     let cancelled = false
     void Promise.resolve()
-      .then(() => hasLocalData())
+      .then(() => getVaultState())
       .then(
-      (exists) => {
-        if (!cancelled) setMode(exists ? 'recovery' : 'create')
-      },
-      () => {
-        // Safe side: never offer "Create password" over data that might exist.
-        if (!cancelled) setMode('recovery')
-      },
-    )
+        (state) => {
+          if (cancelled) return
+          if (state === 'none') setMode({ kind: 'create' })
+          else if (state === 'v1') setMode({ kind: 'unlock', legacy: true })
+          else if (state === 'v2') setMode({ kind: 'unlock', legacy: false })
+          else setMode({ kind: 'recovery' })
+        },
+        () => {
+          // Safe side: never offer "Create password" over data that might exist.
+          if (!cancelled) setMode({ kind: 'recovery' })
+        },
+      )
     return () => {
       cancelled = true
     }
-  }, [hasVerifier])
+  }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    if (isNewUser) {
-      if (password.length < 8) {
-        setError('Password must be at least 8 characters')
-        return
-      }
-      if (password !== confirm) {
-        setError('Passwords do not match')
-        return
-      }
+  const handleUnlocked = (result: UnlockResult) => {
+    if (result.recoveryKey !== null) {
+      setMode({ kind: 'migrated', recoveryKey: result.recoveryKey })
+      return
     }
+    onUnlocked({ isNewVault: false })
+  }
 
-    setPending(true)
+  const handleMigratedKeyConfirmed = async () => {
+    setFinishing(true)
     try {
-      const salt = getOrCreateDeviceSalt(userId)
-      const key = await deriveKey(password, salt)
-
-      if (isNewUser) {
-        await storeKeyVerifier(key, userId)
-        onUnlocked(key, true)
-      } else {
-        const valid = await checkKeyVerifier(key, userId)
-        if (!valid) {
-          setError('Incorrect password')
-          return
-        }
-        onUnlocked(key, false)
-      }
+      await clearLegacyKeys()
     } catch (err) {
-      setError('Something went wrong. Please try again.')
+      // The stale v1 keys are harmless once meta:vault exists.
       console.error(err)
     } finally {
-      setPending(false)
+      setFinishing(false)
     }
+    onUnlocked({ isNewVault: false })
   }
 
   const canErase = eraseValue === ERASE_CONFIRMATION && !erasing
@@ -111,7 +100,7 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
     try {
       await clearLocalDb()
       setEraseValue('')
-      setMode('create')
+      setMode({ kind: 'create' })
     } catch (err) {
       setEraseError(
         err instanceof Error
@@ -123,146 +112,118 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
     }
   }
 
-  if (!hasVerifier && mode === 'checking') {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-        <Card className="w-full max-w-sm mx-4" data-testid="unlock-checking">
-          <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Checking this device…
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (!hasVerifier && mode === 'recovery') {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-        <Card className="w-full max-w-sm mx-4" data-testid="unlock-recovery">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <TriangleAlert className="h-4 w-4 text-destructive" />
-              <CardTitle>Local data can't be opened</CardTitle>
-            </div>
-            <CardDescription>
-              This device has saved data, but no password to open it. Without
-              that password the data cannot be recovered. You can erase it and
-              start fresh.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="unlock-erase-input">Type DELETE to confirm</Label>
-              <Input
-                id="unlock-erase-input"
-                data-testid="unlock-erase-input"
-                type="text"
-                value={eraseValue}
-                onChange={(e) => setEraseValue(e.target.value)}
-                autoComplete="off"
-                disabled={erasing}
+  switch (mode.kind) {
+    case 'create':
+      return (
+        <CreateVaultScreen onCreated={() => onUnlocked({ isNewVault: true })} />
+      )
+    case 'unlock':
+      return (
+        <UnlockScreen
+          legacy={mode.legacy}
+          onUnlocked={handleUnlocked}
+          onForgotPassword={() => setMode({ kind: 'recover' })}
+        />
+      )
+    case 'recover':
+      return (
+        <RecoverScreen
+          onRecovered={() => onUnlocked({ isNewVault: false })}
+          onCancel={() => setMode({ kind: 'unlock', legacy: false })}
+        />
+      )
+    case 'migrated':
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 backdrop-blur-sm">
+          <Card
+            className="w-full max-w-sm mx-4 my-4"
+            data-testid="unlock-migrated-key"
+          >
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                <CardTitle>Save your recovery key</CardTitle>
+              </div>
+              <CardDescription>
+                Your data has been upgraded to the new encryption format. If
+                you forget your password, this key is the only way to open it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <RecoveryKeySaveStep
+                recoveryKey={mode.recoveryKey}
+                confirmLabel="Continue"
+                onConfirmed={() => {
+                  if (!finishing) void handleMigratedKeyConfirmed()
+                }}
               />
-            </div>
-            {eraseError && (
-              <p
-                data-testid="unlock-erase-error"
-                className="text-sm text-destructive"
-              >
-                {eraseError}
-              </p>
-            )}
-          </CardContent>
-          <CardFooter>
-            <Button
-              type="button"
-              variant="destructive"
-              className="w-full"
-              data-testid="unlock-erase-button"
-              disabled={!canErase}
-              onClick={() => void handleErase()}
-            >
-              {erasing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Erase local data and start fresh
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <Card className="w-full max-w-sm mx-4">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>
-              {isNewUser
-                ? 'Create encryption password'
-                : 'Enter encryption password'}
-            </CardTitle>
-          </div>
-          <CardDescription>
-            {isNewUser
-              ? 'Your data is stored locally and encrypted. Choose a password to protect it.'
-              : 'Enter your password to decrypt your local data.'}
-          </CardDescription>
-        </CardHeader>
-
-        <form data-testid="unlock-form" onSubmit={handleSubmit}>
-          <CardContent className="flex flex-col gap-4 mb-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-                autoComplete={isNewUser ? 'new-password' : 'current-password'}
-                disabled={pending}
-              />
-            </div>
-
-            {isNewUser && (
+            </CardContent>
+          </Card>
+        </div>
+      )
+    case 'recovery':
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <Card className="w-full max-w-sm mx-4" data-testid="unlock-recovery">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <TriangleAlert className="h-4 w-4 text-destructive" />
+                <CardTitle>Local data can't be opened</CardTitle>
+              </div>
+              <CardDescription>
+                This device has saved data, but no password to open it. Without
+                that password the data cannot be recovered. You can erase it
+                and start fresh.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="confirm">Confirm password</Label>
+                <Label htmlFor="unlock-erase-input">Type DELETE to confirm</Label>
                 <Input
-                  id="confirm"
-                  type="password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  autoComplete="new-password"
-                  disabled={pending}
+                  id="unlock-erase-input"
+                  data-testid="unlock-erase-input"
+                  type="text"
+                  value={eraseValue}
+                  onChange={(e) => setEraseValue(e.target.value)}
+                  autoComplete="off"
+                  disabled={erasing}
                 />
               </div>
-            )}
-
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </CardContent>
-
-          <CardFooter>
-            <Button
-              type="submit"
-              className="w-full"
-              data-testid="unlock-submit"
-              disabled={pending}
-            >
-              {pending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {isNewUser ? 'Creating…' : 'Unlocking…'}
-                </>
-              ) : isNewUser ? (
-                'Create password'
-              ) : (
-                'Unlock'
+              {eraseError && (
+                <p
+                  data-testid="unlock-erase-error"
+                  className="text-sm text-destructive"
+                >
+                  {eraseError}
+                </p>
               )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
-  )
+            </CardContent>
+            <CardFooter>
+              <Button
+                type="button"
+                variant="destructive"
+                className="w-full"
+                data-testid="unlock-erase-button"
+                disabled={!canErase}
+                onClick={() => void handleErase()}
+              >
+                {erasing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Erase local data and start fresh
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )
+    case 'checking':
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <Card className="w-full max-w-sm mx-4" data-testid="unlock-checking">
+            <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking this device…
+            </CardContent>
+          </Card>
+        </div>
+      )
+  }
 }
