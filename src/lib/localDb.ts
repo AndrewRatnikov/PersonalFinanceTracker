@@ -1,9 +1,10 @@
 import { clear, createStore, del, get, keys, set } from 'idb-keyval'
 
-import { decryptValue, encryptValue, getOrCreateDeviceSalt } from './crypto'
+import { decryptValue, encryptValue } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
 import { postChanged } from './syncChannel'
 import { withWriteLock } from './writeLock'
+import type { UseStore } from 'idb-keyval'
 import type {
   BudgetEntry,
   Category,
@@ -41,14 +42,20 @@ interface LocalDbMap {
 
 type LocalDbKey = keyof LocalDbMap
 
+// The vault DEK (see vault.ts): a non-extractable AES-GCM key, memory only.
 let _key: CryptoKey | null = null
 
 const store =
   typeof window !== 'undefined' ? createStore('minima-local', 'data') : null
 
-export function initLocalDb(userId: string): void {
-  if (typeof window === 'undefined') return
-  getOrCreateDeviceSalt(userId)
+// The shared store handle. vault.ts keeps `meta:vault` and `meta:settings` in
+// the same store as the data. Null on the server.
+export function getLocalStore(): UseStore | null {
+  return store
+}
+
+export function getLocalDbKey(): CryptoKey | null {
+  return _key
 }
 
 export function unlockLocalDb(key: CryptoKey): void {
@@ -230,13 +237,15 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
   ) {
     throw new Error(`addExpense: invalid createdAt "${input.createdAt}"`)
   }
+  const now = new Date().toISOString()
   const entry: Expense = {
     id: crypto.randomUUID(),
     amount: input.amount,
     currency: input.currency,
     categoryId: input.categoryId,
     description: input.description,
-    createdAt: input.createdAt ?? new Date().toISOString(),
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
   }
   const chunkKey = expenseChunkKey(entry.createdAt)
   await withWriteLock(chunkKey, async () => {
@@ -316,6 +325,7 @@ export async function updateExpense(
       categoryId: patch.categoryId ?? existing.categoryId,
       description,
       createdAt,
+      updatedAt: new Date().toISOString(),
     }
 
     const newKey = expenseChunkKey(createdAt)
@@ -371,6 +381,7 @@ export async function addCategory(
       id: crypto.randomUUID(),
       name,
       icon: input.icon ?? null,
+      updatedAt: new Date().toISOString(),
     }
     await writeStore('categories', [...categories, created])
     return created
@@ -395,8 +406,11 @@ export async function updateCategory(
     ) {
       throw new Error(`Category "${name}" already exists`)
     }
+    const updatedAt = new Date().toISOString()
     const updated = categories.map((c) =>
-      c.id === input.id ? { ...c, name, icon: input.icon ?? null } : c,
+      c.id === input.id
+        ? { ...c, name, icon: input.icon ?? null, updatedAt }
+        : c,
     )
     await writeStore('categories', updated)
     const found = updated.find((c) => c.id === input.id)
@@ -452,10 +466,12 @@ export async function provisionDefaultCategories(): Promise<void> {
   const wrote = await withWriteLock('categories', async () => {
     const categories = (await readStore('categories')) ?? []
     if (categories.length > 0) return false
+    const updatedAt = new Date().toISOString()
     const defaults: Array<Category> = DEFAULT_CATEGORIES.map((c) => ({
       id: crypto.randomUUID(),
       name: c.name,
       icon: c.icon ?? null,
+      updatedAt,
     }))
     await writeStore('categories', defaults)
     return true
@@ -474,13 +490,15 @@ export async function addIncome(
 ): Promise<IncomeEntry> {
   const entry = await withWriteLock('income', async () => {
     const income = (await readStore('income')) ?? []
+    const now = new Date().toISOString()
     const created: IncomeEntry = {
       id: crypto.randomUUID(),
       source: input.source,
       amount: input.amount,
       currency: input.currency,
       description: input.description,
-      createdAt: input.createdAt ?? new Date().toISOString(),
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
     }
     await writeStore('income', [...income, created])
     return created
@@ -524,6 +542,7 @@ export async function upsertBudget(
   const result = await withWriteLock('budgets', async () => {
     const budgets = (await readStore('budgets')) ?? []
     const existing = budgets.find((b) => b.categoryId === input.categoryId)
+    const updatedAt = new Date().toISOString()
     let entry: BudgetEntry
     let updated: Array<BudgetEntry>
     if (existing) {
@@ -531,6 +550,7 @@ export async function upsertBudget(
         ...existing,
         monthlyLimit: input.monthlyLimit,
         currency: input.currency,
+        updatedAt,
       }
       updated = budgets.map((b) => (b.id === existing.id ? entry : b))
     } else {
@@ -539,6 +559,7 @@ export async function upsertBudget(
         categoryId: input.categoryId,
         monthlyLimit: input.monthlyLimit,
         currency: input.currency,
+        updatedAt,
       }
       updated = [...budgets, entry]
     }
