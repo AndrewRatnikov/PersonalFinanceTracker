@@ -1,32 +1,51 @@
-// No CONTRACT_GAPs: the PasswordUnlockDialog states and testids are fully
-// specified in the Interface Contract.
+// No CONTRACT_GAPs: container routing and testids are fully specified in the
+// Interface Contract (component: PasswordUnlockDialog). This file replaces the
+// v1 version: the orphaned-state cases carry over with getVaultState mocked to
+// 'orphaned'; the inline create/unlock form tests moved to the screen tests.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { clearLocalDb } from '@/lib/localDb'
 import {
-  checkKeyVerifier,
-  deriveKey,
-  getOrCreateDeviceSalt,
-  storeKeyVerifier,
-} from '@/lib/crypto'
-import { clearLocalDb, hasLocalData } from '@/lib/localDb'
+  clearLegacyKeys,
+  createVault,
+  getVaultState,
+  resetPasswordWithRecoveryKey,
+  unlockWithPassword,
+  unlockWithRecoveryKey,
+} from '@/lib/vault'
 import { PasswordUnlockDialog } from '@/components/PasswordUnlockDialog'
 
+const { MockVaultError } = vi.hoisted(() => {
+  class MockVaultError extends Error {
+    code: string
+    retryAfterMs: number
+    constructor(code: string, message: string, retryAfterMs = 0) {
+      super(message)
+      this.name = 'VaultError'
+      this.code = code
+      this.retryAfterMs = retryAfterMs
+    }
+  }
+  return { MockVaultError }
+})
+
 vi.mock('@/lib/localDb', () => ({
-  hasLocalData: vi.fn(),
   clearLocalDb: vi.fn(),
 }))
 
-vi.mock('@/lib/crypto', () => ({
-  checkKeyVerifier: vi.fn(),
-  deriveKey: vi.fn(),
-  getOrCreateDeviceSalt: vi.fn(),
-  storeKeyVerifier: vi.fn(),
+vi.mock('@/lib/vault', () => ({
+  getVaultState: vi.fn(),
+  createVault: vi.fn(),
+  unlockWithPassword: vi.fn(),
+  unlockWithRecoveryKey: vi.fn(),
+  resetPasswordWithRecoveryKey: vi.fn(),
+  clearLegacyKeys: vi.fn(),
+  VaultError: MockVaultError,
 }))
 
-const USER_ID = 'u1'
-const VERIFIER_KEY = 'minima_key_verify_' + USER_ID
+const KEY = 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567-XY'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -37,7 +56,7 @@ function deferred<T>() {
 }
 
 function renderDialog(onUnlocked = vi.fn()) {
-  render(<PasswordUnlockDialog userId={USER_ID} onUnlocked={onUnlocked} />)
+  render(<PasswordUnlockDialog onUnlocked={onUnlocked} />)
   return onUnlocked
 }
 
@@ -51,51 +70,254 @@ function eraseButton() {
   return screen.getByTestId<HTMLButtonElement>('unlock-erase-button')
 }
 
+function submitOf(testId: string) {
+  const form = screen.getByTestId(testId).closest('form')
+  if (!form) throw new Error(`${testId} is not inside a form`)
+  fireEvent.submit(form)
+}
+
+function confirmSavedKey(lastGroup: string) {
+  fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+  fireEvent.change(screen.getByTestId('recovery-key-last-group-input'), {
+    target: { value: lastGroup },
+  })
+  fireEvent.click(screen.getByTestId('recovery-key-continue'))
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
-  localStorage.clear()
 })
 
-describe('PasswordUnlockDialog without a verifier', () => {
-  it('shows a checking state, with no form and no "Create password", while hasLocalData is pending', async () => {
-    const pending = deferred<boolean>()
-    vi.mocked(hasLocalData).mockReturnValue(pending.promise)
+afterEach(() => {
+  cleanup()
+})
+
+describe('PasswordUnlockDialog state routing', () => {
+  it('shows a checking state, with no screen, while getVaultState is pending', async () => {
+    const pending = deferred<'none'>()
+    vi.mocked(getVaultState).mockReturnValue(pending.promise)
 
     renderDialog()
 
     expect(screen.getByTestId('unlock-checking')).toBeTruthy()
-    expect(screen.queryByTestId('unlock-form')).toBeNull()
+    expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+    expect(screen.queryByTestId('unlock-screen')).toBeNull()
     expect(screen.queryByTestId('unlock-recovery')).toBeNull()
-    expect(document.body.textContent).not.toContain('Create password')
 
-    pending.resolve(false)
-    await screen.findByTestId('unlock-form')
+    pending.resolve('none')
+    await screen.findByTestId('create-vault-screen')
     expect(screen.queryByTestId('unlock-checking')).toBeNull()
   })
 
-  it('offers the create-password flow when the store is empty', async () => {
-    vi.mocked(hasLocalData).mockResolvedValue(false)
-
+  it("shows the create screen for state 'none'", async () => {
+    vi.mocked(getVaultState).mockResolvedValue('none')
     renderDialog()
 
-    const form = await screen.findByTestId('unlock-form')
-    expect(form).toBeTruthy()
-    expect(screen.getByTestId('unlock-submit').textContent).toBe(
-      'Create password',
-    )
-    expect(document.querySelector('#password')).toBeTruthy()
-    expect(document.querySelector('#confirm')).toBeTruthy()
+    await screen.findByTestId('create-vault-screen')
+
+    expect(screen.queryByTestId('unlock-screen')).toBeNull()
     expect(screen.queryByTestId('unlock-recovery')).toBeNull()
   })
 
-  it('shows the recovery state, never "Create password", when data keys exist', async () => {
-    vi.mocked(hasLocalData).mockResolvedValue(true)
+  it("shows the unlock screen with 'Forgot password?' for state 'v2'", async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v2')
+    renderDialog()
+
+    await screen.findByTestId('unlock-screen')
+
+    expect(screen.getByTestId('unlock-forgot-password')).toBeTruthy()
+    expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+  })
+
+  it("shows the unlock screen without 'Forgot password?' for state 'v1'", async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v1')
+    renderDialog()
+
+    await screen.findByTestId('unlock-screen')
+
+    expect(screen.queryByTestId('unlock-forgot-password')).toBeNull()
+    expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+  })
+
+  it('removed the inline unlock form from the container', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v2')
+    renderDialog()
+
+    await screen.findByTestId('unlock-screen')
+
+    expect(screen.queryByTestId('unlock-form')).toBeNull()
+  })
+})
+
+describe('PasswordUnlockDialog create flow', () => {
+  it('creates a vault, shows the key and reports isNewVault true only after continue', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('none')
+    vi.mocked(createVault).mockResolvedValue({ recoveryKey: KEY })
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('create-vault-screen')
+
+    fireEvent.change(screen.getByTestId('create-vault-password-input'), {
+      target: { value: 'long enough 1' },
+    })
+    fireEvent.change(screen.getByTestId('create-vault-confirm-input'), {
+      target: { value: 'long enough 1' },
+    })
+    submitOf('create-vault-submit')
+    await screen.findByTestId('recovery-key-step')
+    expect(onUnlocked).not.toHaveBeenCalled()
+
+    confirmSavedKey('XY')
+
+    expect(onUnlocked).toHaveBeenCalledTimes(1)
+    expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: true })
+    expect(createVault).toHaveBeenCalledWith('long enough 1')
+  })
+})
+
+describe('PasswordUnlockDialog unlock flow', () => {
+  it('reports isNewVault false right away after a normal v2 unlock', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v2')
+    vi.mocked(unlockWithPassword).mockResolvedValue({ recoveryKey: null })
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('unlock-screen')
+
+    fireEvent.change(screen.getByTestId('unlock-password-input'), {
+      target: { value: 'my password' },
+    })
+    submitOf('unlock-submit')
+
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+    })
+    expect(screen.queryByTestId('unlock-migrated-key')).toBeNull()
+    expect(clearLegacyKeys).not.toHaveBeenCalled()
+  })
+
+  it('after a v1 migration shows the recovery key first and holds onUnlocked back', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v1')
+    vi.mocked(unlockWithPassword).mockResolvedValue({ recoveryKey: KEY })
+    vi.mocked(clearLegacyKeys).mockResolvedValue(undefined)
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('unlock-screen')
+
+    fireEvent.change(screen.getByTestId('unlock-password-input'), {
+      target: { value: 'old password' },
+    })
+    submitOf('unlock-submit')
+
+    const card = await screen.findByTestId('unlock-migrated-key')
+    expect(card.querySelector('[data-testid="recovery-key-step"]')).toBeTruthy()
+    expect(screen.getByTestId('recovery-key-value').textContent).toBe(KEY)
+    expect(onUnlocked).not.toHaveBeenCalled()
+    expect(clearLegacyKeys).not.toHaveBeenCalled()
+  })
+
+  it('clears the legacy keys before reporting unlocked once the key is confirmed', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('v1')
+    vi.mocked(unlockWithPassword).mockResolvedValue({ recoveryKey: KEY })
+    vi.mocked(clearLegacyKeys).mockResolvedValue(undefined)
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('unlock-screen')
+    fireEvent.change(screen.getByTestId('unlock-password-input'), {
+      target: { value: 'old password' },
+    })
+    submitOf('unlock-submit')
+    await screen.findByTestId('unlock-migrated-key')
+
+    confirmSavedKey('xy')
+
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+    })
+    expect(clearLegacyKeys).toHaveBeenCalledTimes(1)
+    expect(
+      vi.mocked(clearLegacyKeys).mock.invocationCallOrder[0],
+    ).toBeLessThan(onUnlocked.mock.invocationCallOrder[0])
+  })
+
+  it('does not report unlocked while clearLegacyKeys is still pending', async () => {
+    const pending = deferred<undefined>()
+    vi.mocked(getVaultState).mockResolvedValue('v1')
+    vi.mocked(unlockWithPassword).mockResolvedValue({ recoveryKey: KEY })
+    vi.mocked(clearLegacyKeys).mockReturnValue(pending.promise)
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('unlock-screen')
+    fireEvent.change(screen.getByTestId('unlock-password-input'), {
+      target: { value: 'old password' },
+    })
+    submitOf('unlock-submit')
+    await screen.findByTestId('unlock-migrated-key')
+
+    confirmSavedKey('XY')
+
+    await waitFor(() => {
+      expect(clearLegacyKeys).toHaveBeenCalledTimes(1)
+    })
+    expect(onUnlocked).not.toHaveBeenCalled()
+    pending.resolve(undefined)
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+    })
+  })
+})
+
+describe('PasswordUnlockDialog forgot-password flow', () => {
+  async function openRecover() {
+    vi.mocked(getVaultState).mockResolvedValue('v2')
+    const onUnlocked = renderDialog()
+    await screen.findByTestId('unlock-screen')
+    fireEvent.click(screen.getByTestId('unlock-forgot-password'))
+    await screen.findByTestId('recover-screen')
+    return onUnlocked
+  }
+
+  it('switches to the recover screen and back on cancel', async () => {
+    await openRecover()
+    expect(screen.queryByTestId('unlock-screen')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('recover-cancel'))
+
+    await screen.findByTestId('unlock-screen')
+    expect(screen.queryByTestId('recover-screen')).toBeNull()
+  })
+
+  it('recovers with the key, sets a new password and reports isNewVault false', async () => {
+    vi.mocked(unlockWithRecoveryKey).mockResolvedValue(undefined)
+    vi.mocked(resetPasswordWithRecoveryKey).mockResolvedValue(undefined)
+    const onUnlocked = await openRecover()
+
+    fireEvent.change(screen.getByTestId('recover-key-input'), {
+      target: { value: KEY },
+    })
+    submitOf('recover-key-submit')
+    await screen.findByTestId('recover-password-input')
+    fireEvent.change(screen.getByTestId('recover-password-input'), {
+      target: { value: 'long enough 1' },
+    })
+    fireEvent.change(screen.getByTestId('recover-confirm-input'), {
+      target: { value: 'long enough 1' },
+    })
+    submitOf('recover-password-submit')
+
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+    })
+    expect(resetPasswordWithRecoveryKey).toHaveBeenCalledWith(
+      KEY,
+      'long enough 1',
+    )
+  })
+})
+
+describe('PasswordUnlockDialog orphaned state', () => {
+  it('shows the recovery state, never the create screen, when the vault is orphaned', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('orphaned')
 
     renderDialog()
 
     await screen.findByTestId('unlock-recovery')
-    expect(screen.queryByTestId('unlock-form')).toBeNull()
-    expect(screen.queryByTestId('unlock-submit')).toBeNull()
+    expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+    expect(screen.queryByTestId('unlock-screen')).toBeNull()
     expect(screen.queryByTestId('unlock-checking')).toBeNull()
     expect(document.querySelector('#password')).toBeNull()
     expect(document.body.textContent).not.toContain('Create password')
@@ -104,19 +326,19 @@ describe('PasswordUnlockDialog without a verifier', () => {
     )
   })
 
-  it('falls back to the recovery state when the data check fails', async () => {
-    vi.mocked(hasLocalData).mockRejectedValue(new Error('idb unavailable'))
+  it('falls back to the recovery state when getVaultState rejects', async () => {
+    vi.mocked(getVaultState).mockRejectedValue(new Error('idb unavailable'))
 
     renderDialog()
 
     await screen.findByTestId('unlock-recovery')
-    expect(screen.queryByTestId('unlock-form')).toBeNull()
-    expect(document.body.textContent).not.toContain('Create password')
+    expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+    expect(screen.queryByTestId('unlock-screen')).toBeNull()
   })
 
   describe('erase confirmation', () => {
     beforeEach(() => {
-      vi.mocked(hasLocalData).mockResolvedValue(true)
+      vi.mocked(getVaultState).mockResolvedValue('orphaned')
     })
 
     it('keeps the erase button disabled until the input is exactly DELETE', async () => {
@@ -145,24 +367,26 @@ describe('PasswordUnlockDialog without a verifier', () => {
 
       expect(clearLocalDb).not.toHaveBeenCalled()
       expect(screen.getByTestId('unlock-recovery')).toBeTruthy()
+      expect(screen.queryByTestId('create-vault-screen')).toBeNull()
     })
 
-    it('clears the local store and then continues to the create-password flow', async () => {
-      vi.mocked(clearLocalDb).mockResolvedValue(undefined)
+    it('clears the local store and only then continues to the create screen', async () => {
+      const pending = deferred<undefined>()
+      vi.mocked(clearLocalDb).mockReturnValue(pending.promise)
       renderDialog()
       await screen.findByTestId('unlock-recovery')
       typeErase('DELETE')
 
       fireEvent.click(eraseButton())
 
-      const form = await screen.findByTestId('unlock-form')
-      expect(clearLocalDb).toHaveBeenCalledTimes(1)
-      expect(form).toBeTruthy()
-      expect(screen.getByTestId('unlock-submit').textContent).toBe(
-        'Create password',
-      )
+      await waitFor(() => {
+        expect(clearLocalDb).toHaveBeenCalledTimes(1)
+      })
+      expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+
+      pending.resolve(undefined)
+      await screen.findByTestId('create-vault-screen')
       expect(screen.queryByTestId('unlock-recovery')).toBeNull()
-      expect(document.querySelector('#confirm')).toBeTruthy()
     })
 
     it('stays in recovery and shows an error when clearing fails', async () => {
@@ -175,88 +399,7 @@ describe('PasswordUnlockDialog without a verifier', () => {
 
       await screen.findByTestId('unlock-erase-error')
       expect(screen.getByTestId('unlock-recovery')).toBeTruthy()
-      expect(screen.queryByTestId('unlock-form')).toBeNull()
-      expect(document.body.textContent).not.toContain('Create password')
+      expect(screen.queryByTestId('create-vault-screen')).toBeNull()
     })
-  })
-
-  it('creates the password after an empty-store check: stores the verifier and unlocks as a new user', async () => {
-    vi.mocked(hasLocalData).mockResolvedValue(false)
-    const key = { fake: 'key' } as unknown as CryptoKey
-    vi.mocked(getOrCreateDeviceSalt).mockReturnValue(new Uint8Array(16))
-    vi.mocked(deriveKey).mockResolvedValue(key)
-    vi.mocked(storeKeyVerifier).mockResolvedValue(undefined)
-    const onUnlocked = renderDialog()
-    const form = await screen.findByTestId('unlock-form')
-
-    fireEvent.change(document.querySelector('#password') as HTMLInputElement, {
-      target: { value: 'correct horse' },
-    })
-    fireEvent.change(document.querySelector('#confirm') as HTMLInputElement, {
-      target: { value: 'correct horse' },
-    })
-    fireEvent.submit(form)
-
-    await waitFor(() => {
-      expect(onUnlocked).toHaveBeenCalledWith(key, true)
-    })
-    expect(storeKeyVerifier).toHaveBeenCalledWith(key, USER_ID)
-  })
-})
-
-describe('PasswordUnlockDialog with a verifier', () => {
-  beforeEach(() => {
-    localStorage.setItem(VERIFIER_KEY, 'verifier')
-  })
-
-  it('shows the unlock form without needing the data check', async () => {
-    vi.mocked(hasLocalData).mockResolvedValue(true)
-
-    renderDialog()
-
-    expect(screen.getByTestId('unlock-form')).toBeTruthy()
-    expect(screen.getByTestId('unlock-submit').textContent).toBe('Unlock')
-    expect(document.querySelector('#password')).toBeTruthy()
-    expect(document.querySelector('#confirm')).toBeNull()
-    expect(screen.queryByTestId('unlock-recovery')).toBeNull()
-    expect(screen.queryByTestId('unlock-checking')).toBeNull()
-    expect(document.body.textContent).not.toContain('Create password')
-    await waitFor(() => {
-      expect(hasLocalData).not.toHaveBeenCalled()
-    })
-  })
-
-  it('unlocks with the right password and reports isNewUser false', async () => {
-    const key = { fake: 'key' } as unknown as CryptoKey
-    vi.mocked(getOrCreateDeviceSalt).mockReturnValue(new Uint8Array(16))
-    vi.mocked(deriveKey).mockResolvedValue(key)
-    vi.mocked(checkKeyVerifier).mockResolvedValue(true)
-    const onUnlocked = renderDialog()
-
-    fireEvent.change(document.querySelector('#password') as HTMLInputElement, {
-      target: { value: 'correct horse' },
-    })
-    fireEvent.submit(screen.getByTestId('unlock-form'))
-
-    await waitFor(() => {
-      expect(onUnlocked).toHaveBeenCalledWith(key, false)
-    })
-  })
-
-  it('does not unlock with the wrong password', async () => {
-    vi.mocked(getOrCreateDeviceSalt).mockReturnValue(new Uint8Array(16))
-    vi.mocked(deriveKey).mockResolvedValue({} as CryptoKey)
-    vi.mocked(checkKeyVerifier).mockResolvedValue(false)
-    const onUnlocked = renderDialog()
-
-    fireEvent.change(document.querySelector('#password') as HTMLInputElement, {
-      target: { value: 'wrong password' },
-    })
-    fireEvent.submit(screen.getByTestId('unlock-form'))
-
-    await waitFor(() => {
-      expect(document.body.textContent).toContain('Incorrect password')
-    })
-    expect(onUnlocked).not.toHaveBeenCalled()
   })
 })
