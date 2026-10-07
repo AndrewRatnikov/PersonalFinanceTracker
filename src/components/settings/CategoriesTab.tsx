@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { QueryErrorState } from '@/components/QueryErrorState'
 
 export function CategoriesTab() {
   const queryClient = useQueryClient()
@@ -17,10 +18,11 @@ export function CategoriesTab() {
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('')
 
-  const { data: categories = [] } = useQuery({
+  const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
   })
+  const categories = categoriesQuery.data ?? []
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['categories'] })
@@ -45,8 +47,16 @@ export function CategoriesTab() {
       setNewIcon('')
     })
 
+  if (categoriesQuery.isError) {
+    return (
+      <div data-testid="categories-tab" className="flex flex-col gap-6">
+        <QueryErrorState onRetry={() => void categoriesQuery.refetch()} />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-6">
+    <div data-testid="categories-tab" className="flex flex-col gap-6">
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
