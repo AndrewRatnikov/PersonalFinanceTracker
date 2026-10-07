@@ -1,12 +1,9 @@
-// CONTRACT_GAP: no testid or props are specified for rendering the Settings
-// CategoriesTab / BudgetTab in isolation (their props are not listed in the
-// Interface Contract), so the settings error states are not covered here.
-// Everything else (Dashboard, Analytics, Transactions, Income) is specified.
-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { BudgetTab } from '@/components/settings/BudgetTab'
+import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import {
   getAllBudgets,
   getAllCategories,
@@ -18,6 +15,7 @@ import { Route as RootRoute } from '@/routes/__root'
 import { Route as AnalyticsRoute } from '@/routes/analytics'
 import { Route as IncomeRoute } from '@/routes/income'
 import { Route as IndexRoute } from '@/routes/index'
+import { Route as SettingsRoute } from '@/routes/settings'
 import { Route as TransactionsRoute } from '@/routes/transactions'
 
 vi.mock('@/lib/localDb', () => ({
@@ -31,6 +29,11 @@ vi.mock('@/lib/localDb', () => ({
   updateExpense: vi.fn(),
   deleteIncome: vi.fn(),
   addIncome: vi.fn(),
+  addCategory: vi.fn(),
+  updateCategory: vi.fn(),
+  deleteCategory: vi.fn(),
+  upsertBudget: vi.fn(),
+  deleteBudget: vi.fn(),
   // Used by the root route and the data problem gate (never at import time).
   initLocalDb: vi.fn(),
   provisionDefaultCategories: vi.fn(),
@@ -58,6 +61,13 @@ function renderPage(Route: { options: { component?: unknown } }) {
       <Page />
     </QueryClientProvider>,
   )
+}
+
+function renderUi(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
 function mockHealthyData() {
@@ -268,6 +278,76 @@ describe('Transactions page query error', () => {
       expect(getAllExpenses).toHaveBeenCalled()
     })
     expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+})
+
+describe('Settings query error', () => {
+  const food = [{ id: 'c1', name: 'Food' }]
+
+  it('CategoriesTab renders query-error and Retry calls getAllCategories again', async () => {
+    vi.mocked(getAllCategories).mockRejectedValue(new Error('boom'))
+
+    renderUi(<CategoriesTab />)
+
+    await screen.findByTestId('query-error')
+    expect(getAllCategories).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('query-error-retry'))
+
+    await waitFor(() => {
+      expect(getAllCategories).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('CategoriesTab shows categories-tab and no error when categories load', async () => {
+    vi.mocked(getAllCategories).mockResolvedValue(food as never)
+
+    renderUi(<CategoriesTab />)
+
+    await screen.findByTestId('categories-tab')
+    await waitFor(() => {
+      expect(getAllCategories).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+
+  it('BudgetTab renders query-error and Retry calls getAllBudgets again', async () => {
+    vi.mocked(getAllBudgets).mockRejectedValue(new Error('boom'))
+
+    renderUi(<BudgetTab categories={food as never} />)
+
+    await screen.findByTestId('query-error')
+    expect(getAllBudgets).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('query-error-retry'))
+
+    await waitFor(() => {
+      expect(getAllBudgets).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('BudgetTab shows budget-tab and no error when budgets load', async () => {
+    renderUi(<BudgetTab categories={food as never} />)
+
+    await screen.findByTestId('budget-tab')
+    await waitFor(() => {
+      expect(getAllBudgets).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+
+  it('SettingsPage shows query-error instead of the tab when categories fail', async () => {
+    vi.spyOn(SettingsRoute, 'useSearch').mockReturnValue({ tab: 'budget' })
+    vi.spyOn(SettingsRoute, 'useRouteContext').mockReturnValue({
+      auth: { user: { id: 'u1' }, isLoading: false },
+    } as never)
+    vi.mocked(getAllCategories).mockRejectedValue(new Error('boom'))
+    vi.mocked(getAllBudgets).mockResolvedValue([])
+
+    renderPage(SettingsRoute)
+
+    await screen.findByTestId('query-error')
+    expect(screen.queryByTestId('budget-tab')).toBeNull()
   })
 })
 

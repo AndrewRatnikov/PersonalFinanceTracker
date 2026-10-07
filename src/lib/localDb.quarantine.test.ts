@@ -55,7 +55,7 @@ const APRIL = '2024-04-10T12:00:00.000Z'
 const CHUNK = 'expenses_2024_03'
 const QUARANTINE_PREFIX = `quarantine:${CHUNK}:`
 
-// 40 bytes of zeros: a Uint8Array that can never be a valid AES-GCM payload.
+// 40 bytes (first 8 are 7, the rest zeros): a Uint8Array that can never be a valid AES-GCM payload.
 function garbage(): Uint8Array {
   const bytes = new Uint8Array(40)
   bytes.fill(7, 0, 8)
