@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Loader2, Lock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Loader2, Lock, TriangleAlert } from 'lucide-react'
 
 import {
   checkKeyVerifier,
@@ -7,6 +7,7 @@ import {
   getOrCreateDeviceSalt,
   storeKeyVerifier,
 } from '@/lib/crypto'
+import { clearLocalDb, hasLocalData } from '@/lib/localDb'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -24,13 +25,43 @@ interface Props {
   onUnlocked: (key: CryptoKey, isNewUser: boolean) => void
 }
 
-export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
-  const isNewUser = !localStorage.getItem('minima_key_verify_' + userId)
+// Without a verifier we first check IndexedDB: if data already exists there,
+// "Create password" would make it unreadable, so we offer recovery instead.
+type NoVerifierMode = 'checking' | 'create' | 'recovery'
 
+const ERASE_CONFIRMATION = 'DELETE'
+
+export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
+  const hasVerifier = !!localStorage.getItem('minima_key_verify_' + userId)
+  const isNewUser = !hasVerifier
+
+  const [mode, setMode] = useState<NoVerifierMode>('checking')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [eraseValue, setEraseValue] = useState('')
+  const [eraseError, setEraseError] = useState<string | null>(null)
+  const [erasing, setErasing] = useState(false)
+
+  useEffect(() => {
+    if (hasVerifier) return
+    let cancelled = false
+    void Promise.resolve()
+      .then(() => hasLocalData())
+      .then(
+      (exists) => {
+        if (!cancelled) setMode(exists ? 'recovery' : 'create')
+      },
+      () => {
+        // Safe side: never offer "Create password" over data that might exist.
+        if (!cancelled) setMode('recovery')
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [hasVerifier])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,6 +102,95 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
     }
   }
 
+  const canErase = eraseValue === ERASE_CONFIRMATION && !erasing
+
+  const handleErase = async () => {
+    if (eraseValue !== ERASE_CONFIRMATION) return
+    setEraseError(null)
+    setErasing(true)
+    try {
+      await clearLocalDb()
+      setEraseValue('')
+      setMode('create')
+    } catch (err) {
+      setEraseError(
+        err instanceof Error
+          ? `Could not erase local data: ${err.message}`
+          : 'Could not erase local data.',
+      )
+    } finally {
+      setErasing(false)
+    }
+  }
+
+  if (!hasVerifier && mode === 'checking') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <Card className="w-full max-w-sm mx-4" data-testid="unlock-checking">
+          <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Checking this device…
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!hasVerifier && mode === 'recovery') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <Card className="w-full max-w-sm mx-4" data-testid="unlock-recovery">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <TriangleAlert className="h-4 w-4 text-destructive" />
+              <CardTitle>Local data can't be opened</CardTitle>
+            </div>
+            <CardDescription>
+              This device has saved data, but no password to open it. Without
+              that password the data cannot be recovered. You can erase it and
+              start fresh.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="unlock-erase-input">Type DELETE to confirm</Label>
+              <Input
+                id="unlock-erase-input"
+                data-testid="unlock-erase-input"
+                type="text"
+                value={eraseValue}
+                onChange={(e) => setEraseValue(e.target.value)}
+                autoComplete="off"
+                disabled={erasing}
+              />
+            </div>
+            {eraseError && (
+              <p
+                data-testid="unlock-erase-error"
+                className="text-sm text-destructive"
+              >
+                {eraseError}
+              </p>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button
+              type="button"
+              variant="destructive"
+              className="w-full"
+              data-testid="unlock-erase-button"
+              disabled={!canErase}
+              onClick={() => void handleErase()}
+            >
+              {erasing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Erase local data and start fresh
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <Card className="w-full max-w-sm mx-4">
@@ -90,7 +210,7 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
           </CardDescription>
         </CardHeader>
 
-        <form onSubmit={handleSubmit}>
+        <form data-testid="unlock-form" onSubmit={handleSubmit}>
           <CardContent className="flex flex-col gap-4 mb-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
@@ -123,7 +243,12 @@ export function PasswordUnlockDialog({ userId, onUnlocked }: Props) {
           </CardContent>
 
           <CardFooter>
-            <Button type="submit" className="w-full" disabled={pending}>
+            <Button
+              type="submit"
+              className="w-full"
+              data-testid="unlock-submit"
+              disabled={pending}
+            >
               {pending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
