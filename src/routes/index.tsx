@@ -127,6 +127,27 @@ function Dashboard() {
     )
   }
 
+  // Until every query has settled, render no data content: default zeros
+  // would be misleading, and the summary's links must not mount before the
+  // data they describe exists.
+  const isLoading = [
+    categoriesQuery,
+    expensesQuery,
+    incomeQuery,
+    budgetsQuery,
+  ].some((q) => q.isPending)
+
+  if (isLoading) {
+    return (
+      <PageShell>
+        <div
+          className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8"
+          aria-busy="true"
+        />
+      </PageShell>
+    )
+  }
+
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
