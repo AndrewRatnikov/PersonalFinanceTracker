@@ -7,6 +7,7 @@ import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import PageShell from '@/components/PageShell'
+import { QueryErrorState } from '@/components/QueryErrorState'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export type SettingsTab = 'categories' | 'budget' | 'data'
@@ -34,10 +35,11 @@ export const Route = createFileRoute('/settings')({
 function SettingsPage() {
   const { auth } = Route.useRouteContext()
   const search = Route.useSearch()
-  const { data: categories = [] } = useQuery({
+  const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
   })
+  const categories = categoriesQuery.data ?? []
 
   return (
     <PageShell>
@@ -66,7 +68,11 @@ function SettingsPage() {
             <CategoriesTab />
           </TabsContent>
           <TabsContent value="budget" className="mt-6">
-            <BudgetTab categories={categories} />
+            {categoriesQuery.isError ? (
+              <QueryErrorState onRetry={() => void categoriesQuery.refetch()} />
+            ) : (
+              <BudgetTab categories={categories} />
+            )}
           </TabsContent>
           <TabsContent value="data" className="mt-6">
             <DataToolsTab userId={auth.user!.id} />

@@ -1,6 +1,9 @@
-import { clear, createStore, get, keys, set } from 'idb-keyval'
+import { clear, createStore, del, get, keys, set } from 'idb-keyval'
 
 import { decryptValue, encryptValue, getOrCreateDeviceSalt } from './crypto'
+import { DecryptError, isDataStorageKey } from './dataErrors'
+import { postChanged } from './syncChannel'
+import { withWriteLock } from './writeLock'
 import type {
   BudgetEntry,
   Category,
@@ -14,6 +17,8 @@ import type {
   UpsertBudgetInput,
 } from './domain'
 
+export { DecryptError }
+
 export const ENABLE_SUPABASE_SYNC = false
 // When true, each write mutation should also call the corresponding server
 // function in src/lib/expenses.ts / categories.ts / income.ts / budgets.ts,
@@ -21,6 +26,13 @@ export const ENABLE_SUPABASE_SYNC = false
 
 // Expenses are stored in per-month chunks: `expenses_YYYY_MM`.
 // All other collections are small enough to store as single keys.
+//
+// Every mutation runs its whole read-modify-write under withWriteLock for the
+// storage key(s) it touches, and announces the written keys on the sync
+// channel after the write has committed. Reads throw DecryptError for a blob
+// that cannot be decrypted; mutations never catch it, so a corrupt blob is
+// never overwritten. Quarantined copies live under `quarantine:<key>:<ISO>`
+// and are ignored by every reader.
 interface LocalDbMap {
   categories: Array<Category>
   income: Array<IncomeEntry>
@@ -54,15 +66,6 @@ export async function clearLocalDb(): Promise<void> {
 
 // ── Generic encrypted read/write ──────────────────────────────────────────────
 
-export class DecryptError extends Error {
-  readonly storageKey: string
-  constructor(storageKey: string, cause?: unknown) {
-    super(`Could not decrypt local data "${storageKey}"`, { cause })
-    this.name = 'DecryptError'
-    this.storageKey = storageKey
-  }
-}
-
 async function readStore<TKey extends LocalDbKey>(
   key: TKey,
 ): Promise<LocalDbMap[TKey] | undefined> {
@@ -87,6 +90,8 @@ async function writeStore<TKey extends LocalDbKey>(
 }
 
 // ── Expense chunk helpers ─────────────────────────────────────────────────────
+
+const EXPENSE_CHUNK_KEY_RE = /^expenses_\d{4}_\d{2}$/
 
 function expenseChunkKey(dateStr: string): string {
   const d = new Date(dateStr)
@@ -138,10 +143,48 @@ async function writeChunk(
   await set(chunkKey, encrypted, store)
 }
 
+// Only real month chunks: quarantine:* copies and stray keys are skipped.
 async function allExpenseChunkKeys(): Promise<Array<string>> {
   if (!_key || !store) return []
-  const allKeys = await keys<string>(store)
-  return allKeys.filter((k) => k.startsWith('expenses_')).sort()
+  const allKeys = await keys(store)
+  return allKeys
+    .filter(
+      (k): k is string => typeof k === 'string' && EXPENSE_CHUNK_KEY_RE.test(k),
+    )
+    .sort()
+}
+
+// ── Quarantine and orphan detection ───────────────────────────────────────────
+
+// Moves the raw stored value of a data key, unchanged, to
+// `quarantine:<key>:<ISO timestamp>`, then deletes the original. The original
+// is only deleted after the copy has been written. Needs no unlock key.
+export async function quarantineKey(
+  storageKey: string,
+): Promise<string | null> {
+  if (!isDataStorageKey(storageKey)) {
+    throw new Error(`quarantineKey: not a data key "${storageKey}"`)
+  }
+  const s = store
+  if (!s) return null
+  const qKey = await withWriteLock(storageKey, async () => {
+    const raw = await get<unknown>(storageKey, s)
+    if (raw === undefined) return null
+    const target = `quarantine:${storageKey}:${new Date().toISOString()}`
+    await set(target, raw, s)
+    await del(storageKey, s)
+    return target
+  })
+  if (qKey !== null) postChanged([storageKey])
+  return qKey
+}
+
+// True if the store holds any data key in the current format (quarantine
+// copies alone do not count). Works before unlock.
+export async function hasLocalData(): Promise<boolean> {
+  if (!store) return false
+  const allKeys = await keys(store)
+  return allKeys.some((k) => typeof k === 'string' && isDataStorageKey(k))
 }
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
@@ -196,8 +239,11 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     createdAt: input.createdAt ?? new Date().toISOString(),
   }
   const chunkKey = expenseChunkKey(entry.createdAt)
-  const existing = await readChunk(chunkKey)
-  await writeChunk(chunkKey, [...existing, entry])
+  await withWriteLock(chunkKey, async () => {
+    const existing = await readChunk(chunkKey)
+    await writeChunk(chunkKey, [...existing, entry])
+  })
+  postChanged([chunkKey])
   const categories = (await readStore('categories')) ?? []
   const category = categories.find((c) => c.id === entry.categoryId)
   return { ...entry, category }
@@ -209,11 +255,14 @@ export async function deleteExpense(
   createdAt: string,
 ): Promise<void> {
   const chunkKey = expenseChunkKey(createdAt)
-  const chunk = await readChunk(chunkKey)
-  await writeChunk(
-    chunkKey,
-    chunk.filter((e) => e.id !== id),
-  )
+  await withWriteLock(chunkKey, async () => {
+    const chunk = await readChunk(chunkKey)
+    await writeChunk(
+      chunkKey,
+      chunk.filter((e) => e.id !== id),
+    )
+  })
+  postChanged([chunkKey])
 }
 
 // originalCreatedAt locates the current chunk; if the patch moves createdAt
@@ -224,60 +273,78 @@ export async function updateExpense(
   patch: UpdateExpenseInput,
 ): Promise<Expense> {
   const oldKey = expenseChunkKey(originalCreatedAt)
-  const oldChunk = await readChunk(oldKey)
-  const index = oldChunk.findIndex((e) => e.id === id)
-  if (index === -1) {
-    throw new Error(`updateExpense: expense not found: ${id}`)
-  }
-  const existing = oldChunk[index]
-
-  const createdAt = patch.createdAt ?? existing.createdAt
-  if (isNaN(new Date(createdAt).getTime())) {
-    throw new Error(`updateExpense: invalid createdAt "${createdAt}"`)
-  }
-
-  const categories = (await readStore('categories')) ?? []
+  const lockKeys = [oldKey]
   if (
-    patch.categoryId !== undefined &&
-    !categories.some((c) => c.id === patch.categoryId)
+    patch.createdAt !== undefined &&
+    !isNaN(new Date(patch.createdAt).getTime())
   ) {
-    throw new Error(`updateExpense: unknown categoryId "${patch.categoryId}"`)
+    lockKeys.push(expenseChunkKey(patch.createdAt))
   }
 
-  const description =
-    patch.description !== undefined
-      ? patch.description === ''
-        ? null
-        : patch.description
-      : existing.description
+  const { result, written } = await withWriteLock(lockKeys, async () => {
+    const oldChunk = await readChunk(oldKey)
+    const index = oldChunk.findIndex((e) => e.id === id)
+    if (index === -1) {
+      throw new Error(`updateExpense: expense not found: ${id}`)
+    }
+    const existing = oldChunk[index]
 
-  const updated: Expense = {
-    id: existing.id,
-    amount: patch.amount ?? existing.amount,
-    currency: patch.currency ?? existing.currency,
-    categoryId: patch.categoryId ?? existing.categoryId,
-    description,
-    createdAt,
-  }
+    const createdAt = patch.createdAt ?? existing.createdAt
+    if (isNaN(new Date(createdAt).getTime())) {
+      throw new Error(`updateExpense: invalid createdAt "${createdAt}"`)
+    }
 
-  const newKey = expenseChunkKey(createdAt)
-  if (newKey === oldKey) {
-    const next = [...oldChunk]
-    next[index] = updated
-    await writeChunk(oldKey, next)
-  } else {
-    // Append to the new chunk first: a failure in between can only duplicate
-    // the record, never lose it.
-    const newChunk = await readChunk(newKey)
-    await writeChunk(newKey, [...newChunk.filter((e) => e.id !== id), updated])
-    await writeChunk(
-      oldKey,
-      oldChunk.filter((e) => e.id !== id),
-    )
-  }
+    const categories = (await readStore('categories')) ?? []
+    if (
+      patch.categoryId !== undefined &&
+      !categories.some((c) => c.id === patch.categoryId)
+    ) {
+      throw new Error(`updateExpense: unknown categoryId "${patch.categoryId}"`)
+    }
 
-  const category = categories.find((c) => c.id === updated.categoryId)
-  return { ...updated, category }
+    const description =
+      patch.description !== undefined
+        ? patch.description === ''
+          ? null
+          : patch.description
+        : existing.description
+
+    const updated: Expense = {
+      id: existing.id,
+      amount: patch.amount ?? existing.amount,
+      currency: patch.currency ?? existing.currency,
+      categoryId: patch.categoryId ?? existing.categoryId,
+      description,
+      createdAt,
+    }
+
+    const newKey = expenseChunkKey(createdAt)
+    let writtenKeys: Array<string>
+    if (newKey === oldKey) {
+      const next = [...oldChunk]
+      next[index] = updated
+      await writeChunk(oldKey, next)
+      writtenKeys = [oldKey]
+    } else {
+      // Append to the new chunk first: a failure in between can only duplicate
+      // the record, never lose it.
+      const newChunk = await readChunk(newKey)
+      await writeChunk(newKey, [
+        ...newChunk.filter((e) => e.id !== id),
+        updated,
+      ])
+      await writeChunk(
+        oldKey,
+        oldChunk.filter((e) => e.id !== id),
+      )
+      writtenKeys = [newKey, oldKey]
+    }
+
+    const category = categories.find((c) => c.id === updated.categoryId)
+    return { result: { ...updated, category }, written: writtenKeys }
+  })
+  postChanged(written)
+  return result
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────
@@ -289,67 +356,87 @@ export async function getAllCategories(): Promise<Array<Category>> {
 export async function addCategory(
   input: CreateCategoryInput,
 ): Promise<Category> {
-  const categories = (await readStore('categories')) ?? []
-  const name = input.name.trim()
-  if (!name) throw new Error('Category name is required')
-  if (
-    categories.some((c) => c.name.trim().toLowerCase() === name.toLowerCase())
-  ) {
-    throw new Error(`Category "${name}" already exists`)
-  }
-  const entry: Category = {
-    id: crypto.randomUUID(),
-    name,
-    icon: input.icon ?? null,
-  }
-  await writeStore('categories', [...categories, entry])
+  const entry = await withWriteLock('categories', async () => {
+    const categories = (await readStore('categories')) ?? []
+    const name = input.name.trim()
+    if (!name) throw new Error('Category name is required')
+    if (
+      categories.some(
+        (c) => c.name.trim().toLowerCase() === name.toLowerCase(),
+      )
+    ) {
+      throw new Error(`Category "${name}" already exists`)
+    }
+    const created: Category = {
+      id: crypto.randomUUID(),
+      name,
+      icon: input.icon ?? null,
+    }
+    await writeStore('categories', [...categories, created])
+    return created
+  })
+  postChanged(['categories'])
   return entry
 }
 
 export async function updateCategory(
   input: UpdateCategoryInput,
 ): Promise<Category> {
-  const categories = (await readStore('categories')) ?? []
-  const name = input.name.trim()
-  if (!name) throw new Error('Category name is required')
-  if (
-    categories.some(
-      (c) =>
-        c.id !== input.id && c.name.trim().toLowerCase() === name.toLowerCase(),
+  const result = await withWriteLock('categories', async () => {
+    const categories = (await readStore('categories')) ?? []
+    const name = input.name.trim()
+    if (!name) throw new Error('Category name is required')
+    if (
+      categories.some(
+        (c) =>
+          c.id !== input.id &&
+          c.name.trim().toLowerCase() === name.toLowerCase(),
+      )
+    ) {
+      throw new Error(`Category "${name}" already exists`)
+    }
+    const updated = categories.map((c) =>
+      c.id === input.id ? { ...c, name, icon: input.icon ?? null } : c,
     )
-  ) {
-    throw new Error(`Category "${name}" already exists`)
-  }
-  const updated = categories.map((c) =>
-    c.id === input.id ? { ...c, name, icon: input.icon ?? null } : c,
-  )
-  await writeStore('categories', updated)
-  const result = updated.find((c) => c.id === input.id)
-  if (!result) throw new Error(`Category not found: ${input.id}`)
+    await writeStore('categories', updated)
+    const found = updated.find((c) => c.id === input.id)
+    if (!found) throw new Error(`Category not found: ${input.id}`)
+    return found
+  })
+  postChanged(['categories'])
   return result
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  // Check all expense chunks for references to this category.
-  const chunkKeys = await allExpenseChunkKeys()
-  const chunks = await Promise.all(chunkKeys.map(readChunk))
-  const using = chunks.flat().filter((e) => e.categoryId === id).length
-  if (using > 0) {
-    throw new Error(
-      `${using} expense${using === 1 ? '' : 's'} use this category`,
-    )
-  }
-  const categories = (await readStore('categories')) ?? []
-  await writeStore(
-    'categories',
-    categories.filter((c) => c.id !== id),
-  )
+  const budgetsChanged = await withWriteLock(
+    ['budgets', 'categories'],
+    async () => {
+      // Check all expense chunks for references to this category. This only
+      // reads chunks, so it takes no chunk locks.
+      const chunkKeys = await allExpenseChunkKeys()
+      const chunks = await Promise.all(chunkKeys.map(readChunk))
+      const using = chunks.flat().filter((e) => e.categoryId === id).length
+      if (using > 0) {
+        throw new Error(
+          `${using} expense${using === 1 ? '' : 's'} use this category`,
+        )
+      }
+      const categories = (await readStore('categories')) ?? []
+      await writeStore(
+        'categories',
+        categories.filter((c) => c.id !== id),
+      )
 
-  const budgets = (await readStore('budgets')) ?? []
-  const filteredBudgets = budgets.filter((b) => b.categoryId !== id)
-  if (filteredBudgets.length !== budgets.length) {
-    await writeStore('budgets', filteredBudgets)
-  }
+      const budgets = (await readStore('budgets')) ?? []
+      const filteredBudgets = budgets.filter((b) => b.categoryId !== id)
+      if (filteredBudgets.length !== budgets.length) {
+        await writeStore('budgets', filteredBudgets)
+        return true
+      }
+      return false
+    },
+  )
+  postChanged(budgetsChanged ? ['categories', 'budgets'] : ['categories'])
 }
 
 const DEFAULT_CATEGORIES: Array<Omit<Category, 'id'>> = [
@@ -362,14 +449,18 @@ const DEFAULT_CATEGORIES: Array<Omit<Category, 'id'>> = [
 ]
 
 export async function provisionDefaultCategories(): Promise<void> {
-  const categories = (await readStore('categories')) ?? []
-  if (categories.length > 0) return
-  const defaults: Array<Category> = DEFAULT_CATEGORIES.map((c) => ({
-    id: crypto.randomUUID(),
-    name: c.name,
-    icon: c.icon ?? null,
-  }))
-  await writeStore('categories', defaults)
+  const wrote = await withWriteLock('categories', async () => {
+    const categories = (await readStore('categories')) ?? []
+    if (categories.length > 0) return false
+    const defaults: Array<Category> = DEFAULT_CATEGORIES.map((c) => ({
+      id: crypto.randomUUID(),
+      name: c.name,
+      icon: c.icon ?? null,
+    }))
+    await writeStore('categories', defaults)
+    return true
+  })
+  if (wrote) postChanged(['categories'])
 }
 
 // ── Income ────────────────────────────────────────────────────────────────────
@@ -381,25 +472,32 @@ export async function getAllIncome(): Promise<Array<IncomeEntry>> {
 export async function addIncome(
   input: CreateIncomeInput,
 ): Promise<IncomeEntry> {
-  const income = (await readStore('income')) ?? []
-  const entry: IncomeEntry = {
-    id: crypto.randomUUID(),
-    source: input.source,
-    amount: input.amount,
-    currency: input.currency,
-    description: input.description,
-    createdAt: input.createdAt ?? new Date().toISOString(),
-  }
-  await writeStore('income', [...income, entry])
+  const entry = await withWriteLock('income', async () => {
+    const income = (await readStore('income')) ?? []
+    const created: IncomeEntry = {
+      id: crypto.randomUUID(),
+      source: input.source,
+      amount: input.amount,
+      currency: input.currency,
+      description: input.description,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+    }
+    await writeStore('income', [...income, created])
+    return created
+  })
+  postChanged(['income'])
   return entry
 }
 
 export async function deleteIncome(id: string): Promise<void> {
-  const income = (await readStore('income')) ?? []
-  await writeStore(
-    'income',
-    income.filter((e) => e.id !== id),
-  )
+  await withWriteLock('income', async () => {
+    const income = (await readStore('income')) ?? []
+    await writeStore(
+      'income',
+      income.filter((e) => e.id !== id),
+    )
+  })
+  postChanged(['income'])
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
@@ -423,34 +521,41 @@ export async function getAllBudgets(): Promise<
 export async function upsertBudget(
   input: UpsertBudgetInput,
 ): Promise<BudgetEntry> {
-  const budgets = (await readStore('budgets')) ?? []
-  const existing = budgets.find((b) => b.categoryId === input.categoryId)
-  let entry: BudgetEntry
-  let updated: Array<BudgetEntry>
-  if (existing) {
-    entry = {
-      ...existing,
-      monthlyLimit: input.monthlyLimit,
-      currency: input.currency,
+  const result = await withWriteLock('budgets', async () => {
+    const budgets = (await readStore('budgets')) ?? []
+    const existing = budgets.find((b) => b.categoryId === input.categoryId)
+    let entry: BudgetEntry
+    let updated: Array<BudgetEntry>
+    if (existing) {
+      entry = {
+        ...existing,
+        monthlyLimit: input.monthlyLimit,
+        currency: input.currency,
+      }
+      updated = budgets.map((b) => (b.id === existing.id ? entry : b))
+    } else {
+      entry = {
+        id: crypto.randomUUID(),
+        categoryId: input.categoryId,
+        monthlyLimit: input.monthlyLimit,
+        currency: input.currency,
+      }
+      updated = [...budgets, entry]
     }
-    updated = budgets.map((b) => (b.id === existing.id ? entry : b))
-  } else {
-    entry = {
-      id: crypto.randomUUID(),
-      categoryId: input.categoryId,
-      monthlyLimit: input.monthlyLimit,
-      currency: input.currency,
-    }
-    updated = [...budgets, entry]
-  }
-  await writeStore('budgets', updated)
-  return entry
+    await writeStore('budgets', updated)
+    return entry
+  })
+  postChanged(['budgets'])
+  return result
 }
 
 export async function deleteBudget(id: string): Promise<void> {
-  const budgets = (await readStore('budgets')) ?? []
-  await writeStore(
-    'budgets',
-    budgets.filter((b) => b.id !== id),
-  )
+  await withWriteLock('budgets', async () => {
+    const budgets = (await readStore('budgets')) ?? []
+    await writeStore(
+      'budgets',
+      budgets.filter((b) => b.id !== id),
+    )
+  })
+  postChanged(['budgets'])
 }

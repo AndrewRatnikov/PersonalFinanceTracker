@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { deleteIncome, getAllIncome } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
+import { QueryErrorState } from '@/components/QueryErrorState'
 import { Card } from '@/components/ui/card'
 import { AddIncomeForm } from '@/components/income/AddIncomeForm'
 import { IncomeTable } from '@/components/income/IncomeTable'
@@ -19,17 +20,17 @@ function IncomePage() {
   const pageSize = 15
   const queryClient = useQueryClient()
 
-  const {
-    data: allIncome = [],
-    isLoading,
-    isError,
-  } = useQuery({
+  const incomeQuery = useQuery({
     queryKey: ['income'],
     queryFn: getAllIncome,
   })
+  const { data: allIncome, isLoading, isError } = incomeQuery
 
   const sorted = useMemo(
-    () => [...allIncome].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    () =>
+      [...(allIncome ?? [])].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      ),
     [allIncome],
   )
   const totalCount = sorted.length
@@ -61,7 +62,10 @@ function IncomePage() {
 
   return (
     <PageShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500">
+      <div
+        data-testid="income-page"
+        className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500"
+      >
         <div className="space-y-1 mb-8">
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
             Income
@@ -77,25 +81,30 @@ function IncomePage() {
           </div>
 
           <div className="lg:col-span-2">
-            <Card className="overflow-hidden border shadow-sm">
-              <IncomeTable
-                income={income}
-                isLoading={isLoading}
-                isError={isError}
-                isDeleting={deleteMutation.isPending}
-                onDelete={(id) => deleteMutation.mutate(id)}
-              />
-
-              {!isLoading && !isError && income.length > 0 && (
-                <TransactionsPagination
-                  pageIndex={currentPageIndex}
-                  pageSize={pageSize}
-                  totalCount={totalCount}
-                  totalPages={totalPages}
-                  onPageChange={setPageIndex}
+            {isError ? (
+              // Never show an empty table for data that failed to load.
+              <QueryErrorState onRetry={() => void incomeQuery.refetch()} />
+            ) : (
+              <Card className="overflow-hidden border shadow-sm">
+                <IncomeTable
+                  income={income}
+                  isLoading={isLoading}
+                  isError={isError}
+                  isDeleting={deleteMutation.isPending}
+                  onDelete={(id) => deleteMutation.mutate(id)}
                 />
-              )}
-            </Card>
+
+                {!isLoading && income.length > 0 && (
+                  <TransactionsPagination
+                    pageIndex={currentPageIndex}
+                    pageSize={pageSize}
+                    totalCount={totalCount}
+                    totalPages={totalPages}
+                    onPageChange={setPageIndex}
+                  />
+                )}
+              </Card>
+            )}
           </div>
         </div>
       </div>

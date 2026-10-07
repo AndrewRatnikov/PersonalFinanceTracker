@@ -27,6 +27,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Card, CardContent } from '@/components/ui/card'
+import { QueryErrorState } from '@/components/QueryErrorState'
 
 interface BudgetRowProps {
   category: Category
@@ -168,14 +169,20 @@ interface BudgetTabProps {
 }
 
 export function BudgetTab({ categories }: BudgetTabProps) {
-  const { data: budgets = [], isLoading } = useQuery({
+  const budgetsQuery = useQuery({
     queryKey: ['budgets'],
     queryFn: () => getAllBudgets(),
   })
+  const budgets = budgetsQuery.data ?? []
 
   const budgetMap = new Map(budgets.map((b) => [b.categoryId, b]))
 
-  if (isLoading) {
+  // Never show empty limits for budgets that failed to load.
+  if (budgetsQuery.isError) {
+    return <QueryErrorState onRetry={() => void budgetsQuery.refetch()} />
+  }
+
+  if (budgetsQuery.isLoading) {
     return (
       <p className="text-muted-foreground text-sm text-center py-10 italic">
         Loading budgets…
@@ -185,14 +192,17 @@ export function BudgetTab({ categories }: BudgetTabProps) {
 
   if (categories.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm text-center py-10 italic">
+      <p
+        data-testid="budget-tab"
+        className="text-muted-foreground text-sm text-center py-10 italic"
+      >
         No categories yet. Add some in the Categories tab first.
       </p>
     )
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-testid="budget-tab" className="flex flex-col gap-3">
       {categories.map((cat) => (
         <BudgetRow
           key={`${cat.id}-${budgetMap.get(cat.id)?.id ?? 'new'}`}

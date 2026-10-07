@@ -13,6 +13,7 @@ import RecentActivityList from '@/components/index/RecentActivityList'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import LandingPage from '@/components/LandingPage'
 import PageShell from '@/components/PageShell'
+import { QueryErrorState } from '@/components/QueryErrorState'
 import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import {
@@ -48,25 +49,37 @@ function Dashboard() {
     [todayStr],
   )
 
-  const { data: categories = [] } = useQuery({
+  const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
   })
+  const categories = categoriesQuery.data ?? []
 
-  const { data: expenses = [] } = useQuery({
+  const expensesQuery = useQuery({
     queryKey: ['expenses', from, to],
     queryFn: () => getExpensesForRange(from, to),
   })
+  const expenses = expensesQuery.data ?? []
 
-  const { data: income = [] } = useQuery({
+  const incomeQuery = useQuery({
     queryKey: ['income'],
     queryFn: getAllIncome,
   })
+  const income = incomeQuery.data ?? []
 
-  const { data: budgets = [] } = useQuery({
+  const budgetsQuery = useQuery({
     queryKey: ['budgets'],
     queryFn: getAllBudgets,
   })
+  const budgets = budgetsQuery.data ?? []
+
+  // Never show default zeros for data that failed to load.
+  const failedQueries = [
+    categoriesQuery,
+    expensesQuery,
+    incomeQuery,
+    budgetsQuery,
+  ].filter((q) => q.isError)
 
   const summary = useMemo(
     () =>
@@ -100,6 +113,39 @@ function Dashboard() {
     } finally {
       setIsPending(false)
     }
+  }
+
+  if (failedQueries.length > 0) {
+    return (
+      <PageShell>
+        <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+          <QueryErrorState
+            onRetry={() => failedQueries.forEach((q) => void q.refetch())}
+          />
+        </div>
+      </PageShell>
+    )
+  }
+
+  // Until every query has settled, render no data content: default zeros
+  // would be misleading, and the summary's links must not mount before the
+  // data they describe exists.
+  const isLoading = [
+    categoriesQuery,
+    expensesQuery,
+    incomeQuery,
+    budgetsQuery,
+  ].some((q) => q.isPending)
+
+  if (isLoading) {
+    return (
+      <PageShell>
+        <div
+          className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8"
+          aria-busy="true"
+        />
+      </PageShell>
+    )
   }
 
   return (

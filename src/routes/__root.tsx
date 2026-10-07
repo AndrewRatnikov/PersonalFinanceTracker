@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 
 import { getServerUser } from '../lib/auth'
 import {
@@ -16,10 +16,13 @@ import {
   provisionDefaultCategories as provisionLocalCategories,
   unlockLocalDb,
 } from '../lib/localDb'
+import { createAppQueryClient } from '../lib/queryClient'
+import { listenForChanges } from '../lib/syncChannel'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
 import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
 import NotFoundPage from '../components/NotFoundPage'
+import { DataProblemGate } from '../components/DataProblemGate'
 
 import appCss from '../styles.css?url'
 import type { AuthContext } from '../lib/authContext'
@@ -27,12 +30,9 @@ import type { User } from '@supabase/supabase-js'
 
 const OFFLINE_USER_KEY = 'minima_offline_user'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { networkMode: 'offlineFirst' },
-    mutations: { networkMode: 'offlineFirst' },
-  },
-})
+// DecryptErrors from any query or mutation switch the app to the Data problem
+// screen (see lib/queryClient.ts and components/DataProblemGate.tsx).
+const queryClient = createAppQueryClient()
 
 export const Route = createRootRouteWithContext<AuthContext>()({
   beforeLoad: async ({ location }) => {
@@ -138,6 +138,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     setMounted(true)
   }, [])
 
+  // Other tabs announce committed writes; refresh the affected queries.
+  useEffect(() => listenForChanges(queryClient), [])
+
   const handleUnlocked = async (key: CryptoKey, isNewUser: boolean) => {
     unlockLocalDb(key)
     if (isNewUser) await provisionLocalCategories()
@@ -168,7 +171,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               onUnlocked={handleUnlocked}
             />
           )}
-          {showChildren && children}
+          <DataProblemGate>{showChildren && children}</DataProblemGate>
           <Toaster richColors position="bottom-center" />
         </QueryClientProvider>
         <TanStackDevtools
