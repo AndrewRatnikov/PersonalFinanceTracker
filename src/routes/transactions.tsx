@@ -12,6 +12,7 @@ import {
   updateExpense,
 } from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
+import { QueryErrorState } from '@/components/QueryErrorState'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 import { TransactionsPagination } from '@/components/transactions/TransactionsPagination'
@@ -27,19 +28,29 @@ function Transactions() {
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: categories = [] } = useQuery({
+  const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
   })
+  const categories = useMemo(
+    () => categoriesQuery.data ?? [],
+    [categoriesQuery.data],
+  )
 
-  const {
-    data: allExpenses = [],
-    isLoading,
-    isError,
-  } = useQuery({
+  const expensesQuery = useQuery({
     queryKey: ['expenses'],
     queryFn: getAllExpenses,
   })
+  const { isLoading, isError } = expensesQuery
+  const allExpenses = useMemo(
+    () => expensesQuery.data ?? [],
+    [expensesQuery.data],
+  )
+
+  // Never show an empty list for data that failed to load.
+  const failedQueries = [categoriesQuery, expensesQuery].filter(
+    (q) => q.isError,
+  )
 
   const filtered = useMemo(() => {
     if (!categoryId) return allExpenses
@@ -112,7 +123,10 @@ function Transactions() {
 
   return (
     <PageShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500">
+      <div
+        data-testid="transactions-page"
+        className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500"
+      >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div className="space-y-1">
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -123,34 +137,42 @@ function Transactions() {
             </p>
           </div>
 
-          <CategoryFilter
-            categories={categories}
-            value={categoryId}
-            onChange={handleCategoryFilterChange}
-          />
-        </div>
-
-        <Card className="overflow-hidden border shadow-sm">
-          <TransactionsTable
-            transactions={transactions}
-            categories={categories}
-            isLoading={isLoading}
-            isError={isError}
-            isDeleting={deleteMutation.isPending}
-            onSave={handleSave}
-            onDelete={handleDelete}
-          />
-
-          {!isLoading && !isError && transactions.length > 0 && (
-            <TransactionsPagination
-              pageIndex={currentPageIndex}
-              pageSize={pageSize}
-              totalCount={totalCount}
-              totalPages={totalPages}
-              onPageChange={setPageIndex}
+          {failedQueries.length === 0 && (
+            <CategoryFilter
+              categories={categories}
+              value={categoryId}
+              onChange={handleCategoryFilterChange}
             />
           )}
-        </Card>
+        </div>
+
+        {failedQueries.length > 0 ? (
+          <QueryErrorState
+            onRetry={() => failedQueries.forEach((q) => void q.refetch())}
+          />
+        ) : (
+          <Card className="overflow-hidden border shadow-sm">
+            <TransactionsTable
+              transactions={transactions}
+              categories={categories}
+              isLoading={isLoading}
+              isError={isError}
+              isDeleting={deleteMutation.isPending}
+              onSave={handleSave}
+              onDelete={handleDelete}
+            />
+
+            {!isLoading && !isError && transactions.length > 0 && (
+              <TransactionsPagination
+                pageIndex={currentPageIndex}
+                pageSize={pageSize}
+                totalCount={totalCount}
+                totalPages={totalPages}
+                onPageChange={setPageIndex}
+              />
+            )}
+          </Card>
+        )}
       </div>
     </PageShell>
   )
