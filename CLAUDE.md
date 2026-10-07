@@ -13,7 +13,7 @@ npm run lint       # ESLint
 npm run check      # prettier --write + eslint --fix
 ```
 
-There are currently no test files in the repo.
+Tests use Vitest + jsdom (`vitest.config.ts`, separate from `vite.config.ts`) and live next to the module they test; route tests live in `src/test/routes/`. See `.claude/rules/testing.md`.
 
 ## Architecture
 
@@ -30,6 +30,10 @@ The primary data module is `src/lib/localDb.ts`:
 - A module-level `let _key: CryptoKey | null = null` holds the AES-GCM key in memory only — never persisted.
 - `readStore` silently returns `undefined` when `_key` is null; `writeStore` throws `"LocalDb not initialized"`.
 - **Expense storage is chunked by month** (`expenses_YYYY_MM`). Categories, income, and budgets are single IDB keys.
+- **Write lock:** every mutation runs its whole read-modify-write inside `withWriteLock(keys, fn)` from `src/lib/writeLock.ts`, locking the storage key(s) it touches (e.g. `updateExpense` locks the old and new chunk, `deleteCategory` locks `budgets` + `categories`). It uses `navigator.locks` (`minima:<key>`, cross-tab) when available and an in-memory per-key FIFO queue otherwise; multiple keys are acquired in sorted order. The lock is **not re-entrant**: never call another locked mutation from inside a locked section. Imports call the mutations row by row and so inherit the lock.
+- **DecryptError** (`src/lib/dataErrors.ts`, re-exported from `localDb.ts`) carries the `storageKey`. Reads (`readStore` / `readChunk`) throw it for a blob that can't be decrypted; **mutations never catch it**, so an undecryptable blob is never overwritten. The global `QueryCache` / `MutationCache` `onError` (`src/lib/queryClient.ts`) reports it to `src/lib/dataProblem.ts`, and `DataProblemGate` (plus an error boundary) in `__root.tsx` replaces the routes with the Data problem screen (Retry, or Quarantine and continue).
+- **Quarantine keys:** `quarantineKey(key)` moves the raw blob unchanged to `quarantine:<key>:<ISO timestamp>`, and only then deletes the original. `quarantine:*` keys are ignored by `allExpenseChunkKeys()` and every reader; `hasLocalData()` ignores them too.
+- **Multi-tab sync:** after each committed write `localDb` posts `{ type: 'changed', keys }` on `BroadcastChannel('minima')` (`src/lib/syncChannel.ts`); `__root.tsx` calls `listenForChanges(queryClient)` so other tabs invalidate the matching React Query keys. Without `BroadcastChannel` this is a no-op.
 - `ENABLE_SUPABASE_SYNC = false` at the top of `localDb.ts` is a stub for a future Premium cloud-sync tier.
 
 ### Encryption flow (`src/lib/crypto.ts`)
@@ -41,7 +45,7 @@ The primary data module is `src/lib/localDb.ts`:
 
 ### Unlock gate (`src/routes/__root.tsx`)
 
-`PasswordUnlockDialog` is rendered in `RootDocument` (the `shellComponent`) behind a `mounted` guard (client-only). It appears as a full-screen overlay whenever `auth.user` is present and `_key` is null. After unlock, `provisionDefaultCategories()` from `localDb` is called (seeds the six default categories into IDB if empty), then React Query caches are invalidated.
+`PasswordUnlockDialog` is rendered in `RootDocument` (the `shellComponent`) behind a `mounted` guard (client-only). It appears as a full-screen overlay whenever `auth.user` is present and `_key` is null. If there is no `minima_key_verify_{userId}` but IndexedDB still holds data keys (`hasLocalData()`), it does **not** offer "Create password": it shows a recovery state whose only action, "Erase local data and start fresh", requires typing `DELETE`, clears the store, then continues to the create-password flow. After unlock, `provisionDefaultCategories()` from `localDb` is called (seeds the six default categories into IDB if empty), then React Query caches are invalidated.
 
 The `beforeLoad` in `__root.tsx` also calls `provisionServerCategories()` (the Supabase version) on first login — this is a legacy path planned for removal once the local-first migration is complete.
 
@@ -58,12 +62,7 @@ All routes use React Query (`useQuery` / `useMutation`) against `localDb` functi
 
 Analytics are computed client-side in `src/lib/localAnalytics.ts` via `computeRangeAnalytics()`.
 
-The `QueryClient` instance is module-level in `__root.tsx` and shared via `QueryClientProvider`.
-
-### Legacy files (do not use for new code)
-
-- `src/lib/offlineCache.ts` — superseded by `localDb.ts`; planned for deletion
-- `src/lib/expenses.ts`, `src/lib/income.ts`, `src/lib/budgets.ts`, `src/lib/analytics.ts` — Supabase server functions; no longer called by routes
+The `QueryClient` instance is module-level in `__root.tsx` (built by `createAppQueryClient()`, which never retries a DecryptError) and shared via `QueryClientProvider`. Every page renders `QueryErrorState` (`data-testid="query-error"` with a Retry button) instead of default empty values when one of its queries fails.
 
 ### PWA / Service Worker
 
