@@ -10,6 +10,8 @@ export interface Category {
   id: string
   name: string
   icon?: string | null
+  /** ISO timestamp of the last create/update. */
+  updatedAt?: string
 }
 
 export interface Expense {
@@ -19,6 +21,8 @@ export interface Expense {
   categoryId: string
   description?: string | null
   createdAt: string
+  /** ISO timestamp of the last create/update. */
+  updatedAt?: string
   category?: Category
 }
 
@@ -62,6 +66,8 @@ export interface BudgetEntry {
   categoryId: string
   monthlyLimit: number
   currency: Currency
+  /** ISO timestamp of the last create/update. */
+  updatedAt?: string
 }
 
 export interface UpsertBudgetInput {
@@ -109,6 +115,8 @@ export interface IncomeEntry {
   currency: Currency
   description?: string | null
   createdAt: string
+  /** ISO timestamp of the last create/update. */
+  updatedAt?: string
 }
 
 export interface CreateIncomeInput {

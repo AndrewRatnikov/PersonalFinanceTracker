@@ -11,11 +11,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 import { QueryClientProvider } from '@tanstack/react-query'
 
 import { getServerUser } from '../lib/auth'
-import {
-  initLocalDb,
-  provisionDefaultCategories as provisionLocalCategories,
-  unlockLocalDb,
-} from '../lib/localDb'
+import { provisionDefaultCategories as provisionLocalCategories } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { listenForChanges } from '../lib/syncChannel'
 import Header from '../components/Header'
@@ -86,10 +82,6 @@ export const Route = createRootRouteWithContext<AuthContext>()({
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }
 
-    if (user && typeof window !== 'undefined') {
-      initLocalDb(user.id)
-    }
-
     return { auth: { user, isLoading } }
   },
   head: () => ({
@@ -141,9 +133,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // Other tabs announce committed writes; refresh the affected queries.
   useEffect(() => listenForChanges(queryClient), [])
 
-  const handleUnlocked = async (key: CryptoKey, isNewUser: boolean) => {
-    unlockLocalDb(key)
-    if (isNewUser) await provisionLocalCategories()
+  // vault.ts has already unlocked localDb with the vault DEK.
+  const handleUnlocked = async ({ isNewVault }: { isNewVault: boolean }) => {
+    if (isNewVault) await provisionLocalCategories()
     setIsUnlocked(true)
     queryClient.invalidateQueries()
   }
@@ -167,8 +159,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <OfflineBanner />
           {showUnlockDialog && (
             <PasswordUnlockDialog
-              userId={auth.user!.id}
-              onUnlocked={handleUnlocked}
+              onUnlocked={(result) => void handleUnlocked(result)}
             />
           )}
           <DataProblemGate>{showChildren && children}</DataProblemGate>

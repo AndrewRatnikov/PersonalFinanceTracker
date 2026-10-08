@@ -1,16 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Database, Tag, Wallet } from 'lucide-react'
+import { Database, Shield, Tag, Wallet } from 'lucide-react'
 
 import { getAllCategories } from '@/lib/localDb'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
+import { SecurityTab } from '@/components/settings/SecurityTab'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-export type SettingsTab = 'categories' | 'budget' | 'data'
+export type SettingsTab = 'categories' | 'budget' | 'security' | 'data'
 
 export type SettingsSearch = {
   tab?: SettingsTab
@@ -19,6 +20,7 @@ export type SettingsSearch = {
 const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
   'categories',
   'budget',
+  'security',
   'data',
 ]
 
@@ -49,17 +51,21 @@ function SettingsPage() {
         </h1>
 
         <Tabs defaultValue={search.tab ?? 'categories'} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="categories">
-              <Tag size={16} className="mr-2" />
+              <Tag size={16} className="mr-2 hidden sm:block" />
               Categories
             </TabsTrigger>
             <TabsTrigger value="budget">
-              <Wallet size={16} className="mr-2" />
+              <Wallet size={16} className="mr-2 hidden sm:block" />
               Budget
             </TabsTrigger>
+            <TabsTrigger value="security">
+              <Shield size={16} className="mr-2 hidden sm:block" />
+              Security
+            </TabsTrigger>
             <TabsTrigger value="data">
-              <Database size={16} className="mr-2" />
+              <Database size={16} className="mr-2 hidden sm:block" />
               Data Tools
             </TabsTrigger>
           </TabsList>
@@ -73,6 +79,9 @@ function SettingsPage() {
             ) : (
               <BudgetTab categories={categories} />
             )}
+          </TabsContent>
+          <TabsContent value="security" className="mt-6">
+            <SecurityTab />
           </TabsContent>
           <TabsContent value="data" className="mt-6">
             <DataToolsTab userId={auth.user!.id} />
