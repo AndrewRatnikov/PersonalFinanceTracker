@@ -21,6 +21,8 @@ import { Label } from '@/components/ui/label'
 interface RecoverScreenProps {
   onRecovered: () => void
   onCancel: () => void
+  // "I've lost both": offers removing all data from this device.
+  onLostBoth?: () => void
 }
 
 type Step = 'key' | 'password'
@@ -35,7 +37,11 @@ function messageOf(err: unknown): string {
 
 // Forgot-password flow (§2.3): the recovery key unlocks the vault, then the
 // user sets a new password (the DEK is re-wrapped; data is not re-encrypted).
-export function RecoverScreen({ onRecovered, onCancel }: RecoverScreenProps) {
+export function RecoverScreen({
+  onRecovered,
+  onCancel,
+  onLostBoth,
+}: RecoverScreenProps) {
   const [step, setStep] = useState<Step>('key')
   const [recoveryKey, setRecoveryKey] = useState('')
   const [password, setPassword] = useState('')
@@ -142,6 +148,18 @@ export function RecoverScreen({ onRecovered, onCancel }: RecoverScreenProps) {
               >
                 Back to password
               </Button>
+              {onLostBoth && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full whitespace-normal text-muted-foreground"
+                  data-testid="recover-lost-both"
+                  onClick={onLostBoth}
+                  disabled={pending}
+                >
+                  I&apos;ve lost both, erase this device and start over
+                </Button>
+              )}
             </CardFooter>
           </form>
         ) : (
