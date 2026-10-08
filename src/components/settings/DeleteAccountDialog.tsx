@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -12,25 +13,32 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { deleteCurrentUserAccount } from '@/lib/account'
-import { createBrowserSupabaseClient } from '@/lib/supabase'
-import { clearLocalDb, wipeLocalDbKey } from '@/lib/localDb'
-
-const OFFLINE_USER_KEY = 'minima_offline_user'
+import { ACCOUNT_SESSION_QUERY_KEY, signOutAccount } from '@/lib/accountSession'
+import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 
 interface DeleteAccountDialogProps {
-  userId: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+// Deletes the Supabase account (spec §2.6). Data on this device is kept
+// unless the user ticks "Also remove data from this device".
 export function DeleteAccountDialog({
-  userId,
   open,
   onOpenChange,
 }: DeleteAccountDialogProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [removeLocal, setRemoveLocal] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setError(null)
+      setRemoveLocal(false)
+    }
+  }, [open])
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -38,8 +46,9 @@ export function DeleteAccountDialog({
 
     try {
       await deleteCurrentUserAccount()
-    } catch (e: any) {
-      const message = e?.message ?? 'Account deletion failed'
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error && e.message ? e.message : 'Account deletion failed'
       setError(message)
       toast.error(message)
       setDeleting(false)
@@ -47,22 +56,26 @@ export function DeleteAccountDialog({
     }
 
     try {
-      wipeLocalDbKey()
-      await clearLocalDb()
-
-      localStorage.removeItem(OFFLINE_USER_KEY)
-      localStorage.removeItem(`minima_device_salt_${userId}`)
-      localStorage.removeItem(`minima_key_verify_${userId}`)
-
-      const supabase = createBrowserSupabaseClient()
-      await supabase.auth.signOut()
+      await signOutAccount()
     } catch (e) {
-      console.error('Local cleanup after account deletion failed:', e)
-    } finally {
-      toast.success('Account deleted')
-      setDeleting(false)
-      navigate({ to: '/login' })
+      console.error('Sign-out after account deletion failed:', e)
     }
+
+    toast.success('Account deleted')
+
+    if (removeLocal) {
+      try {
+        await wipeLocalData()
+      } catch (e) {
+        console.error('Removing local data after account deletion failed:', e)
+      }
+      reloadToHome()
+      return
+    }
+
+    setDeleting(false)
+    void queryClient.invalidateQueries({ queryKey: ACCOUNT_SESSION_QUERY_KEY })
+    void navigate({ to: '/' })
   }
 
   return (
@@ -71,9 +84,26 @@ export function DeleteAccountDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete account?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure? All your data will be deleted.
+            Deletes your MinimaSpend account on the server. Data on this device
+            is kept unless you tick the box below.
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <label
+          htmlFor="delete-account-remove-local"
+          className="flex items-center gap-2 text-sm"
+        >
+          <input
+            id="delete-account-remove-local"
+            data-testid="delete-account-remove-local"
+            type="checkbox"
+            className="h-4 w-4"
+            checked={removeLocal}
+            onChange={(e) => setRemoveLocal(e.target.checked)}
+            disabled={deleting}
+          />
+          Also remove data from this device
+        </label>
 
         {error && (
           <p
@@ -92,7 +122,7 @@ export function DeleteAccountDialog({
             data-testid="delete-account-confirm-btn"
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={deleting}
-            onClick={handleDelete}
+            onClick={() => void handleDelete()}
           >
             {deleting ? 'Deleting…' : 'Yes'}
           </AlertDialogAction>
