@@ -385,7 +385,7 @@ async function unwrapDek(
 // Imports the DEK and checks it against the header verifier. A DEK that
 // unwrapped but fails the verifier means the vault is damaged.
 async function openDek(
-  header: VaultHeaderV2,
+  header: Pick<VaultHeaderV2, 'verifier'>,
   dekBytes: Uint8Array<ArrayBuffer>,
 ): Promise<CryptoKey> {
   let dek: CryptoKey
@@ -399,6 +399,75 @@ async function openDek(
     throw damaged()
   }
   return dek
+}
+
+// ── Backup headers (§7) ───────────────────────────────────────────────────────
+
+// The local vault header. Throws VaultError('invalid-state') without a vault
+// and VaultError('damaged') for a malformed header.
+export async function getVaultHeader(): Promise<VaultHeaderV2> {
+  return readHeader(requireStore())
+}
+
+async function tryOpen(
+  deriveKek: () => Promise<CryptoKey>,
+  box: { iv: string; ct: string },
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  try {
+    const bytes = await open(await deriveKek(), box)
+    if (bytes && bytes.length === DEK_BYTES) return bytes
+    bytes?.fill(0)
+    return null
+  } catch {
+    return null
+  }
+}
+
+// Unwraps the DEK of any header (e.g. a backup's) with a password or a
+// recovery key. A secret that parses as a recovery key is tried as one first,
+// then as a password. Returns null when neither opens the DEK; throws
+// VaultError('damaged') when the DEK unwraps but fails the verifier. Never
+// touches the local brute-force counter: the secret is checked against the
+// given header, not against this device.
+export async function openHeaderWithSecret(
+  header: Pick<
+    VaultHeaderV2,
+    'kdf' | 'wrappedByPassword' | 'recovery' | 'verifier'
+  >,
+  secret: string,
+): Promise<CryptoKey | null> {
+  if (!secret) return null
+
+  let dekBytes: Uint8Array<ArrayBuffer> | null = null
+  const recoveryBytes = parseRecoveryKey(secret)
+  if (recoveryBytes) {
+    try {
+      dekBytes = await tryOpen(
+        () => deriveRecoveryKek(recoveryBytes, base64ToBytes(header.recovery.salt)),
+        header.recovery,
+      )
+    } finally {
+      recoveryBytes.fill(0)
+    }
+  }
+  if (!dekBytes) {
+    dekBytes = await tryOpen(
+      () =>
+        derivePasswordKek(
+          secret,
+          base64ToBytes(header.kdf.salt),
+          header.kdf.iterations,
+        ),
+      header.wrappedByPassword,
+    )
+  }
+  if (!dekBytes) return null
+
+  try {
+    return await openDek(header, dekBytes)
+  } finally {
+    dekBytes.fill(0)
+  }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
