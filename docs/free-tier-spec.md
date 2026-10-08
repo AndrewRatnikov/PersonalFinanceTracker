@@ -325,7 +325,7 @@ Each phase can ship on its own.
 |---|---|---|
 | **1. Safety net** ✅ Done (run_20261007_212533) | §5.1 write lock · §5.2 never-overwrite + Data problem screen · §5.3 error states · §5.4 multi-tab · B1 budget fix | `localDb.ts`, `localAnalytics.ts`, `__root.tsx`, routes |
 | **2. Vault v2** ✅ Done (run_20261007_220444) | §4 key hierarchy · recovery key · change password · regenerate key · v1 migration · forgot-password flow · brute-force delay | `crypto.ts`, new `vault.ts`, `PasswordUnlockDialog` split into Create / Unlock / Recover screens |
-| **3. No-account mode** | Remove the auth gate from `__root.tsx` · new first-run flow · Lock / Auto-lock · Remove data · Account section behind `ENABLE_ACCOUNTS` · §6.1 persist + install hint | `__root.tsx`, `Header`, `LandingPage`, `settings`, `SignOutDialog` → `LockButton` + `RemoveDataDialog` |
+| **3. No-account mode** ✅ Done (run_20261008_064656) | Remove the auth gate from `__root.tsx` · new first-run flow · Lock / Auto-lock · Remove data · Account section behind `ENABLE_ACCOUNTS` · §6.1 persist + install hint | `__root.tsx`, `Header`, `LandingPage`, `settings`, `SignOutDialog` → `LockButton` + `RemoveDataDialog` |
 | **4. Backup** | §7 `.minima` backup and restore (replace and merge) · §6.2 reminders · §8 CSV zip, dedupe, parser | new `backup.ts`, `localImport.ts`, `localExport.ts`, `DataToolsTab` |
 | **5. Offline hardening** | §6.3 precache all client assets, app-shell fallback | `vite.config.ts` |
 
