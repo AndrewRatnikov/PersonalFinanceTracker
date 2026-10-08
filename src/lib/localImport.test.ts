@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: import behaviour for #11 and #10 (import trim) is fully
-// specified in the Interface Contract.
+// specified in the Interface Contract. Phase 4: the mock now includes
+// getAllExpenses and getAllIncome (snapshot reads for duplicate detection).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +14,8 @@ import {
   addExpense,
   addIncome,
   getAllCategories,
+  getAllExpenses,
+  getAllIncome,
 } from '@/lib/localDb'
 
 vi.mock('@/lib/localDb', () => ({
@@ -20,6 +23,8 @@ vi.mock('@/lib/localDb', () => ({
   addExpense: vi.fn(),
   addIncome: vi.fn(),
   getAllCategories: vi.fn(),
+  getAllExpenses: vi.fn(),
+  getAllIncome: vi.fn(),
   upsertBudget: vi.fn(),
 }))
 
@@ -29,6 +34,8 @@ describe('import: invalid dates are skipped (#11)', () => {
     vi.mocked(getAllCategories).mockResolvedValue([
       { id: 'c1', name: 'Food', icon: null },
     ])
+    vi.mocked(getAllExpenses).mockResolvedValue([])
+    vi.mocked(getAllIncome).mockResolvedValue([])
   })
 
   it('expenses: skips an impossible date and an empty date, imports the valid row', async () => {
@@ -89,6 +96,8 @@ describe('import: category names are compared trimmed (#10)', () => {
     vi.mocked(getAllCategories).mockResolvedValue([
       { id: 'c1', name: 'Food', icon: null },
     ])
+    vi.mocked(getAllExpenses).mockResolvedValue([])
+    vi.mocked(getAllIncome).mockResolvedValue([])
   })
 
   it('skips a padded duplicate of an existing category without calling addCategory', async () => {
@@ -104,5 +113,92 @@ describe('import: category names are compared trimmed (#10)', () => {
 
     expect(result.inserted).toBe(1)
     expect(vi.mocked(addCategory).mock.calls[0][0].name).toBe('Cafe')
+  })
+})
+
+describe('import: existing behaviour is preserved (Phase 4, #20)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(getAllCategories).mockResolvedValue([
+      { id: 'c1', name: 'Food', icon: null },
+    ])
+    vi.mocked(getAllExpenses).mockResolvedValue([])
+    vi.mocked(getAllIncome).mockResolvedValue([])
+  })
+
+  it('expenses: reports each invalid row once, with the original texts and numbering', async () => {
+    const csv = [
+      'date,amount,currency,category,description',
+      '2024-01-15,abc,UAH,Food,',
+      '2024-01-15,5,GBP,Food,',
+      '2024-01-15,5,UAH,Unknown,',
+      '2024-01-15,5,UAH,Food,ok',
+    ].join('\n')
+
+    const result = await importExpensesFromCSV(csv)
+
+    expect(result.errors).toEqual([
+      'Row 2: invalid amount "abc"',
+      'Row 3: invalid currency "GBP"',
+      'Row 4: unknown category "Unknown"',
+    ])
+    expect(result.inserted).toBe(1)
+    expect(result.skipped).toBe(3)
+    expect(result.duplicates).toBe(0)
+    expect(result.duplicateRows).toEqual([])
+  })
+
+  it('expenses: throws when the vault has no categories', async () => {
+    vi.mocked(getAllCategories).mockResolvedValue([])
+
+    await expect(
+      importExpensesFromCSV(
+        'date,amount,currency,category,description\n2024-01-15,5,UAH,Food,',
+      ),
+    ).rejects.toThrow('Import categories.csv first')
+    expect(addExpense).not.toHaveBeenCalled()
+  })
+
+  it('expenses: a zero or negative amount is rejected', async () => {
+    const result = await importExpensesFromCSV(
+      [
+        'date,amount,currency,category,description',
+        '2024-01-15,0,UAH,Food,',
+        '2024-01-15,-3,UAH,Food,',
+      ].join('\n'),
+    )
+
+    expect(result.inserted).toBe(0)
+    expect(result.errors).toEqual([
+      'Row 2: invalid amount "0"',
+      'Row 3: invalid amount "-3"',
+    ])
+  })
+
+  it('expenses: never defaults a missing date to now', async () => {
+    const result = await importExpensesFromCSV(
+      'date,amount,currency,category,description\n,5,UAH,Food,',
+    )
+
+    expect(result.inserted).toBe(0)
+    expect(addExpense).not.toHaveBeenCalled()
+  })
+
+  it('income: a missing source is reported', async () => {
+    const result = await importIncomeFromCSV(
+      'date,source,amount,currency,description\n2024-01-15,,5,UAH,',
+    )
+
+    expect(result.errors).toEqual(['Row 2: missing source'])
+    expect(result.skipped).toBe(1)
+    expect(addIncome).not.toHaveBeenCalled()
+  })
+
+  it('categories: a row without a name is reported', async () => {
+    const result = await importCategoriesFromCSV('name,icon\n,x\nCafe,')
+
+    expect(result.errors).toEqual(['Row 2: missing name'])
+    expect(result.skipped).toBe(1)
+    expect(result.inserted).toBe(1)
   })
 })

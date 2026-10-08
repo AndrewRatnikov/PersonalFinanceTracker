@@ -1,10 +1,13 @@
 // No CONTRACT_GAPs: RemoveDataDialog props, selectors and mocks are fully
 // specified in the Interface Contract (component: RemoveDataDialog).
+// Phase 4: "Download backup first" now calls downloadBackup from
+// @/lib/backup. @/lib/localExport is deliberately not mocked: the dialog must
+// not use exportAllLocalData any more.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { exportAllLocalData } from '@/lib/localExport'
+import { downloadBackup } from '@/lib/backup'
 import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 import { verifyPassword } from '@/lib/vault'
 import { RemoveDataDialog } from '@/components/RemoveDataDialog'
@@ -31,7 +34,7 @@ vi.mock('@/lib/localWipe', () => ({
   wipeLocalData: vi.fn(),
   reloadToHome: vi.fn(),
 }))
-vi.mock('@/lib/localExport', () => ({ exportAllLocalData: vi.fn() }))
+vi.mock('@/lib/backup', () => ({ downloadBackup: vi.fn() }))
 vi.mock('sonner', () => ({
   toast: { success: toastSuccess, error: toastError },
 }))
@@ -72,7 +75,11 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(verifyPassword).mockResolvedValue(undefined)
   vi.mocked(wipeLocalData).mockResolvedValue(undefined)
-  vi.mocked(exportAllLocalData).mockResolvedValue(undefined)
+  vi.mocked(downloadBackup).mockResolvedValue({
+    status: 'saved',
+    filename: 'x.minima',
+    skipped: [],
+  })
 })
 
 afterEach(() => {
@@ -272,27 +279,62 @@ describe('RemoveDataDialog typed DELETE confirmation', () => {
 })
 
 describe('RemoveDataDialog backup and cancel', () => {
-  it('Download backup first runs the CSV export and does not wipe', async () => {
+  it('Download backup first downloads a .minima backup and does not wipe', async () => {
     renderDialog()
 
     fireEvent.click(screen.getByTestId('remove-data-backup-btn'))
 
     await waitFor(() => {
-      expect(exportAllLocalData).toHaveBeenCalledTimes(1)
+      expect(downloadBackup).toHaveBeenCalledTimes(1)
     })
     expect(wipeLocalData).not.toHaveBeenCalled()
+    expect(reloadToHome).not.toHaveBeenCalled()
     expect(toastError).not.toHaveBeenCalled()
   })
 
-  it('shows a toast when the backup fails', async () => {
-    vi.mocked(exportAllLocalData).mockRejectedValue(new Error('no data'))
+  it('confirms a saved backup with a toast', async () => {
     renderDialog()
 
     fireEvent.click(screen.getByTestId('remove-data-backup-btn'))
 
     await waitFor(() => {
-      expect(toastError).toHaveBeenCalled()
+      expect(toastSuccess).toHaveBeenCalledWith('Backup saved')
     })
+  })
+
+  it('says nothing when the user cancels the share sheet', async () => {
+    vi.mocked(downloadBackup).mockResolvedValue({
+      status: 'cancelled',
+      filename: 'x.minima',
+      skipped: [],
+    })
+    renderDialog()
+
+    fireEvent.click(screen.getByTestId('remove-data-backup-btn'))
+
+    await waitFor(() => {
+      expect(downloadBackup).toHaveBeenCalledTimes(1)
+    })
+    await Promise.resolve()
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalled()
+    expect(wipeLocalData).not.toHaveBeenCalled()
+  })
+
+  it('shows a toast when the backup fails', async () => {
+    vi.mocked(downloadBackup).mockRejectedValue(new Error('no data'))
+    renderDialog()
+
+    fireEvent.click(screen.getByTestId('remove-data-backup-btn'))
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledTimes(1)
+    })
+    expect(String(toastError.mock.calls[0][0])).toContain(
+      'Could not download the backup',
+    )
+    expect(String(toastError.mock.calls[0][0])).toContain('no data')
+    expect(toastSuccess).not.toHaveBeenCalled()
     expect(wipeLocalData).not.toHaveBeenCalled()
   })
 

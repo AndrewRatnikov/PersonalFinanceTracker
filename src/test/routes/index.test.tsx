@@ -1,6 +1,7 @@
 // No CONTRACT_GAPs: the index route's phase-driven rendering is fully
 // specified in the Interface Contract (route: index). InstallHintCard is
-// replaced by a fake (fake-install-hint) and Link by a plain anchor.
+// replaced by a fake (fake-install-hint), BackupReminderBanner by a fake
+// (fake-backup-reminder) and Link by a plain anchor.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen } from '@testing-library/react'
@@ -36,8 +37,16 @@ vi.mock('@/lib/localDb', () => ({
 }))
 vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))
 vi.mock('@/lib/localWipe', () => ({ reloadToHome: vi.fn() }))
+vi.mock('@/lib/backup', () => ({ formatRestoreSummary: vi.fn() }))
 vi.mock('@/components/InstallHintCard', () => ({
   InstallHintCard: () => <div data-testid="fake-install-hint" />,
+}))
+vi.mock('@/components/index/BackupReminderBanner', () => ({
+  BackupReminderBanner: () => <div data-testid="fake-backup-reminder" />,
+}))
+vi.mock('@/components/RestoreBackupDialog', () => ({
+  RestoreBackupDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="fake-restore-backup-dialog" /> : null,
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -89,6 +98,7 @@ describe('index route', () => {
       expect(screen.getByTestId('landing-start-tracking')).toBeTruthy()
       expect(screen.queryByTestId('dashboard-summary')).toBeNull()
       expect(screen.queryByTestId('fake-install-hint')).toBeNull()
+      expect(screen.queryByTestId('fake-backup-reminder')).toBeNull()
       expect(getAllCategories).not.toHaveBeenCalled()
     },
   )
@@ -104,5 +114,29 @@ describe('index route', () => {
 
     await screen.findByTestId('dashboard-summary')
     expect(screen.queryByTestId('landing-start-tracking')).toBeNull()
+  })
+
+  it('renders the backup reminder banner on the unlocked dashboard', async () => {
+    setVaultPhase('unlocked')
+    renderIndex()
+
+    await screen.findByTestId('dashboard-summary')
+    expect(screen.getAllByTestId('fake-backup-reminder')).toHaveLength(1)
+  })
+
+  it('puts the backup reminder directly after the install hint and above the summary', async () => {
+    setVaultPhase('unlocked')
+    renderIndex()
+
+    const summary = await screen.findByTestId('dashboard-summary')
+    const hint = screen.getByTestId('fake-install-hint')
+    const banner = screen.getByTestId('fake-backup-reminder')
+    expect(
+      hint.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      banner.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(hint.nextElementSibling).toBe(banner)
   })
 })
