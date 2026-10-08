@@ -4,13 +4,12 @@ import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
-import { Route as RootRoute } from './__root'
-
 import type { CreateExpenseInput } from '@/lib/domain'
 
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 import RecentActivityList from '@/components/index/RecentActivityList'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
+import { InstallHintCard } from '@/components/InstallHintCard'
 import LandingPage from '@/components/LandingPage'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
@@ -23,14 +22,16 @@ import {
   getAllIncome,
   getExpensesForRange,
 } from '@/lib/localDb'
+import { useVaultSession } from '@/lib/vaultSession'
 
 export const Route = createFileRoute('/')({
   component: IndexRoute,
 })
 
+// The landing page until this device's vault is unlocked (spec §2.2).
 function IndexRoute() {
-  const { auth } = RootRoute.useRouteContext()
-  return auth.user ? <Dashboard /> : <LandingPage />
+  const { phase } = useVaultSession()
+  return phase === 'unlocked' ? <Dashboard /> : <LandingPage />
 }
 
 function Dashboard() {
@@ -151,6 +152,7 @@ function Dashboard() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <InstallHintCard />
         <DashboardSummarySection summary={summary} />
 
         <section>
