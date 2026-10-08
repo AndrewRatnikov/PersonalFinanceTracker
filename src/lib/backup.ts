@@ -774,12 +774,15 @@ export function formatRestoreSummary(s: RestoreSummary): string {
 export async function downloadBackup(
   options: { partial?: boolean } = {},
 ): Promise<DownloadBackupResult> {
+  // Capture the snapshot time up front: changes made while the save/share
+  // sheet is open must still count as newer than this backup.
+  const now = new Date()
   const b = await createBackup({ allowPartial: options.partial })
   const blob = new Blob([serializeBackup(b)], {
     type: 'application/octet-stream',
   })
   const filename = backupFileName()
   const status = await saveFile(blob, filename, { share: true })
-  if (status === 'saved') await recordBackupCompleted()
+  if (status === 'saved') await recordBackupCompleted(now)
   return { status, filename, skipped: b.skipped ?? [] }
 }
