@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { exportAllLocalData } from '@/lib/localExport'
+import { downloadBackup } from '@/lib/backup'
 import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 import { VaultError, verifyPassword } from '@/lib/vault'
 import {
@@ -61,7 +61,8 @@ export function RemoveDataDialog({
   const handleBackup = async () => {
     setBackingUp(true)
     try {
-      await exportAllLocalData()
+      const result = await downloadBackup()
+      if (result.status === 'saved') toast.success('Backup saved')
     } catch (err) {
       toast.error(`Could not download the backup: ${errorText(err)}`)
     } finally {

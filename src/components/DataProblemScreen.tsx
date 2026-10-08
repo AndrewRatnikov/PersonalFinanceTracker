@@ -16,15 +16,27 @@ interface DataProblemScreenProps {
   storageKey: string
   onRetry: () => void | Promise<void>
   onQuarantine: () => Promise<void>
+  // Makes a partial backup of the readable data. Resolves to the skipped
+  // storage keys, or null when the user cancelled the share sheet.
+  onBackupReadable?: () => Promise<Array<string> | null>
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 export function DataProblemScreen({
   storageKey,
   onRetry,
   onQuarantine,
+  onBackupReadable,
 }: DataProblemScreenProps) {
   const [pending, setPending] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [backupSkipped, setBackupSkipped] = useState<Array<string> | null>(
+    null,
+  )
 
   const handleQuarantine = async () => {
     setError(null)
@@ -32,9 +44,25 @@ export function DataProblemScreen({
     try {
       await onQuarantine()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorText(err))
     } finally {
       setPending(false)
+    }
+  }
+
+  const handleBackup = async () => {
+    if (!onBackupReadable) return
+    setError(null)
+    setPending(true)
+    setBackingUp(true)
+    try {
+      const skipped = await onBackupReadable()
+      if (skipped !== null) setBackupSkipped(skipped)
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setPending(false)
+      setBackingUp(false)
     }
   }
 
@@ -65,6 +93,16 @@ export function DataProblemScreen({
             Retry if this might be temporary. Quarantine moves the unreadable
             data aside, unchanged, so you can keep using the app.
           </p>
+          {backupSkipped !== null && (
+            <p
+              data-testid="data-problem-backup-done"
+              className="text-sm text-emerald-600 dark:text-emerald-400"
+            >
+              Readable data backed up.
+              {backupSkipped.length > 0 &&
+                ` Not included: ${backupSkipped.map(storageKeyLabel).join(', ')}`}
+            </p>
+          )}
           {error !== null && (
             <p
               data-testid="data-problem-error"
@@ -74,7 +112,7 @@ export function DataProblemScreen({
             </p>
           )}
         </CardContent>
-        <CardFooter className="flex gap-2">
+        <CardFooter className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
@@ -84,13 +122,27 @@ export function DataProblemScreen({
           >
             Retry
           </Button>
+          {onBackupReadable && (
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="data-problem-backup"
+              onClick={() => void handleBackup()}
+              disabled={pending}
+            >
+              {backingUp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Back up readable data
+            </Button>
+          )}
           <Button
             type="button"
             data-testid="data-problem-quarantine"
             onClick={() => void handleQuarantine()}
             disabled={pending}
           >
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {pending && !backingUp && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
             Quarantine and continue
           </Button>
         </CardFooter>

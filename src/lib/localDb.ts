@@ -33,7 +33,8 @@ export const ENABLE_SUPABASE_SYNC = false
 // channel after the write has committed. Reads throw DecryptError for a blob
 // that cannot be decrypted; mutations never catch it, so a corrupt blob is
 // never overwritten. Quarantined copies live under `quarantine:<key>:<ISO>`
-// and are ignored by every reader.
+// and are ignored by every reader. After each committed mutation (but not a
+// quarantine) `meta:settings.lastDataChangeAt` is set for the backup reminder.
 interface LocalDbMap {
   categories: Array<Category>
   income: Array<IncomeEntry>
@@ -100,7 +101,7 @@ async function writeStore<TKey extends LocalDbKey>(
 
 const EXPENSE_CHUNK_KEY_RE = /^expenses_\d{4}_\d{2}$/
 
-function expenseChunkKey(dateStr: string): string {
+export function expenseChunkKey(dateStr: string): string {
   const d = new Date(dateStr)
   if (isNaN(d.getTime()))
     throw new Error(`expenseChunkKey: invalid date string "${dateStr}"`)
@@ -159,6 +160,39 @@ async function allExpenseChunkKeys(): Promise<Array<string>> {
       (k): k is string => typeof k === 'string' && EXPENSE_CHUNK_KEY_RE.test(k),
     )
     .sort()
+}
+
+// ── Commit hook: lastDataChangeAt (§6.2) ──────────────────────────────────────
+
+// Must equal META_SETTINGS_KEY in vault.ts. Not imported from there: vault.ts
+// imports this module, and many tests mock `@/lib/vault` partially.
+const META_SETTINGS_KEY = 'meta:settings'
+
+// Records the time of the last committed data change in the plaintext
+// `meta:settings` object (merged, other fields kept). The data write has
+// already committed, so a failure here is logged and never fails the mutation.
+async function markDataChanged(): Promise<void> {
+  const s = store
+  if (!s) return
+  try {
+    await withWriteLock(META_SETTINGS_KEY, async () => {
+      const raw = await get<unknown>(META_SETTINGS_KEY, s)
+      const stored = raw && typeof raw === 'object' ? raw : {}
+      await set(
+        META_SETTINGS_KEY,
+        { ...stored, lastDataChangeAt: new Date().toISOString() },
+        s,
+      )
+    })
+  } catch (err) {
+    console.error('Could not record the data change time:', err)
+  }
+}
+
+// Runs after every committed user-data mutation (not after quarantine).
+async function afterCommit(changedKeys: Array<string>): Promise<void> {
+  postChanged(changedKeys)
+  await markDataChanged()
 }
 
 // ── Quarantine and orphan detection ───────────────────────────────────────────
@@ -252,7 +286,7 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     const existing = await readChunk(chunkKey)
     await writeChunk(chunkKey, [...existing, entry])
   })
-  postChanged([chunkKey])
+  await afterCommit([chunkKey])
   const categories = (await readStore('categories')) ?? []
   const category = categories.find((c) => c.id === entry.categoryId)
   return { ...entry, category }
@@ -271,7 +305,7 @@ export async function deleteExpense(
       chunk.filter((e) => e.id !== id),
     )
   })
-  postChanged([chunkKey])
+  await afterCommit([chunkKey])
 }
 
 // originalCreatedAt locates the current chunk; if the patch moves createdAt
@@ -353,7 +387,7 @@ export async function updateExpense(
     const category = categories.find((c) => c.id === updated.categoryId)
     return { result: { ...updated, category }, written: writtenKeys }
   })
-  postChanged(written)
+  await afterCommit(written)
   return result
 }
 
@@ -386,7 +420,7 @@ export async function addCategory(
     await writeStore('categories', [...categories, created])
     return created
   })
-  postChanged(['categories'])
+  await afterCommit(['categories'])
   return entry
 }
 
@@ -417,7 +451,7 @@ export async function updateCategory(
     if (!found) throw new Error(`Category not found: ${input.id}`)
     return found
   })
-  postChanged(['categories'])
+  await afterCommit(['categories'])
   return result
 }
 
@@ -450,7 +484,9 @@ export async function deleteCategory(id: string): Promise<void> {
       return false
     },
   )
-  postChanged(budgetsChanged ? ['categories', 'budgets'] : ['categories'])
+  await afterCommit(
+    budgetsChanged ? ['categories', 'budgets'] : ['categories'],
+  )
 }
 
 const DEFAULT_CATEGORIES: Array<Omit<Category, 'id'>> = [
@@ -476,7 +512,7 @@ export async function provisionDefaultCategories(): Promise<void> {
     await writeStore('categories', defaults)
     return true
   })
-  if (wrote) postChanged(['categories'])
+  if (wrote) await afterCommit(['categories'])
 }
 
 // ── Income ────────────────────────────────────────────────────────────────────
@@ -503,7 +539,7 @@ export async function addIncome(
     await writeStore('income', [...income, created])
     return created
   })
-  postChanged(['income'])
+  await afterCommit(['income'])
   return entry
 }
 
@@ -515,7 +551,7 @@ export async function deleteIncome(id: string): Promise<void> {
       income.filter((e) => e.id !== id),
     )
   })
-  postChanged(['income'])
+  await afterCommit(['income'])
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
@@ -566,7 +602,7 @@ export async function upsertBudget(
     await writeStore('budgets', updated)
     return entry
   })
-  postChanged(['budgets'])
+  await afterCommit(['budgets'])
   return result
 }
 
@@ -578,5 +614,5 @@ export async function deleteBudget(id: string): Promise<void> {
       budgets.filter((b) => b.id !== id),
     )
   })
-  postChanged(['budgets'])
+  await afterCommit(['budgets'])
 }

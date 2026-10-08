@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { DataProblemScreen } from './DataProblemScreen'
 import type { ReactNode } from 'react'
+import { downloadBackup } from '@/lib/backup'
 import { isDecryptError } from '@/lib/dataErrors'
 import {
   clearDataProblem,
@@ -54,11 +55,18 @@ export function DataProblemGate({ children }: { children: ReactNode }) {
       await queryClient.resetQueries()
       clearDataProblem()
     }
+    // A partial backup of everything that can still be decrypted. Resolves to
+    // the skipped keys, or null when the user cancelled the share sheet.
+    const handleBackupReadable = async () => {
+      const result = await downloadBackup({ partial: true })
+      return result.status === 'saved' ? result.skipped : null
+    }
     return (
       <DataProblemScreen
         storageKey={problem.storageKey}
         onRetry={handleRetry}
         onQuarantine={handleQuarantine}
+        onBackupReadable={handleBackupReadable}
       />
     )
   }

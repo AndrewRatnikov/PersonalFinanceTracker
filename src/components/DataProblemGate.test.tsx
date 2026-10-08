@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: DataProblemScreen, DataProblemGate and DataErrorBoundary
-// are fully specified in the Interface Contract.
+// are fully specified in the Interface Contract. Phase 4 adds the optional
+// "Back up readable data" action (onBackupReadable) and its Gate wiring.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -7,6 +8,7 @@ import { Component } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
+import { downloadBackup } from '@/lib/backup'
 import { DecryptError } from '@/lib/dataErrors'
 import {
   clearDataProblem,
@@ -20,10 +22,13 @@ import { DataProblemScreen } from '@/components/DataProblemScreen'
 vi.mock('@/lib/localDb', () => ({
   quarantineKey: vi.fn(),
 }))
+vi.mock('@/lib/backup', () => ({
+  downloadBackup: vi.fn(),
+}))
 
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((r) => {
+function deferred<T = void>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
     resolve = r
   })
   return { promise, resolve }
@@ -156,6 +161,151 @@ describe('DataProblemScreen', () => {
   })
 })
 
+describe('DataProblemScreen "Back up readable data"', () => {
+  function renderWithBackup(
+    onBackupReadable: () => Promise<Array<string> | null>,
+    props: { onRetry?: () => void; onQuarantine?: () => Promise<void> } = {},
+  ) {
+    render(
+      <DataProblemScreen
+        storageKey="expenses_2026_03"
+        onRetry={props.onRetry ?? vi.fn()}
+        onQuarantine={props.onQuarantine ?? vi.fn()}
+        onBackupReadable={onBackupReadable}
+      />,
+    )
+  }
+
+  it('has no backup action unless onBackupReadable is given', () => {
+    render(
+      <DataProblemScreen
+        storageKey="income"
+        onRetry={vi.fn()}
+        onQuarantine={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('data-problem-backup')).toBeNull()
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+  })
+
+  it('shows the action between Retry and Quarantine', () => {
+    renderWithBackup(() => Promise.resolve([]))
+
+    const retry = screen.getByTestId('data-problem-retry')
+    const backup = screen.getByTestId('data-problem-backup')
+    const quarantine = screen.getByTestId('data-problem-quarantine')
+    expect(backup.textContent).toContain('Back up readable data')
+    expect(
+      retry.compareDocumentPosition(backup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      backup.compareDocumentPosition(quarantine) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+  })
+
+  it('calls onBackupReadable and neither Retry nor Quarantine', async () => {
+    const onBackupReadable = vi.fn(() => Promise.resolve([] as Array<string>))
+    const onRetry = vi.fn()
+    const onQuarantine = vi.fn()
+    renderWithBackup(onBackupReadable, { onRetry, onQuarantine })
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    await screen.findByTestId('data-problem-backup-done')
+    expect(onBackupReadable).toHaveBeenCalledTimes(1)
+    expect(onRetry).not.toHaveBeenCalled()
+    expect(onQuarantine).not.toHaveBeenCalled()
+  })
+
+  it('confirms the backup when nothing was skipped', async () => {
+    renderWithBackup(() => Promise.resolve([]))
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const done = await screen.findByTestId('data-problem-backup-done')
+    expect(done.textContent).toContain('Readable data backed up.')
+    expect(done.textContent).not.toContain('Not included')
+  })
+
+  it('lists the skipped keys by label', async () => {
+    renderWithBackup(() => Promise.resolve(['expenses_2026_03', 'income']))
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const done = await screen.findByTestId('data-problem-backup-done')
+    expect(done.textContent).toContain('Readable data backed up.')
+    expect(done.textContent).toContain(' Not included: Expenses · 2026-03, Income')
+  })
+
+  it('lists a different set of skipped keys differently', async () => {
+    renderWithBackup(() => Promise.resolve(['budgets']))
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const done = await screen.findByTestId('data-problem-backup-done')
+    expect(done.textContent).toContain('Not included: Budgets')
+    expect(done.textContent).not.toContain('Income')
+  })
+
+  it('shows no confirmation when the share was cancelled (null)', async () => {
+    const onBackupReadable = vi.fn(() => Promise.resolve(null))
+    renderWithBackup(onBackupReadable)
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    await waitFor(() => {
+      expect(onBackupReadable).toHaveBeenCalledTimes(1)
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLButtonElement>('data-problem-backup').disabled,
+      ).toBe(false)
+    })
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+    expect(screen.queryByTestId('data-problem-error')).toBeNull()
+  })
+
+  it('disables Retry, Back up and Quarantine while it is pending', async () => {
+    const gate = deferred<Array<string> | null>()
+    renderWithBackup(() => gate.promise)
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLButtonElement>('data-problem-backup').disabled,
+      ).toBe(true)
+    })
+    expect(
+      screen.getByTestId<HTMLButtonElement>('data-problem-retry').disabled,
+    ).toBe(true)
+    expect(
+      screen.getByTestId<HTMLButtonElement>('data-problem-quarantine').disabled,
+    ).toBe(true)
+
+    await act(async () => {
+      gate.resolve([])
+      await gate.promise
+    })
+    expect(
+      screen.getByTestId<HTMLButtonElement>('data-problem-retry').disabled,
+    ).toBe(false)
+  })
+
+  it('shows a failure in data-problem-error and no confirmation', async () => {
+    renderWithBackup(() => Promise.reject(new Error('share exploded')))
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const error = await screen.findByTestId('data-problem-error')
+    expect(error.textContent).toContain('share exploded')
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+  })
+})
+
 describe('DataProblemGate', () => {
   it('renders its children when there is no problem', () => {
     renderGate()
@@ -254,6 +404,96 @@ describe('DataProblemGate', () => {
     })
 
     expect(screen.getByTestId('data-problem-key').textContent).toBe('Income')
+  })
+
+  it('offers "Back up readable data" on the screen', () => {
+    renderGate()
+
+    act(() => {
+      reportDataProblem(new DecryptError('expenses_2026_03'))
+    })
+
+    expect(screen.getByTestId('data-problem-backup').textContent).toContain(
+      'Back up readable data',
+    )
+  })
+
+  it('Back up readable data makes a partial backup and lists the skipped keys', async () => {
+    vi.mocked(downloadBackup).mockResolvedValue({
+      status: 'saved',
+      filename: 'minima-backup-2026-03-05.minima',
+      skipped: ['expenses_2026_03'],
+    })
+    renderGate()
+    act(() => {
+      reportDataProblem(new DecryptError('expenses_2026_03'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const done = await screen.findByTestId('data-problem-backup-done')
+    expect(downloadBackup).toHaveBeenCalledTimes(1)
+    expect(downloadBackup).toHaveBeenCalledWith({ partial: true })
+    expect(done.textContent).toContain('Not included: Expenses · 2026-03')
+    expect(screen.queryByTestId('gate-child')).toBeNull()
+    expect(quarantineKey).not.toHaveBeenCalled()
+    expect(getDataProblem()?.storageKey).toBe('expenses_2026_03')
+  })
+
+  it('reports no skipped keys when the partial backup skipped nothing', async () => {
+    vi.mocked(downloadBackup).mockResolvedValue({
+      status: 'saved',
+      filename: 'x.minima',
+      skipped: [],
+    })
+    renderGate()
+    act(() => {
+      reportDataProblem(new DecryptError('income'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const done = await screen.findByTestId('data-problem-backup-done')
+    expect(done.textContent).toContain('Readable data backed up.')
+    expect(done.textContent).not.toContain('Not included')
+  })
+
+  it('shows no confirmation when the user cancels the share sheet', async () => {
+    vi.mocked(downloadBackup).mockResolvedValue({
+      status: 'cancelled',
+      filename: 'x.minima',
+      skipped: ['income'],
+    })
+    renderGate()
+    act(() => {
+      reportDataProblem(new DecryptError('income'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    await waitFor(() => {
+      expect(downloadBackup).toHaveBeenCalledWith({ partial: true })
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLButtonElement>('data-problem-backup').disabled,
+      ).toBe(false)
+    })
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+  })
+
+  it('shows the error when the backup fails', async () => {
+    vi.mocked(downloadBackup).mockRejectedValue(new Error('no space'))
+    renderGate()
+    act(() => {
+      reportDataProblem(new DecryptError('income'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-backup'))
+
+    const error = await screen.findByTestId('data-problem-error')
+    expect(error.textContent).toContain('no space')
+    expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
   })
 })
 
