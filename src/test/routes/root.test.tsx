@@ -6,6 +6,7 @@
 
 import { isRedirect } from '@tanstack/react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as VaultModule from '@/lib/vault'
 
 import { getVaultState } from '@/lib/vault'
 import { Route } from '@/routes/__root'
@@ -26,7 +27,7 @@ vi.mock('@/lib/localDb', () => ({
 }))
 
 vi.mock('@/lib/vault', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/vault')>()
+  const actual = await importOriginal<typeof VaultModule>()
   return { ...actual, getVaultState: vi.fn() }
 })
 

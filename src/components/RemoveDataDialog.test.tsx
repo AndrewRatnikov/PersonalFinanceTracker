@@ -10,7 +10,7 @@ import { verifyPassword } from '@/lib/vault'
 import { RemoveDataDialog } from '@/components/RemoveDataDialog'
 
 const { MockVaultError, toastError, toastSuccess } = vi.hoisted(() => {
-  class MockVaultError extends Error {
+  class HoistedVaultError extends Error {
     code: string
     retryAfterMs: number
     constructor(code: string, message: string, retryAfterMs = 0) {
@@ -20,7 +20,7 @@ const { MockVaultError, toastError, toastSuccess } = vi.hoisted(() => {
       this.retryAfterMs = retryAfterMs
     }
   }
-  return { MockVaultError, toastError: vi.fn(), toastSuccess: vi.fn() }
+  return { MockVaultError: HoistedVaultError, toastError: vi.fn(), toastSuccess: vi.fn() }
 })
 
 vi.mock('@/lib/vault', () => ({
@@ -114,9 +114,7 @@ describe('RemoveDataDialog layout', () => {
   it('explains what will be deleted', () => {
     renderDialog()
 
-    const text = (
-      screen.getByTestId('remove-data-dialog').textContent ?? ''
-    ).toLowerCase()
+    const text = screen.getByTestId('remove-data-dialog').textContent.toLowerCase()
     expect(text).toContain('expenses')
     expect(text).toContain('recovery key')
   })

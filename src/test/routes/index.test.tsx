@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import type * as ReactRouter from '@tanstack/react-router'
 
 import {
   getAllBudgets,
@@ -17,7 +18,7 @@ import { cancelCreateVault, setVaultPhase } from '@/lib/vaultSession'
 import { Route } from '@/routes/index'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  const actual = await importOriginal<typeof ReactRouter>()
   return {
     ...actual,
     Link: ({ to, children }: { to: string; children?: ReactNode }) => (
