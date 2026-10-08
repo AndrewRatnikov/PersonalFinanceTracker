@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import type { CreateExpenseInput } from '@/lib/domain'
 
+import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 import RecentActivityList from '@/components/index/RecentActivityList'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
@@ -153,6 +154,7 @@ function Dashboard() {
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <InstallHintCard />
+        <BackupReminderBanner />
         <DashboardSummarySection summary={summary} />
 
         <section>
