@@ -3,17 +3,36 @@ import { Toaster } from 'sonner'
 import {
   HeadContent,
   Scripts,
-  createRootRouteWithContext,
+  createRootRoute,
   redirect,
+  useRouter,
+  useRouterState,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 
-import { getServerUser } from '../lib/auth'
+import {
+  APP_SETTINGS_QUERY_KEY,
+  DEFAULT_AUTO_LOCK_MINUTES,
+  getAppSettings,
+} from '../lib/appSettings'
+import { startAutoLock } from '../lib/autoLock'
 import { provisionDefaultCategories as provisionLocalCategories } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
+import { ensurePersistentStorage } from '../lib/storagePersistence'
 import { listenForChanges } from '../lib/syncChannel'
+import { getVaultState } from '../lib/vault'
+import {
+  cancelCreateVault,
+  computeGate,
+  connectOtherTabs,
+  isDataRoute,
+  lockApp,
+  phaseForVaultState,
+  setVaultPhase,
+  useVaultSession,
+} from '../lib/vaultSession'
 import Header from '../components/Header'
 import { OfflineBanner } from '../components/OfflineBanner'
 import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
@@ -21,68 +40,27 @@ import NotFoundPage from '../components/NotFoundPage'
 import { DataProblemGate } from '../components/DataProblemGate'
 
 import appCss from '../styles.css?url'
-import type { AuthContext } from '../lib/authContext'
-import type { User } from '@supabase/supabase-js'
-
-const OFFLINE_USER_KEY = 'minima_offline_user'
+import type { VaultState } from '../lib/vault'
 
 // DecryptErrors from any query or mutation switch the app to the Data problem
 // screen (see lib/queryClient.ts and components/DataProblemGate.tsx).
 const queryClient = createAppQueryClient()
 
-export const Route = createRootRouteWithContext<AuthContext>()({
+export const Route = createRootRoute({
+  // No account is needed (spec §2.1). Data routes need a vault on this
+  // device; without one they go back to the landing page.
   beforeLoad: async ({ location }) => {
-    let user: User | null = null
-
+    if (typeof window === 'undefined' || !isDataRoute(location.pathname)) {
+      return
+    }
+    let state: VaultState
     try {
-      user = await getServerUser()
-      if (typeof window !== 'undefined') {
-        if (user) {
-          localStorage.setItem(
-            OFFLINE_USER_KEY,
-            JSON.stringify({ id: user.id }),
-          )
-        } else {
-          localStorage.removeItem(OFFLINE_USER_KEY)
-        }
-      }
-    } catch (err) {
-      if (typeof window !== 'undefined') {
-        const raw = localStorage.getItem(OFFLINE_USER_KEY)
-        let cached: User | null = null
-        if (raw) {
-          try {
-            cached = JSON.parse(raw) as User
-          } catch {
-            cached = null
-          }
-        }
-        if (cached) {
-          // Use cached identity regardless of navigator.onLine — the flag is
-          // unreliable; a failed fetch is enough signal to fall back.
-          user = cached
-        } else if (!navigator.onLine) {
-          user = null // offline, no cache → redirect to login
-        } else {
-          throw err // online, no cache → real auth error
-        }
-      } else {
-        throw err
-      }
+      state = await getVaultState()
+    } catch {
+      // The gate shows the recovery screen.
+      return
     }
-
-    const isLoading = false
-
-    if (
-      !user &&
-      location.pathname !== '/' &&
-      !location.pathname.startsWith('/login') &&
-      !location.pathname.startsWith('/auth/callback')
-    ) {
-      throw redirect({ to: '/login', search: { redirect: location.href } })
-    }
-
-    return { auth: { user, isLoading } }
+    if (state === 'none') throw redirect({ to: '/' })
   },
   head: () => ({
     meta: [
@@ -118,10 +96,29 @@ export const Route = createRootRouteWithContext<AuthContext>()({
   notFoundComponent: NotFoundPage,
 })
 
+// Locks the app after the configured inactivity time while it is unlocked.
+function AutoLock({ unlocked }: { unlocked: boolean }) {
+  const { data } = useQuery({
+    queryKey: APP_SETTINGS_QUERY_KEY,
+    queryFn: getAppSettings,
+    enabled: unlocked,
+  })
+  const minutes = data?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES
+
+  useEffect(
+    () =>
+      unlocked ? startAutoLock(minutes, () => lockApp(queryClient)) : undefined,
+    [unlocked, minutes],
+  )
+
+  return null
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const [isUnlocked, setIsUnlocked] = useState(false)
-  const { auth } = Route.useRouteContext()
+  const { phase, createRequested } = useVaultSession()
+  const router = useRouter()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -130,23 +127,55 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     setMounted(true)
   }, [])
 
+  // Find out whether this device has a vault.
+  useEffect(() => {
+    let cancelled = false
+    getVaultState().then(
+      (state) => {
+        if (!cancelled) setVaultPhase(phaseForVaultState(state))
+      },
+      () => {
+        // The gate shows the recovery screen.
+        if (!cancelled) setVaultPhase('locked')
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Hydration does not re-run beforeLoad, so a hard load of a data route
+  // without a vault is sent home here.
+  useEffect(() => {
+    if (phase === 'none' && isDataRoute(pathname)) {
+      void router.navigate({ to: '/', replace: true })
+    }
+  }, [phase, pathname, router])
+
   // Other tabs announce committed writes; refresh the affected queries.
   useEffect(() => listenForChanges(queryClient), [])
+
+  // Another tab locked the vault or removed all data.
+  useEffect(() => connectOtherTabs(queryClient), [])
 
   // vault.ts has already unlocked localDb with the vault DEK.
   const handleUnlocked = async ({ isNewVault }: { isNewVault: boolean }) => {
     if (isNewVault) await provisionLocalCategories()
-    setIsUnlocked(true)
-    queryClient.invalidateQueries()
+    setVaultPhase('unlocked')
+    void queryClient.invalidateQueries()
+    // A new vault already asked in CreateVaultScreen.
+    if (!isNewVault) void ensurePersistentStorage()
   }
 
-  const showUnlockDialog = mounted && !!auth.user && !isUnlocked
-  // Don't render route children until the DB is unlocked. Before `mounted`
-  // is true (SSR + first paint) children render normally so hydration matches
-  // the server output. After mount, if a user is present but not yet unlocked,
-  // we hide children so their useQuery hooks don't run with _key = null and
-  // cache empty results that then need to be forcibly invalidated.
-  const showChildren = !mounted || !auth.user || isUnlocked
+  // Before `mounted` is true (SSR + first paint) children render normally so
+  // hydration matches the server output. After mount, data routes stay hidden
+  // until the vault is unlocked so their queries never run with no key.
+  const { showGate, showChildren } = computeGate({
+    mounted,
+    phase,
+    createRequested,
+    pathname,
+  })
 
   return (
     <html lang="en" className="scroll-smooth">
@@ -157,9 +186,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <Header />
           <OfflineBanner />
-          {showUnlockDialog && (
+          <AutoLock unlocked={phase === 'unlocked'} />
+          {showGate && (
             <PasswordUnlockDialog
               onUnlocked={(result) => void handleUnlocked(result)}
+              onCancelCreate={phase === 'none' ? cancelCreateVault : undefined}
             />
           )}
           <DataProblemGate>{showChildren && children}</DataProblemGate>

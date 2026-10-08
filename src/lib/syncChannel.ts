@@ -4,10 +4,18 @@ import type { QueryClient } from '@tanstack/react-query'
 // storage keys it wrote on BroadcastChannel('minima'). Other tabs map those
 // keys to React Query keys and invalidate them. Without BroadcastChannel
 // everything here is a no-op.
+//
+// The same channel also carries `lock` (another tab locked the vault) and
+// `wiped` (another tab removed all local data); see vaultSession.ts.
 
 export const SYNC_CHANNEL_NAME = 'minima'
 
-export type SyncMessage = { type: 'changed'; keys: Array<string> }
+// `keys?: never` on lock / wiped lets callers read `message.keys` on any
+// message (undefined unless it is `changed`).
+export type SyncMessage =
+  | { type: 'changed'; keys: Array<string> }
+  | { type: 'lock'; keys?: never }
+  | { type: 'wiped'; keys?: never }
 
 export interface SyncChannel {
   postMessage: (message: SyncMessage) => void
@@ -50,15 +58,27 @@ export function setSyncChannel(channel: SyncChannel | null | undefined): void {
   override = channel
 }
 
-export function postChanged(keys: Array<string>): void {
-  if (keys.length === 0) return
+function post(message: SyncMessage): void {
   const channel = getSyncChannel()
   if (!channel) return
   try {
-    channel.postMessage({ type: 'changed', keys })
+    channel.postMessage(message)
   } catch {
     // A broadcast failure must never fail a write that already committed.
   }
+}
+
+export function postChanged(keys: Array<string>): void {
+  if (keys.length === 0) return
+  post({ type: 'changed', keys })
+}
+
+export function postLock(): void {
+  post({ type: 'lock' })
+}
+
+export function postWiped(): void {
+  post({ type: 'wiped' })
 }
 
 function queryKeysFor(storageKey: string): Array<Array<string>> {
@@ -93,14 +113,17 @@ export function queryKeysForStorageKeys(
   return result
 }
 
-function isSyncMessage(data: unknown): data is SyncMessage {
-  if (typeof data !== 'object' || data === null) return false
-  const candidate = data as { type?: unknown; keys?: unknown }
-  return (
-    candidate.type === 'changed' &&
-    Array.isArray(candidate.keys) &&
-    candidate.keys.every((k) => typeof k === 'string')
-  )
+function messageType(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return undefined
+  return (data as { type?: unknown }).type
+}
+
+function isChangedMessage(
+  data: unknown,
+): data is Extract<SyncMessage, { type: 'changed' }> {
+  if (messageType(data) !== 'changed') return false
+  const keys = (data as { keys?: unknown }).keys
+  return Array.isArray(keys) && keys.every((k) => typeof k === 'string')
 }
 
 export function listenForChanges(
@@ -110,10 +133,26 @@ export function listenForChanges(
   if (!channel) return () => {}
   const listener = (event: MessageEvent) => {
     const data: unknown = event.data
-    if (!isSyncMessage(data)) return
+    if (!isChangedMessage(data)) return
     for (const queryKey of queryKeysForStorageKeys(data.keys)) {
       void queryClient.invalidateQueries({ queryKey })
     }
+  }
+  channel.addEventListener('message', listener)
+  return () => {
+    channel.removeEventListener('message', listener)
+  }
+}
+
+export function listenForLockAndWipe(
+  handlers: { onLock: () => void; onWiped: () => void },
+  channel: SyncChannel | null = getSyncChannel(),
+): () => void {
+  if (!channel) return () => {}
+  const listener = (event: MessageEvent) => {
+    const type = messageType(event.data)
+    if (type === 'lock') handlers.onLock()
+    else if (type === 'wiped') handlers.onWiped()
   }
   channel.addEventListener('message', listener)
   return () => {

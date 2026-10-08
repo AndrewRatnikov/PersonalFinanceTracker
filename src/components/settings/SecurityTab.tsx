@@ -1,7 +1,16 @@
 import { useState } from 'react'
-import { KeyRound, Loader2, Lock } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { KeyRound, Loader2, Lock, Timer } from 'lucide-react'
 
+import type { AppSettings, AutoLockMinutes } from '@/lib/appSettings'
+import {
+  APP_SETTINGS_QUERY_KEY,
+  DEFAULT_AUTO_LOCK_MINUTES,
+  getAppSettings,
+  updateAppSettings,
+} from '@/lib/appSettings'
 import { VaultError, changePassword, regenerateRecoveryKey } from '@/lib/vault'
+import { lockApp } from '@/lib/vaultSession'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
 import { Button } from '@/components/ui/button'
 import {
@@ -233,11 +242,110 @@ function RegenerateKeyCard() {
   )
 }
 
+const AUTO_LOCK_CHOICES: ReadonlyArray<{
+  value: AutoLockMinutes
+  label: string
+}> = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: '1 minute' },
+  { value: 5, label: '5 minutes' },
+  { value: 15, label: '15 minutes' },
+  { value: 60, label: '60 minutes' },
+]
+
+function AutoLockCard() {
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: APP_SETTINGS_QUERY_KEY,
+    queryFn: getAppSettings,
+  })
+  const value = data?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES
+
+  const handleChange = async (next: string) => {
+    const minutes = Number(next)
+    const choice = AUTO_LOCK_CHOICES.find((c) => c.value === minutes)
+    if (!choice) return
+    // Show the choice at once; the refetch below confirms what was stored.
+    queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, (old) =>
+      old ? { ...old, autoLockMinutes: choice.value } : old,
+    )
+    try {
+      await updateAppSettings({ autoLockMinutes: choice.value })
+    } catch (err) {
+      console.error('Could not save the auto-lock setting:', err)
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Timer className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>Auto-lock</CardTitle>
+        </div>
+        <CardDescription>
+          Lock the app after this long without activity. Time in another tab or
+          app counts too.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1.5">
+        <Label htmlFor="auto-lock-select">Lock after</Label>
+        <select
+          id="auto-lock-select"
+          data-testid="auto-lock-select"
+          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          value={String(value)}
+          onChange={(e) => void handleChange(e.target.value)}
+        >
+          {AUTO_LOCK_CHOICES.map((choice) => (
+            <option key={choice.value} value={String(choice.value)}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+      </CardContent>
+    </Card>
+  )
+}
+
+function LockNowCard() {
+  const queryClient = useQueryClient()
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Lock className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>Lock now</CardTitle>
+        </div>
+        <CardDescription>
+          Locks the app on this device. Your data stays; you need your password
+          to open it again.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          type="button"
+          variant="outline"
+          data-testid="lock-now-btn"
+          onClick={() => lockApp(queryClient)}
+        >
+          Lock now
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SecurityTab() {
   return (
     <div data-testid="security-tab" className="flex flex-col gap-6">
       <ChangePasswordCard />
       <RegenerateKeyCard />
+      <AutoLockCard />
+      <LockNowCard />
     </div>
   )
 }

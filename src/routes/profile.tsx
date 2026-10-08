@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
-import { Mail, User2 } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { Loader2, Mail, User2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import type { UserProfile } from '@/lib/auth'
+import { ACCOUNT_SESSION_QUERY_KEY, signOutAccount } from '@/lib/accountSession'
 import { getServerUserProfile } from '@/lib/auth'
 import PageShell from '@/components/PageShell'
-import { SignOutDialog } from '@/components/SignOutDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
@@ -18,10 +20,27 @@ export const Route = createFileRoute('/profile')({
 
 function ProfilePage() {
   const user = Route.useLoaderData()
-  const { auth } = Route.useRouteContext()
-  const [signOutOpen, setSignOutOpen] = useState(false)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [signingOut, setSigningOut] = useState(false)
 
   if (!user) return null
+
+  // Ends the account session only; data on this device stays.
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    try {
+      await signOutAccount()
+      await queryClient.invalidateQueries({
+        queryKey: ACCOUNT_SESSION_QUERY_KEY,
+      })
+      void navigate({ to: '/' })
+    } catch (err) {
+      console.error('Sign out failed:', err)
+      toast.error('Could not sign out. Please try again.')
+      setSigningOut(false)
+    }
+  }
 
   const fullName: string = user.full_name
   const email: string = user.email
@@ -58,20 +77,17 @@ function ProfilePage() {
 
             <Button
               variant="destructive"
-              onClick={() => setSignOutOpen(true)}
+              data-testid="profile-sign-out-btn"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
               size="lg"
               className="w-full sm:w-auto px-8"
             >
+              {signingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign Out
             </Button>
           </CardContent>
         </Card>
-
-        <SignOutDialog
-          userId={auth.user!.id}
-          open={signOutOpen}
-          onOpenChange={setSignOutOpen}
-        />
       </div>
     </PageShell>
   )

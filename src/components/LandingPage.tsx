@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import {
   Check,
   Download,
@@ -10,8 +9,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { requestCreateVault } from '@/lib/vaultSession'
 import { Button } from '@/components/ui/button'
-import { GoogleIcon } from '@/components/icons/GoogleIcon'
 
 const PROBLEMS = [
   {
@@ -54,8 +53,8 @@ const ENCRYPTION_STEPS = [
 const PRIVACY_BULLETS = [
   'Password never stored, never transmitted',
   'Zero financial data on MinimaSpend servers',
-  'Google used for identity only — not data storage',
-  'Delete your account and all traces vanish',
+  'No account needed — nothing to sign up for',
+  'Remove all data from this device in one step',
 ]
 
 const FEATURES = [
@@ -120,23 +119,25 @@ const CSV_PREVIEW = [
   '2024-01-13,850.00,UAH,Rent,Jan rent',
 ]
 
-function GetStartedButton({
+// Opens the create-vault flow (spec §2.2); no account is needed.
+function StartTrackingButton({
   className,
   children,
+  testId,
 }: {
   className?: string
   children: React.ReactNode
+  testId?: string
 }) {
   return (
     <Button
-      asChild
+      type="button"
       size="lg"
       className={`bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 gap-2 ${className ?? ''}`}
+      data-testid={testId}
+      onClick={requestCreateVault}
     >
-      <Link to="/login">
-        <GoogleIcon className="h-4 w-4" />
-        {children}
-      </Link>
+      {children}
     </Button>
   )
 }
@@ -293,8 +294,22 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
-            <GetStartedButton>Continue with Google</GetStartedButton>
-            <Button asChild variant="outline" size="lg">
+            <StartTrackingButton testId="landing-start-tracking">
+              Start tracking
+            </StartTrackingButton>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled
+              title="Coming soon"
+              data-testid="landing-restore-backup"
+            >
+              Restore from backup
+            </Button>
+          </div>
+          <div className="mb-4">
+            <Button asChild variant="link" size="sm" className="px-0">
               <a
                 href="/#features"
                 onClick={(e) => {
@@ -310,7 +325,7 @@ export default function LandingPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Free to use · No credit card · Your data stays on your device
+            Free to use · No account needed · Your data stays on your device
           </p>
         </div>
 
@@ -397,10 +412,9 @@ export default function LandingPage() {
               Your data, encrypted, on your device
             </h2>
             <p className="text-muted-foreground mb-8">
-              We use Supabase only for Google sign-in — so you don't need a
-              password manager to log in. But your financial data never touches
-              Supabase or any server. It lives in your browser's IndexedDB,
-              encrypted before it's written.
+              There is no account to create. Your financial data never touches
+              any server: it lives in your browser's IndexedDB, encrypted before
+              it's written.
             </p>
 
             <div className="flex flex-col gap-3">
@@ -530,9 +544,9 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              <GetStartedButton className="w-full">
-                Continue with Google
-              </GetStartedButton>
+              <StartTrackingButton className="w-full">
+                Start tracking
+              </StartTrackingButton>
             </div>
           </Card>
         </div>
@@ -546,12 +560,12 @@ export default function LandingPage() {
               Start tracking in 30 seconds.
             </h2>
             <p className="text-muted-foreground max-w-md">
-              One Google sign-in, zero bank credentials, and your first expense
-              logged before you forget it.
+              No sign-up, zero bank credentials, and your first expense logged
+              before you forget it.
             </p>
-            <GetStartedButton className="mt-4">
-              Get started free
-            </GetStartedButton>
+            <StartTrackingButton className="mt-4">
+              Start tracking
+            </StartTrackingButton>
           </div>
         </div>
       </section>
@@ -559,10 +573,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>
-            Google sign-in is used for identity only. No financial data is
-            stored on any server.
-          </p>
+          <p>No account needed. No financial data is stored on any server.</p>
           <p>&copy; {new Date().getFullYear()} MinimaSpend</p>
         </div>
       </footer>

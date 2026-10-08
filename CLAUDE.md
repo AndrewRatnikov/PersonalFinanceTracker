@@ -23,7 +23,7 @@ Tests use Vitest + jsdom (`vitest.config.ts`, separate from `vite.config.ts`) an
 
 ### Storage — local-first, encrypted IndexedDB
 
-The app migrated away from Supabase for data. **Supabase is auth-only.** All data lives in IndexedDB, encrypted at rest.
+The app migrated away from Supabase for data. **Supabase is used only for the optional account** (see Unlock gate). All data lives in IndexedDB, encrypted at rest.
 
 The primary data module is `src/lib/localDb.ts`:
 
@@ -50,9 +50,20 @@ Spec: `docs/free-tier-spec.md` §4.
 
 ### Unlock gate (`src/routes/__root.tsx`)
 
-`PasswordUnlockDialog` is rendered in `RootDocument` (the `shellComponent`) behind a `mounted` guard (client-only). It appears as a full-screen overlay whenever `auth.user` is present and the app is not unlocked. It is a container that picks a screen from `getVaultState()` (components in `src/components/vault/`): `'none'` → `CreateVaultScreen` (password, then `RecoveryKeySaveStep`: Copy / Download .txt / Print, a checkbox and typing the last group); `'v1'` / `'v2'` → `UnlockScreen` (v2 offers "Forgot password?" → `RecoverScreen`: recovery key, then a new password); after a v1 migration it shows the new recovery key before finishing. For `'orphaned'` (data keys but no `meta:vault` and no v1 verifier), or if the state check fails, it does **not** offer "Create password": it shows a recovery state whose only action, "Erase local data and start fresh", requires typing `DELETE`, clears the store, then continues to `CreateVaultScreen`. `onUnlocked({ isNewVault })` then provisions the default categories for a new vault and invalidates React Query caches. Settings → Security (`SecurityTab`, `/settings?tab=security`) has Change password and Generate new recovery key.
+No account is needed (spec §2.1). The root route has no auth requirement and never calls `getServerUser`.
 
-The `beforeLoad` in `__root.tsx` also calls `provisionServerCategories()` (the Supabase version) on first login — this is a legacy path planned for removal once the local-first migration is complete.
+- **Vault session** (`src/lib/vaultSession.ts`): a module-level store read with `useVaultSession()` (`useSyncExternalStore`). State is `{ phase, createRequested }`, phase `'checking' | 'none' | 'locked' | 'unlocked'`. On mount `RootDocument` maps `getVaultState()` through `phaseForVaultState` (`'none'` → `none`; `v1` / `v2` / `orphaned` → `locked`; a failed check → `locked`). The Header, the Landing page and `/` (Landing vs Dashboard) all branch on the phase.
+- **Root `beforeLoad`:** on the client, a data route (`DATA_ROUTES`: `/analytics`, `/transactions`, `/income`, `/settings` and sub-paths, `isDataRoute`) with no vault throws `redirect({ to: '/' })`. A failed state check lets it through (the gate shows recovery). Hydration doesn't re-run `beforeLoad`, so an effect in `RootDocument` also navigates home when the phase is `none` on a data route.
+- **`computeGate({ mounted, phase, createRequested, pathname })`** decides the overlay: `showGate` when mounted and the phase is `locked`, or `none` after the user clicked "Start tracking" (`requestCreateVault()`, Landing hero or marketing Header). `showChildren` is false only for data routes after mount until the phase is `unlocked`, so their queries never run without a key; `/`, `/login`, `/auth/callback` and `/profile` keep rendering under the overlay.
+- **`PasswordUnlockDialog`** (the gate) picks a screen from `getVaultState()` (components in `src/components/vault/`): `'none'` → `CreateVaultScreen` (password, then `RecoveryKeySaveStep`: Copy / Download .txt / Print, a checkbox and typing the last group; a "Back" button calls `onCancelCreate` → `cancelCreateVault()`); `'v1'` / `'v2'` → `UnlockScreen` (v2 offers "Forgot password?" → `RecoverScreen`: recovery key, then a new password); after a v1 migration it shows the new recovery key before finishing. For `'orphaned'` (data keys but no `meta:vault` and no v1 verifier), or if the state check fails, it shows a recovery state whose only action, "Erase local data and start fresh", requires typing `DELETE`. `onUnlocked({ isNewVault })` provisions the default categories for a new vault, sets the phase to `unlocked` and invalidates React Query caches.
+- **Lock:** `lockApp(queryClient)` clears the key (`lockVault()`), calls `queryClient.clear()`, moves `unlocked` to `locked` (never `none` to `locked`) and posts `{ type: 'lock' }`. It is used by the Header `LockButton`, Settings → Security "Lock now" and auto-lock. It never deletes data.
+- **Auto-lock** (`src/lib/autoLock.ts`, `startAutoLock(minutes, onLock)`): `pointerdown` / `pointermove` / `keydown` count as activity; on becoming visible the elapsed time is checked directly, so hidden-tab time counts even when timers were throttled. The timeout (`Off`, 1, 5, 15 (default), 60 min) is in Settings → Security and stored in `meta:settings`.
+- **Cross-tab:** `connectOtherTabs(queryClient)` listens for `lock` (lock this tab, no re-broadcast) and `wiped` (lock, then `reloadToHome()`) on the sync channel.
+- **Remove data from this device** (`RemoveDataDialog`, Settings → Data → Danger zone): confirms with the vault password (`verifyPassword`, no unlock, counts toward the brute-force delay) and offers "Download backup first". `wipeLocalData()` (`src/lib/localWipe.ts`) locks, clears the IDB store, removes every `minima_*` localStorage key, posts `wiped` and requests `indexedDB.deleteDatabase('minima-local')` (not awaited); callers then `reloadToHome()` (`location.replace('/')`). The "I've lost both" link in `RecoverScreen` opens the same dialog with typed `DELETE` and no backup.
+- **Accounts (optional):** `ENABLE_ACCOUNTS` (`src/lib/featureFlags.ts`, `VITE_ENABLE_ACCOUNTS === 'true'`, default off) or an existing local Supabase session (`getAccountSession()` in `src/lib/accountSession.ts`, `auth.getSession()` in the browser) makes `useAccountsVisible()` true: Header "Sign in" and Profile link, Settings → Account (`AccountTab`: email, Sign out, Delete account). `signOutAccount()` only ends the Supabase session; local data stays. `DeleteAccountDialog` keeps local data unless "Also remove data from this device" is ticked.
+- **Durability (§6.1):** `CreateVaultScreen` calls `requestPersistentStorage()` after `createVault`; an unlock of an existing vault calls `ensurePersistentStorage()` (`src/lib/storagePersistence.ts`, records `persistRequestedAt`). Settings → Data shows `StorageStatusCard` (Protected / Best-effort, usage). On iOS Safari outside the Home Screen the Dashboard shows a one-time `InstallHintCard` (`src/lib/installHint.ts`; dismissal stored in `meta:settings`).
+
+Settings tabs: Categories · Budget · Security (Change password, Generate new recovery key, Auto-lock, Lock now) · Data (Export, Import, Storage status, Danger zone) · Account (only when accounts are visible).
 
 ### Data flow
 
@@ -64,10 +75,14 @@ All routes use React Query (`useQuery` / `useMutation`) against `localDb` functi
 | `['expenses', from, to]` | `getExpensesForRange()` |
 | `['income']`             | `getAllIncome()`        |
 | `['budgets']`            | `getAllBudgets()`       |
+| `['settings']`           | `getAppSettings()`      |
+| `['account-session']`    | `getAccountSession()`   |
 
 Analytics are computed client-side in `src/lib/localAnalytics.ts` via `computeRangeAnalytics()`.
 
-The `QueryClient` instance is module-level in `__root.tsx` (built by `createAppQueryClient()`, which never retries a DecryptError) and shared via `QueryClientProvider`. Every page renders `QueryErrorState` (`data-testid="query-error"` with a Retry button) instead of default empty values when one of its queries fails.
+The `QueryClient` instance is module-level in `__root.tsx` (built by `createAppQueryClient()`, which never retries a DecryptError) and shared via `QueryClientProvider`. `lockApp` empties it with `queryClient.clear()`, so nothing decrypted stays in memory after a lock. Every page renders `QueryErrorState` (`data-testid="query-error"` with a Retry button) instead of default empty values when one of its queries fails.
+
+`['settings']` reads the plaintext app settings in `meta:settings` (`src/lib/appSettings.ts`: `autoLockMinutes`, `installHintDismissed`, `persistRequestedAt`); `updateAppSettings` merges into the stored object and keeps the brute-force counter fields.
 
 ### PWA / Service Worker
 

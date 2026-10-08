@@ -13,7 +13,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { DeleteAccountDialog } from '@/components/settings/DeleteAccountDialog'
+import { RemoveDataDialog } from '@/components/RemoveDataDialog'
+import { StorageStatusCard } from '@/components/settings/StorageStatusCard'
 
 interface FileImportResult {
   filename: string
@@ -22,11 +23,7 @@ interface FileImportResult {
   error?: string
 }
 
-interface DataToolsTabProps {
-  userId: string
-}
-
-export function DataToolsTab({ userId }: DataToolsTabProps) {
+export function DataToolsTab() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -35,7 +32,7 @@ export function DataToolsTab({ userId }: DataToolsTabProps) {
   const [importResults, setImportResults] =
     useState<Array<FileImportResult> | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
-  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
+  const [removeDataOpen, setRemoveDataOpen] = useState(false)
 
   const handleExport = async () => {
     setExportPending(true)
@@ -206,6 +203,8 @@ export function DataToolsTab({ userId }: DataToolsTabProps) {
         </CardContent>
       </Card>
 
+      <StorageStatusCard />
+
       {/* Danger Zone */}
       <Card
         data-testid="danger-zone-card"
@@ -216,26 +215,24 @@ export function DataToolsTab({ userId }: DataToolsTabProps) {
             Danger Zone
           </CardTitle>
           <CardDescription>
-            Permanently delete your account and all associated data. This cannot
-            be undone.
+            Remove all data from this device. This cannot be undone.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button
-            data-testid="delete-account-btn"
+            data-testid="remove-data-btn"
             variant="destructive"
-            onClick={() => setDeleteAccountOpen(true)}
+            onClick={() => setRemoveDataOpen(true)}
             className="flex items-center gap-2"
           >
-            Delete account
+            Remove data from this device
           </Button>
         </CardContent>
       </Card>
 
-      <DeleteAccountDialog
-        userId={userId}
-        open={deleteAccountOpen}
-        onOpenChange={setDeleteAccountOpen}
+      <RemoveDataDialog
+        open={removeDataOpen}
+        onOpenChange={setRemoveDataOpen}
       />
     </div>
   )
