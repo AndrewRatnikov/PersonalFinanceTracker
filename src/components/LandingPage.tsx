@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Check,
   Download,
@@ -8,9 +9,13 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import type { RestoreSummary } from '@/lib/backup'
+import { formatRestoreSummary } from '@/lib/backup'
+import { requestCreateVault, setVaultPhase } from '@/lib/vaultSession'
 import { Card } from '@/components/ui/card'
-import { requestCreateVault } from '@/lib/vaultSession'
 import { Button } from '@/components/ui/button'
+import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 
 const PROBLEMS = [
   {
@@ -271,6 +276,14 @@ function DashboardPreview() {
 }
 
 export default function LandingPage() {
+  const [restoreOpen, setRestoreOpen] = useState(false)
+
+  // A fresh-device restore adopted the backup's vault and unlocked it.
+  const handleRestored = (summary: RestoreSummary) => {
+    setVaultPhase('unlocked')
+    toast.success(formatRestoreSummary(summary))
+  }
+
   return (
     <div className="bg-background text-foreground">
       {/* Hero */}
@@ -301,9 +314,8 @@ export default function LandingPage() {
               type="button"
               variant="outline"
               size="lg"
-              disabled
-              title="Coming soon"
               data-testid="landing-restore-backup"
+              onClick={() => setRestoreOpen(true)}
             >
               Restore from backup
             </Button>
@@ -327,6 +339,12 @@ export default function LandingPage() {
           <p className="text-xs text-muted-foreground">
             Free to use · No account needed · Your data stays on your device
           </p>
+          <RestoreBackupDialog
+            open={restoreOpen}
+            onOpenChange={setRestoreOpen}
+            freshDevice
+            onRestored={handleRestored}
+          />
         </div>
 
         <DashboardPreview />
