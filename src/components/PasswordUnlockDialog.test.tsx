@@ -2,11 +2,14 @@
 // Interface Contract (component: PasswordUnlockDialog). This file replaces the
 // v1 version: the orphaned-state cases carry over with getVaultState mocked to
 // 'orphaned'; the inline create/unlock form tests moved to the screen tests.
+// Phase 3 adds the "I've lost both" path (RemoveDataDialog with typed DELETE)
+// and the onCancelCreate prop.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearLocalDb } from '@/lib/localDb'
+import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 import {
   clearLegacyKeys,
   createVault,
@@ -14,6 +17,7 @@ import {
   resetPasswordWithRecoveryKey,
   unlockWithPassword,
   unlockWithRecoveryKey,
+  verifyPassword,
 } from '@/lib/vault'
 import { PasswordUnlockDialog } from '@/components/PasswordUnlockDialog'
 
@@ -42,7 +46,17 @@ vi.mock('@/lib/vault', () => ({
   unlockWithRecoveryKey: vi.fn(),
   resetPasswordWithRecoveryKey: vi.fn(),
   clearLegacyKeys: vi.fn(),
+  verifyPassword: vi.fn(),
   VaultError: MockVaultError,
+}))
+
+vi.mock('@/lib/localWipe', () => ({
+  wipeLocalData: vi.fn(),
+  reloadToHome: vi.fn(),
+}))
+vi.mock('@/lib/localExport', () => ({ exportAllLocalData: vi.fn() }))
+vi.mock('@/lib/storagePersistence', () => ({
+  requestPersistentStorage: vi.fn(),
 }))
 
 const KEY = 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567-XY'
@@ -55,8 +69,11 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function renderDialog(onUnlocked = vi.fn()) {
-  render(<PasswordUnlockDialog onUnlocked={onUnlocked} />)
+function renderDialog(
+  onUnlocked = vi.fn(),
+  extra: { onCancelCreate?: () => void } = {},
+) {
+  render(<PasswordUnlockDialog onUnlocked={onUnlocked} {...extra} />)
   return onUnlocked
 }
 
@@ -171,6 +188,27 @@ describe('PasswordUnlockDialog create flow', () => {
     expect(onUnlocked).toHaveBeenCalledTimes(1)
     expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: true })
     expect(createVault).toHaveBeenCalledWith('long enough 1')
+  })
+})
+
+describe('PasswordUnlockDialog onCancelCreate', () => {
+  it('shows a Back button on the create screen that calls onCancelCreate', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('none')
+    const onCancelCreate = vi.fn()
+    renderDialog(vi.fn(), { onCancelCreate })
+    await screen.findByTestId('create-vault-screen')
+
+    fireEvent.click(screen.getByTestId('create-vault-cancel'))
+
+    expect(onCancelCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no Back button without onCancelCreate', async () => {
+    vi.mocked(getVaultState).mockResolvedValue('none')
+    renderDialog()
+    await screen.findByTestId('create-vault-screen')
+
+    expect(screen.queryByTestId('create-vault-cancel')).toBeNull()
   })
 })
 
@@ -306,6 +344,58 @@ describe('PasswordUnlockDialog forgot-password flow', () => {
       KEY,
       'long enough 1',
     )
+  })
+
+  describe("the 'I've lost both' path", () => {
+    async function openLostBoth() {
+      const onUnlocked = await openRecover()
+      fireEvent.click(screen.getByTestId('recover-lost-both'))
+      await screen.findByTestId('remove-data-dialog')
+      return onUnlocked
+    }
+
+    it('opens the remove-data dialog in typed DELETE mode', async () => {
+      await openLostBoth()
+
+      expect(screen.getByTestId('remove-data-delete-input')).toBeTruthy()
+      expect(screen.queryByTestId('remove-data-password-input')).toBeNull()
+      expect(screen.queryByTestId('remove-data-backup-btn')).toBeNull()
+    })
+
+    it('wipes only after DELETE is typed, never verifying a password', async () => {
+      await openLostBoth()
+      vi.mocked(wipeLocalData).mockResolvedValue(undefined)
+      const confirm = screen.getByTestId<HTMLButtonElement>(
+        'remove-data-confirm-btn',
+      )
+      expect(confirm.disabled).toBe(true)
+
+      fireEvent.change(screen.getByTestId('remove-data-delete-input'), {
+        target: { value: 'delete' },
+      })
+      expect(confirm.disabled).toBe(true)
+      fireEvent.change(screen.getByTestId('remove-data-delete-input'), {
+        target: { value: 'DELETE' },
+      })
+      expect(confirm.disabled).toBe(false)
+      fireEvent.click(confirm)
+
+      await waitFor(() => {
+        expect(reloadToHome).toHaveBeenCalledTimes(1)
+      })
+      expect(wipeLocalData).toHaveBeenCalledTimes(1)
+      expect(verifyPassword).not.toHaveBeenCalled()
+    })
+
+    it('returns to the recover screen when the dialog is cancelled', async () => {
+      await openLostBoth()
+
+      fireEvent.click(screen.getByTestId('remove-data-cancel-btn'))
+
+      await screen.findByTestId('recover-screen')
+      expect(screen.queryByTestId('remove-data-dialog')).toBeNull()
+      expect(wipeLocalData).not.toHaveBeenCalled()
+    })
   })
 })
 

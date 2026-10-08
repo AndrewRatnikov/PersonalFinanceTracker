@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
@@ -11,7 +11,7 @@ import {
   getAllIncome,
   getExpensesForRange,
 } from '@/lib/localDb'
-import { Route as RootRoute } from '@/routes/__root'
+import { setVaultPhase } from '@/lib/vaultSession'
 import { Route as AnalyticsRoute } from '@/routes/analytics'
 import { Route as IncomeRoute } from '@/routes/income'
 import { Route as IndexRoute } from '@/routes/index'
@@ -42,9 +42,21 @@ vi.mock('@/lib/localDb', () => ({
   wipeLocalDbKey: vi.fn(),
   quarantineKey: vi.fn(),
   hasLocalData: vi.fn(),
+  getLocalStore: vi.fn(),
+  getLocalDbKey: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getServerUser: vi.fn() }))
+
+// The Dashboard mounts InstallHintCard and the Settings page checks whether
+// account UI is visible; neither is under test here, and both must stay away
+// from navigator.matchMedia and Supabase in jsdom.
+vi.mock('@/lib/installHint', () => ({ shouldShowInstallHint: () => false }))
+vi.mock('@/lib/accountSession', () => ({
+  ACCOUNT_SESSION_QUERY_KEY: ['account-session'],
+  useAccountsVisible: () => false,
+  useAccountSession: () => null,
+}))
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -82,9 +94,12 @@ beforeEach(() => {
   vi.resetAllMocks()
   mockHealthyData()
   vi.spyOn(AnalyticsRoute, 'useSearch').mockReturnValue({})
-  vi.spyOn(RootRoute, 'useRouteContext').mockReturnValue({
-    auth: { user: { id: 'u1' }, isLoading: false },
-  } as never)
+  // The Dashboard renders only once the vault session is unlocked.
+  setVaultPhase('unlocked')
+})
+
+afterEach(() => {
+  setVaultPhase('checking')
 })
 
 describe('Analytics page query error', () => {
@@ -338,9 +353,6 @@ describe('Settings query error', () => {
 
   it('SettingsPage shows query-error instead of the tab when categories fail', async () => {
     vi.spyOn(SettingsRoute, 'useSearch').mockReturnValue({ tab: 'budget' })
-    vi.spyOn(SettingsRoute, 'useRouteContext').mockReturnValue({
-      auth: { user: { id: 'u1' }, isLoading: false },
-    } as never)
     vi.mocked(getAllCategories).mockRejectedValue(new Error('boom'))
     vi.mocked(getAllBudgets).mockResolvedValue([])
 

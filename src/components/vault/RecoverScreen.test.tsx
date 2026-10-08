@@ -1,6 +1,6 @@
 // No CONTRACT_GAPs: props, testids and flow are specified in the Interface
 // Contract (component: RecoverScreen). Validation texts for step 2 mirror
-// CreateVaultScreen per the plan.
+// CreateVaultScreen per the plan. Phase 3 adds the optional onLostBoth link.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,10 +39,16 @@ function submitOf(testId: string) {
   fireEvent.submit(form)
 }
 
-function renderScreen() {
+function renderScreen(onLostBoth?: () => void) {
   const onRecovered = vi.fn()
   const onCancel = vi.fn()
-  render(<RecoverScreen onRecovered={onRecovered} onCancel={onCancel} />)
+  render(
+    <RecoverScreen
+      onRecovered={onRecovered}
+      onCancel={onCancel}
+      onLostBoth={onLostBoth}
+    />,
+  )
   return { onRecovered, onCancel }
 }
 
@@ -145,6 +151,37 @@ describe('RecoverScreen key step', () => {
     fireEvent.click(screen.getByTestId('recover-cancel'))
 
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("RecoverScreen 'I've lost both' link", () => {
+  it('is not rendered without onLostBoth', () => {
+    renderScreen()
+
+    expect(screen.queryByTestId('recover-lost-both')).toBeNull()
+  })
+
+  it('is rendered on the key step with onLostBoth and calls it on click', () => {
+    const onLostBoth = vi.fn()
+    const { onCancel, onRecovered } = renderScreen(onLostBoth)
+
+    const link = screen.getByTestId('recover-lost-both')
+    expect(link.textContent).toContain("I've lost both")
+    expect(onLostBoth).not.toHaveBeenCalled()
+
+    fireEvent.click(link)
+
+    expect(onLostBoth).toHaveBeenCalledTimes(1)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onRecovered).not.toHaveBeenCalled()
+    expect(unlockWithRecoveryKey).not.toHaveBeenCalled()
+  })
+
+  it('is not shown on the password step', async () => {
+    renderScreen(vi.fn())
+    await goToPasswordStep()
+
+    expect(screen.queryByTestId('recover-lost-both')).toBeNull()
   })
 })
 
