@@ -45,6 +45,7 @@ function env(overrides: Partial<InstallEnv> = {}): InstallEnv {
 }
 
 afterEach(() => {
+  Reflect.deleteProperty(navigator, 'maxTouchPoints')
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -119,7 +120,10 @@ describe('currentInstallEnv', () => {
       })),
     )
     vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(IPAD_SAFARI)
-    vi.spyOn(window.navigator, 'maxTouchPoints', 'get').mockReturnValue(5)
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      value: 5,
+      configurable: true,
+    })
 
     const result = currentInstallEnv()
 

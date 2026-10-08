@@ -31,6 +31,7 @@ function renderCard() {
       <InstallHintCard />
     </QueryClientProvider>,
   )
+  return client
 }
 
 beforeEach(() => {
@@ -67,12 +68,11 @@ describe('InstallHintCard', () => {
       ...SETTINGS,
       installHintDismissed: true,
     })
-    renderCard()
+    const client = renderCard()
 
     await waitFor(() => {
-      expect(getAppSettings).toHaveBeenCalled()
+      expect(client.getQueryState(['settings'])?.status).toBe('success')
     })
-    await Promise.resolve()
     expect(screen.queryByTestId('install-hint')).toBeNull()
   })
 
