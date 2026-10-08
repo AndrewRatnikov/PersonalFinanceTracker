@@ -4,6 +4,7 @@ import { KeyRound, Loader2, TriangleAlert } from 'lucide-react'
 import type { UnlockResult } from '@/lib/vault'
 import { clearLegacyKeys, getVaultState } from '@/lib/vault'
 import { clearLocalDb } from '@/lib/localDb'
+import { RemoveDataDialog } from '@/components/RemoveDataDialog'
 import { CreateVaultScreen } from '@/components/vault/CreateVaultScreen'
 import { RecoverScreen } from '@/components/vault/RecoverScreen'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
@@ -22,12 +23,15 @@ import { Label } from '@/components/ui/label'
 
 interface PasswordUnlockDialogProps {
   onUnlocked: (result: { isNewVault: boolean }) => void
+  // Shown as "Back" on the create screen (first run, before a vault exists).
+  onCancelCreate?: () => void
 }
 
 // checking  -> getVaultState() pending
 // create    -> no vault and no data ('none'), or after erasing orphaned data
 // unlock    -> 'v1' (legacy, migrates on unlock) or 'v2'
 // recover   -> "Forgot password?" (v2 only)
+// remove    -> "I've lost both" from recover: remove all data (typed DELETE)
 // migrated  -> a v1 unlock migrated the store; show the new recovery key
 // recovery  -> data keys without a vault ('orphaned') or the state check
 //              failed: never offer "Create password" over data that may exist
@@ -36,12 +40,16 @@ type Mode =
   | { kind: 'create' }
   | { kind: 'unlock'; legacy: boolean }
   | { kind: 'recover' }
+  | { kind: 'remove' }
   | { kind: 'migrated'; recoveryKey: string }
   | { kind: 'recovery' }
 
 const ERASE_CONFIRMATION = 'DELETE'
 
-export function PasswordUnlockDialog({ onUnlocked }: PasswordUnlockDialogProps) {
+export function PasswordUnlockDialog({
+  onUnlocked,
+  onCancelCreate,
+}: PasswordUnlockDialogProps) {
   const [mode, setMode] = useState<Mode>({ kind: 'checking' })
   const [eraseValue, setEraseValue] = useState('')
   const [eraseError, setEraseError] = useState<string | null>(null)
@@ -115,7 +123,10 @@ export function PasswordUnlockDialog({ onUnlocked }: PasswordUnlockDialogProps) 
   switch (mode.kind) {
     case 'create':
       return (
-        <CreateVaultScreen onCreated={() => onUnlocked({ isNewVault: true })} />
+        <CreateVaultScreen
+          onCreated={() => onUnlocked({ isNewVault: true })}
+          onCancel={onCancelCreate}
+        />
       )
     case 'unlock':
       return (
@@ -130,7 +141,21 @@ export function PasswordUnlockDialog({ onUnlocked }: PasswordUnlockDialogProps) 
         <RecoverScreen
           onRecovered={() => onUnlocked({ isNewVault: false })}
           onCancel={() => setMode({ kind: 'unlock', legacy: false })}
+          onLostBoth={() => setMode({ kind: 'remove' })}
         />
+      )
+    case 'remove':
+      return (
+        <>
+          <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
+          <RemoveDataDialog
+            open
+            confirmWith="typed-delete"
+            onOpenChange={(open) => {
+              if (!open) setMode({ kind: 'recover' })
+            }}
+          />
+        </>
       )
     case 'migrated':
       return (
