@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { KeyRound, Loader2, Lock } from 'lucide-react'
 
+import { requestPersistentStorage } from '@/lib/storagePersistence'
 import { VaultError, createVault } from '@/lib/vault'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,8 @@ import { Label } from '@/components/ui/label'
 
 interface CreateVaultScreenProps {
   onCreated: () => void
+  // Renders a "Back" button on the password step.
+  onCancel?: () => void
 }
 
 const MIN_PASSWORD_LENGTH = 8
@@ -27,7 +30,10 @@ function strengthLabel(password: string): string {
   return 'Strong'
 }
 
-export function CreateVaultScreen({ onCreated }: CreateVaultScreenProps) {
+export function CreateVaultScreen({
+  onCreated,
+  onCancel,
+}: CreateVaultScreenProps) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +54,8 @@ export function CreateVaultScreen({ onCreated }: CreateVaultScreenProps) {
     setPending(true)
     try {
       const result = await createVault(password)
+      // Ask the browser to keep our storage (spec §6.1). Best-effort.
+      void requestPersistentStorage()
       setPassword('')
       setConfirm('')
       setRecoveryKey(result.recoveryKey)
@@ -143,7 +151,7 @@ export function CreateVaultScreen({ onCreated }: CreateVaultScreenProps) {
                 )}
               </CardContent>
 
-              <CardFooter>
+              <CardFooter className="flex flex-col gap-2">
                 <Button
                   type="submit"
                   className="w-full"
@@ -159,6 +167,18 @@ export function CreateVaultScreen({ onCreated }: CreateVaultScreenProps) {
                     'Create password'
                   )}
                 </Button>
+                {onCancel && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    data-testid="create-vault-cancel"
+                    onClick={onCancel}
+                    disabled={pending}
+                  >
+                    Back
+                  </Button>
+                )}
               </CardFooter>
             </form>
           </>
