@@ -482,6 +482,23 @@ export async function unlockWithPassword(
   return { recoveryKey: null }
 }
 
+// Checks the password against the v2 vault without unlocking it: the key in
+// memory and the header stay as they are. Counts toward the brute-force
+// counter like an unlock attempt; success resets it.
+export async function verifyPassword(password: string): Promise<void> {
+  const store = requireStore()
+  if ((await getVaultState()) !== 'v2') throw noVault()
+
+  const header = await readHeader(store)
+  const dekBytes = await unwrapDek(store, header, { password })
+  try {
+    await openDek(header, dekBytes)
+  } finally {
+    dekBytes.fill(0)
+  }
+  await recordSuccess(store)
+}
+
 export async function unlockWithRecoveryKey(key: string): Promise<void> {
   const store = requireStore()
   if ((await getVaultState()) !== 'v2') throw noVault()
