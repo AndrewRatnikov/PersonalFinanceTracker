@@ -9,6 +9,7 @@ npm run dev        # start dev server on port 3000
 npm run build      # production build
 npm run preview    # preview production build locally
 npm run test       # run all tests (Vitest)
+npm run test:precache  # build, then check sw.js precaches the whole build output
 npm run lint       # ESLint
 npm run check      # prettier --write + eslint --fix
 ```
@@ -106,7 +107,15 @@ The `QueryClient` instance is module-level in `__root.tsx` (built by `createAppQ
 
 ### PWA / Service Worker
 
-`vite-plugin-pwa` generates `sw.js` + workbox files into `dist/`. A custom Vite plugin (`copySWPlugin` in `vite.config.ts`) copies them into `.vercel/output/static/` post-build since Nitro serves static assets from there. The SW is registered manually in `RootDocument`'s `useEffect` (`/sw.js`).
+Spec §6.3. Config is the `VitePWA` block in `vite.config.ts`; shared constants live in `scripts/precacheCheck.ts`.
+
+- **Full precache:** workbox globs `.vercel/output/static` (`STATIC_OUTPUT_DIR`) for `js, css, woff, woff2, html, ico, png, svg, json`, i.e. every client chunk (including all route chunks), CSS, fonts, icons and `manifest.json`. `sw.js`, `workbox-*.js` and `_shell.html` are ignored by the glob. `maximumFileSizeToCacheInBytes` is 5 MiB.
+- **App shell:** `tanstackStart({ spa: { enabled: command === 'build' } })` prerenders `/_shell.html` (`APP_SHELL_URL`, root route only) at build time; it is off in dev. The prerender runs after `generateSW`, so the shell is added through `additionalManifestEntries` with a per-build revision. Runtime SSR is unchanged (`TSS_SHELL` is unset on Vercel), and no other page is prerendered (never pass `prerender: { enabled: true }`, it would shadow SSR with static `index.html` files).
+- **Navigations:** `NetworkOnly` with `precacheFallback` to `/_shell.html`, so online pages are SSR and offline navigations to any data route boot from the shell. There is no navigation runtime cache and no expiry anywhere: cached SSR HTML would outlive a deploy and reference chunks the new precache removed. `navigateFallback` stays `null`.
+- **Bridge:** `vite-plugin-pwa` writes `sw.js` + `workbox-*.js` into `dist/`; `copySWPlugin` copies them into `.vercel/output/static/`, where Nitro/Vercel serves static files. `generateSW` runs once per environment (client, ssr, nitro) and the last copy wins.
+- **Check:** `npm run test:precache` runs `vite build`, then `scripts/precacheCheck.test.ts` with `PRECACHE_BUILD_CHECK=1` (that block is skipped in plain `npm test`). It asserts every `assets/*.{js,css,woff,woff2}` file, the shell and the manifest icons are precached, and that `sw.js` has no expiry.
+- **Online only:** `/profile`, `/login` and `/auth/callback` need the network (Supabase / server functions).
+- The SW is registered manually in `RootDocument`'s `useEffect` (`/sw.js`).
 
 ### Key derivation for `localDb.ts` writes
 

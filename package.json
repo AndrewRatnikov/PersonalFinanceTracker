@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:precache": "vite build && PRECACHE_BUILD_CHECK=1 vitest run scripts/precacheCheck.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier",
