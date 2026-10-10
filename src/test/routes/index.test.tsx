@@ -1,7 +1,8 @@
 // No CONTRACT_GAPs: the index route's phase-driven rendering is fully
 // specified in the Interface Contract (route: index). InstallHintCard is
 // replaced by a fake (fake-install-hint), BackupReminderBanner by a fake
-// (fake-backup-reminder) and Link by a plain anchor.
+// (fake-backup-reminder), RecoveryKeyBanner by a fake (fake-recovery-key-banner)
+// and Link by a plain anchor.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen } from '@testing-library/react'
@@ -43,6 +44,9 @@ vi.mock('@/components/InstallHintCard', () => ({
 }))
 vi.mock('@/components/index/BackupReminderBanner', () => ({
   BackupReminderBanner: () => <div data-testid="fake-backup-reminder" />,
+}))
+vi.mock('@/components/index/RecoveryKeyBanner', () => ({
+  RecoveryKeyBanner: () => <div data-testid="fake-recovery-key-banner" />,
 }))
 vi.mock('@/components/RestoreBackupDialog', () => ({
   RestoreBackupDialog: ({ open }: { open: boolean }) =>
@@ -99,6 +103,7 @@ describe('index route', () => {
       expect(screen.queryByTestId('dashboard-summary')).toBeNull()
       expect(screen.queryByTestId('fake-install-hint')).toBeNull()
       expect(screen.queryByTestId('fake-backup-reminder')).toBeNull()
+      expect(screen.queryByTestId('fake-recovery-key-banner')).toBeNull()
       expect(getAllCategories).not.toHaveBeenCalled()
     },
   )
@@ -124,19 +129,43 @@ describe('index route', () => {
     expect(screen.getAllByTestId('fake-backup-reminder')).toHaveLength(1)
   })
 
-  it('puts the backup reminder directly after the install hint and above the summary', async () => {
+  it('renders the recovery key banner once on the unlocked dashboard', async () => {
+    setVaultPhase('unlocked')
+    renderIndex()
+
+    await screen.findByTestId('dashboard-summary')
+    expect(screen.getAllByTestId('fake-recovery-key-banner')).toHaveLength(1)
+  })
+
+  it('puts the recovery key banner directly above the backup reminder', async () => {
+    setVaultPhase('unlocked')
+    renderIndex()
+
+    await screen.findByTestId('dashboard-summary')
+    const recovery = screen.getByTestId('fake-recovery-key-banner')
+    const backup = screen.getByTestId('fake-backup-reminder')
+    expect(
+      recovery.compareDocumentPosition(backup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(recovery.nextElementSibling).toBe(backup)
+  })
+
+  it('puts the banners after the install hint and above the summary', async () => {
     setVaultPhase('unlocked')
     renderIndex()
 
     const summary = await screen.findByTestId('dashboard-summary')
     const hint = screen.getByTestId('fake-install-hint')
+    const recovery = screen.getByTestId('fake-recovery-key-banner')
     const banner = screen.getByTestId('fake-backup-reminder')
+    expect(
+      hint.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(
       hint.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
       banner.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    expect(hint.nextElementSibling).toBe(banner)
   })
 })

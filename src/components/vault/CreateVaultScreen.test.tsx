@@ -12,7 +12,7 @@ import { createVault } from '@/lib/vault'
 import { CreateVaultScreen } from '@/components/vault/CreateVaultScreen'
 
 const { MockVaultError } = vi.hoisted(() => {
-  class MockVaultError extends Error {
+  class FakeVaultError extends Error {
     code: string
     retryAfterMs: number
     constructor(code: string, message: string, retryAfterMs = 0) {
@@ -22,7 +22,7 @@ const { MockVaultError } = vi.hoisted(() => {
       this.retryAfterMs = retryAfterMs
     }
   }
-  return { MockVaultError }
+  return { MockVaultError: FakeVaultError }
 })
 
 vi.mock('@/lib/vault', () => ({
@@ -53,6 +53,12 @@ function stubStorage(persist: () => Promise<boolean>) {
     value: { persist },
     configurable: true,
   })
+}
+
+function confirmedCalls() {
+  return vi
+    .mocked(updateAppSettings)
+    .mock.calls.filter(([patch]) => 'recoveryKeyConfirmed' in patch)
 }
 
 beforeEach(() => {
@@ -166,7 +172,9 @@ describe('CreateVaultScreen Back button', () => {
 })
 
 describe('CreateVaultScreen recovery key step', () => {
+  // Math.random() = 0 makes the save step ask for group 1 (ABCDE).
   async function createAndReachKeyStep(onCreated = vi.fn()) {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     vi.mocked(createVault).mockResolvedValue({ recoveryKey: KEY })
     render(<CreateVaultScreen onCreated={onCreated} />)
     fill('long enough 1', 'long enough 1')
@@ -174,6 +182,10 @@ describe('CreateVaultScreen recovery key step', () => {
     await screen.findByTestId('recovery-key-step')
     return onCreated
   }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
   it('calls createVault with the password and then shows the recovery key', async () => {
     await createAndReachKeyStep()
@@ -192,21 +204,23 @@ describe('CreateVaultScreen recovery key step', () => {
     ).toBe(true)
 
     fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
-    fireEvent.change(screen.getByTestId('recovery-key-last-group-input'), {
-      target: { value: 'xy' },
+    fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+      target: { value: 'abcde' },
     })
     expect(onCreated).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByTestId('recovery-key-continue'))
-    expect(onCreated).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1)
+    })
   })
 
-  it('keeps continue disabled with a wrong last group', async () => {
+  it('keeps continue disabled with a wrong group', async () => {
     const onCreated = await createAndReachKeyStep()
 
     fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
-    fireEvent.change(screen.getByTestId('recovery-key-last-group-input'), {
-      target: { value: 'ZZ' },
+    fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+      target: { value: 'ZZZZZ' },
     })
 
     expect(
@@ -214,6 +228,51 @@ describe('CreateVaultScreen recovery key step', () => {
     ).toBe(true)
     fireEvent.click(screen.getByTestId('recovery-key-continue'))
     expect(onCreated).not.toHaveBeenCalled()
+    expect(confirmedCalls()).toHaveLength(0)
+  })
+
+  it('does not mark the key confirmed before the step is confirmed', async () => {
+    await createAndReachKeyStep()
+
+    expect(confirmedCalls()).toHaveLength(0)
+  })
+
+  it('marks the key confirmed, then calls onCreated', async () => {
+    const onCreated = await createAndReachKeyStep()
+
+    fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+    fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+      target: { value: 'ABCDE' },
+    })
+    fireEvent.click(screen.getByTestId('recovery-key-continue'))
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1)
+    })
+    expect(updateAppSettings).toHaveBeenCalledWith({ recoveryKeyConfirmed: true })
+    expect(confirmedCalls()).toHaveLength(1)
+    const updateOrder = vi
+      .mocked(updateAppSettings)
+      .mock.invocationCallOrder.at(-1)
+    expect(updateOrder).toBeLessThan(onCreated.mock.invocationCallOrder[0])
+  })
+
+  it('logs and still calls onCreated when saving the flag fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onCreated = await createAndReachKeyStep()
+    vi.mocked(updateAppSettings).mockRejectedValue(new Error('disk full'))
+
+    fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+    fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+      target: { value: 'ABCDE' },
+    })
+    fireEvent.click(screen.getByTestId('recovery-key-continue'))
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1)
+    })
+    expect(updateAppSettings).toHaveBeenCalledWith({ recoveryKeyConfirmed: true })
+    expect(consoleError).toHaveBeenCalled()
   })
 })
 

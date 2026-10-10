@@ -20,6 +20,7 @@ const SETTINGS = {
   autoLockMinutes: 15,
   installHintDismissed: false,
   persistRequestedAt: null,
+  recoveryKeyConfirmed: true,
 }
 
 function renderCard() {

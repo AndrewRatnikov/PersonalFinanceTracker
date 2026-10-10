@@ -1,14 +1,18 @@
 // No CONTRACT_GAPs: DataProblemScreen, DataProblemGate and DataErrorBoundary
 // are fully specified in the Interface Contract. Phase 4 adds the optional
-// "Back up readable data" action (onBackupReadable) and its Gate wiring.
+// "Back up readable data" action (onBackupReadable) and its Gate wiring. The
+// validation-fixes run adds the Gate's onRestored wiring (RestoreBackupDialog
+// is faked here; the real dialog is covered in DataProblemScreen.test.tsx).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Component } from 'react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
-import { downloadBackup } from '@/lib/backup'
+import type { RestoreSummary } from '@/lib/backup'
+import { downloadBackup, formatRestoreSummary } from '@/lib/backup'
 import { DecryptError } from '@/lib/dataErrors'
 import {
   clearDataProblem,
@@ -24,6 +28,42 @@ vi.mock('@/lib/localDb', () => ({
 }))
 vi.mock('@/lib/backup', () => ({
   downloadBackup: vi.fn(),
+  formatRestoreSummary: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/components/RestoreBackupDialog', () => ({
+  RestoreBackupDialog: (props: {
+    open: boolean
+    forceReplace?: boolean
+    onRestored?: (summary: RestoreSummary) => void
+  }) =>
+    props.open ? (
+      <div
+        data-testid="fake-restore-backup-dialog"
+        data-force-replace={String(props.forceReplace === true)}
+      >
+        <button
+          type="button"
+          data-testid="fake-restore-backup-confirm"
+          onClick={() =>
+            props.onRestored?.({
+              mode: 'replace',
+              expenses: 6,
+              income: 0,
+              categories: 1,
+              budgets: 0,
+              added: 6,
+              updated: 0,
+              conflicts: 0,
+              skipped: [],
+              adoptedVault: false,
+            })
+          }
+        >
+          confirm
+        </button>
+      </div>
+    ) : null,
 }))
 
 function deferred<T = void>() {
@@ -494,6 +534,84 @@ describe('DataProblemGate', () => {
     const error = await screen.findByTestId('data-problem-error')
     expect(error.textContent).toContain('no space')
     expect(screen.queryByTestId('data-problem-backup-done')).toBeNull()
+  })
+})
+
+describe('DataProblemGate restore from backup', () => {
+  it('offers "Restore from backup" on the screen', () => {
+    renderGate()
+
+    act(() => {
+      reportDataProblem(new DecryptError('expenses_2026_03'))
+    })
+
+    expect(screen.getByTestId('data-problem-restore').textContent).toContain(
+      'Restore from backup',
+    )
+  })
+
+  it('after a restore: resets the queries, clears the problem, then toasts the summary', async () => {
+    vi.mocked(formatRestoreSummary).mockImplementation(
+      (s) => `${s.expenses} expenses restored`,
+    )
+    const client = renderGate()
+    const seenByReset: Array<boolean> = []
+    const seenByToast: Array<boolean> = []
+    const resetSpy = vi
+      .spyOn(client, 'resetQueries')
+      .mockImplementation(() => {
+        seenByReset.push(getDataProblem() !== null)
+        return Promise.resolve()
+      })
+    vi.mocked(toast.success).mockImplementation(() => {
+      seenByToast.push(getDataProblem() !== null)
+      return 1
+    })
+    act(() => {
+      reportDataProblem(new DecryptError('expenses_2026_03'))
+    })
+    fireEvent.click(screen.getByTestId('data-problem-restore'))
+    await screen.findByTestId('fake-restore-backup-dialog')
+
+    fireEvent.click(screen.getByTestId('fake-restore-backup-confirm'))
+
+    await screen.findByTestId('gate-child')
+    expect(resetSpy).toHaveBeenCalledTimes(1)
+    expect(getDataProblem()).toBeNull()
+    expect(screen.queryByTestId('data-problem-screen')).toBeNull()
+    expect(toast.success).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith('6 expenses restored')
+    // The problem is still set when the queries are reset, and cleared before the toast.
+    expect(seenByReset).toEqual([true])
+    expect(seenByToast).toEqual([false])
+    expect(quarantineKey).not.toHaveBeenCalled()
+  })
+
+  it('does nothing until the restore is confirmed', async () => {
+    const client = renderGate()
+    const resetSpy = vi.spyOn(client, 'resetQueries')
+    act(() => {
+      reportDataProblem(new DecryptError('income'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-restore'))
+    await screen.findByTestId('fake-restore-backup-dialog')
+
+    expect(resetSpy).not.toHaveBeenCalled()
+    expect(getDataProblem()?.storageKey).toBe('income')
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('opens the restore dialog in forceReplace mode', async () => {
+    renderGate()
+    act(() => {
+      reportDataProblem(new DecryptError('income'))
+    })
+
+    fireEvent.click(screen.getByTestId('data-problem-restore'))
+
+    const dialog = await screen.findByTestId('fake-restore-backup-dialog')
+    expect(dialog.getAttribute('data-force-replace')).toBe('true')
   })
 })
 

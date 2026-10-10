@@ -8,7 +8,7 @@ import { unlockWithPassword } from '@/lib/vault'
 import { UnlockScreen } from '@/components/vault/UnlockScreen'
 
 const { MockVaultError } = vi.hoisted(() => {
-  class MockVaultError extends Error {
+  class FakeVaultError extends Error {
     code: string
     retryAfterMs: number
     constructor(code: string, message: string, retryAfterMs = 0) {
@@ -18,7 +18,7 @@ const { MockVaultError } = vi.hoisted(() => {
       this.retryAfterMs = retryAfterMs
     }
   }
-  return { MockVaultError }
+  return { MockVaultError: FakeVaultError }
 })
 
 vi.mock('@/lib/vault', () => ({
