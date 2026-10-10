@@ -4,13 +4,15 @@ import {
   addCategory,
   addExpense,
   addIncome,
+  addIncomeCategory,
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
   upsertBudget,
 } from './localDb'
 import { CURRENCIES } from './domain'
-import type { Currency } from './domain'
+import type { Category, Currency } from './domain'
 
 export interface ImportResult {
   inserted: number
@@ -20,6 +22,9 @@ export interface ImportResult {
   duplicates: number
   // Their row numbers, numbered like the "Row N" errors (record index + 2).
   duplicateRows: Array<number>
+  // Income only, set only when > 0: income categories created for unknown
+  // names in the `source` column.
+  createdCategories?: number
 }
 
 export interface ImportOptions {
@@ -187,7 +192,8 @@ export function expenseFingerprint(e: {
   )
 }
 
-// date|amount|currency|source|description.
+// date|amount|currency|source|description. `source` is the income category
+// name (or the legacy free text of an unconverted record).
 export function incomeFingerprint(i: {
   createdAt: string
   amount: number
@@ -348,22 +354,35 @@ export async function importIncomeFromCSV(
   csv: string,
   options: ImportOptions = {},
 ): Promise<ImportResult> {
+  const categoryMap = new Map<string, Category>(
+    (await getAllIncomeCategories()).map((c) => [c.name.trim().toLowerCase(), c]),
+  )
+
   const existing = new Set<string>()
   if (!options.allowDuplicates) {
     for (const i of await getAllIncome()) {
-      existing.add(incomeFingerprint(i))
+      existing.add(
+        incomeFingerprint({
+          createdAt: i.createdAt,
+          amount: i.amount,
+          currency: i.currency,
+          source: i.category?.name ?? i.source ?? '',
+          description: i.description,
+        }),
+      )
     }
   }
 
   const rows = parseCSV(csv)
   const result = emptyResult()
+  let createdCategories = 0
 
   for (let i = 0; i < rows.length; i++) {
     const rowNumber = i + 2
     if (!wantsRow(options, rowNumber)) continue
     const { date, source, amount: amountStr, currency, description } = rows[i]
 
-    if (!source) {
+    if (!source || !source.trim()) {
       result.errors.push(`Row ${rowNumber}: missing source`)
       result.skipped++
       continue
@@ -389,10 +408,19 @@ export async function importIncomeFromCSV(
       continue
     }
 
+    const name = source.trim()
+    let category = categoryMap.get(name.toLowerCase())
+
     if (
       !options.allowDuplicates &&
       existing.has(
-        incomeFingerprint({ createdAt, amount, currency, source, description }),
+        incomeFingerprint({
+          createdAt,
+          amount,
+          currency,
+          source: category?.name ?? name,
+          description,
+        }),
       )
     ) {
       result.duplicates++
@@ -400,8 +428,15 @@ export async function importIncomeFromCSV(
       continue
     }
 
+    // Only a valid, non-duplicate row creates its category.
+    if (!category) {
+      category = await addIncomeCategory({ name, icon: null })
+      categoryMap.set(name.toLowerCase(), category)
+      createdCategories++
+    }
+
     await addIncome({
-      source,
+      categoryId: category.id,
       amount,
       currency: currency as Currency,
       description: description || undefined,
@@ -410,6 +445,7 @@ export async function importIncomeFromCSV(
     result.inserted++
   }
 
+  if (createdCategories > 0) result.createdCategories = createdCategories
   return result
 }
 
