@@ -231,3 +231,98 @@ ACCEPTANCE
 - No runtime-cache entry for navigations has maxAgeSeconds ≤ 7 days.
 - Manual check documented in the PR: load once, go offline, set the clock forward 2 days, reload. The app loads, unlocks, and every route opens.
 ```
+
+---
+
+## Run 6: Validation fixes (after Phases 1–5)
+
+Findings from the 2026-10-10 validation of merged main (e116825). Issue 1 was reproduced in a real browser; issues 2–4 were confirmed by reading the code.
+
+```text
+Fix the four issues found when validating the free tier (docs/free-tier-spec.md, Phases 1–5 merged at e116825). The spec is the source of truth, and this run also corrects the spec where it caused the bug. Where it is silent, choose the simplest behaviour and record a CONTRACT_GAP.
+
+CONTEXT
+Verified on 2026-10-10. Typecheck, lint and all 1,177 tests pass, and the core flows work in a production build in headless Chromium. The remaining issues:
+
+1. An idle tab locks the active tab (reproduced in the browser).
+   With auto-lock set to 1 minute, tab A was used continuously (pointer and key events every 4 s) while tab B sat idle. After about 60 s both tabs were locked. A single active tab stayed unlocked (control run).
+   Cause: src/routes/__root.tsx:110 calls `lockApp(queryClient)` on auto-lock, which broadcasts { type: 'lock' } by default (src/lib/vaultSession.ts lockApp), and every tab obeys it (connectOtherTabs).
+   Root cause in the spec: §2.4 says locking broadcasts to other tabs, without separating manual lock from auto-lock.
+
+2. "Restore from backup" is missing on the recovery screens.
+   - The orphaned-data recovery state in src/components/PasswordUnlockDialog.tsx (mode 'recovery') only offers "Erase local data and start fresh".
+   - src/components/DataProblemScreen.tsx offers Retry, Back up readable data, and Quarantine.
+   - Spec §5.2 requires "Restore from backup" on both.
+   - restoreBackup (src/lib/backup.ts ~line 659) also refuses getVaultState() === 'orphaned', so the dialog could not be wired up anyway.
+   - From the Data problem screen, merge mode throws DecryptError (readLocal), so only replace can work there.
+
+3. A recovery key can end up never saved.
+   createVault and the v1 → v2 migration commit the vault and unlock it before the user ticks "I've saved my recovery key" and confirms. Closing the tab at the RecoveryKeySaveStep leaves a vault whose recovery key was never seen, and nothing ever prompts the user again. The key must never be stored, so it cannot be shown again either.
+
+4. The recovery-key confirmation is too weak.
+   RecoveryKeySaveStep checks the LAST group, which is only 2 characters in the 5-5-5-5-5-5-2 format. Spec §2.1 step 3 caused this.
+
+SCOPE
+
+1. Auto-lock is per tab
+   - Auto-lock locks only its own tab: in __root.tsx call lockApp(queryClient, { broadcast: false }) from the auto-lock callback.
+   - Manual lock (LockButton, Settings → Security "Lock now") still broadcasts.
+   - A 'wiped' message still affects every tab.
+   - Update spec §2.4: manual Lock locks all tabs; auto-lock locks only the idle tab.
+
+2. Restore from backup when data can't be opened
+   - backup.ts restoreBackup accepts state 'orphaned' as a target:
+     - It behaves like a fresh-device restore: adopt the backup's vault header, force mode 'replace', and unlock with the backup's DEK.
+     - First move every existing data blob, unchanged, to quarantine:<key>:<ISO timestamp>, inside the SAME setMany as the restored data and the header. Never delete an orphaned blob.
+   - PasswordUnlockDialog 'recovery' mode:
+     - add a "Restore from backup" button (data-testid="unlock-recovery-restore") that opens RestoreBackupDialog
+     - on success, call onUnlocked({ isNewVault: false })
+     - erase stays as the alternative
+   - DataProblemScreen:
+     - add "Restore from backup" (data-testid="data-problem-restore") that opens RestoreBackupDialog with mode fixed to 'replace' and no mode select
+     - the copy explains that current data is replaced and the unreadable data is kept in quarantine
+     - on success, reset queries and clear the data problem
+   - RestoreBackupDialog gets a prop to force replace mode (used by both entry points above).
+
+3. Unconfirmed recovery key
+   - Add recoveryKeyConfirmed: boolean to meta:settings, merged like the other fields and not encrypted.
+     - Set it to false atomically with every operation that produces a new recovery key: createVault, the v1 migration, and regenerateRecoveryKey. For createVault and regenerate, a separate locked write straight after the header write is acceptable. For the migration, include it in the existing setMany.
+     - Set it to true only when RecoveryKeySaveStep is confirmed.
+     - A missing field means confirmed, so vaults created before this change don't nag.
+   - When unlocked and recoveryKeyConfirmed === false:
+     - Dashboard: a persistent banner (data-testid="recovery-key-unconfirmed-banner") reading "You haven't saved a recovery key for this device", with the action "Create a new recovery key" that goes to /settings?tab=security.
+     - Settings → Security: a warning on the "Generate new recovery key" card.
+   - Generating a new key through the normal Security flow, with its confirmation step, clears the flag.
+   - Never store the recovery key, or anything that reveals it.
+
+4. A stronger confirmation step
+   - RecoveryKeySaveStep asks for one full 5-character group, picked at random from groups 1–6 when the step mounts: "Type group N of your key". Never the 2-character tail.
+   - Input ignores case and surrounding spaces.
+   - Update spec §2.1 step 3.
+
+5. Housekeeping
+   - Fix the 8 ESLint warnings (no-shadow and require-await in test files).
+
+CONSTRAINTS
+- Do not change the meta:vault header format, the encryption, or the backup file format.
+- No new runtime dependencies.
+- Follow .claude/rules/testing.md. tsc --noEmit, npm run lint (0 warnings) and npm test must all pass.
+- Update docs/free-tier-spec.md §2.1, §2.4, §5.2 and §11: add a row "6. Validation fixes ✅ Done (<run id>)". Update CLAUDE.md where it describes lock, restore and the recovery key.
+
+ACCEPTANCE (each must be a test)
+- With an injected fake sync channel, the auto-lock callback locks this tab and posts NO 'lock' message, while LockButton and "Lock now" each post { type: 'lock' }.
+- Two simulated tabs sharing one channel, auto-lock 1 minute (fake timers): tab A has activity every 10 s and tab B none. After 61 s, B is locked and A is still unlocked.
+- restoreBackup on an orphaned store:
+  - restores every record from the backup
+  - adopts the backup header and unlocks
+  - moves every pre-existing data blob byte-identical to quarantine:*
+  - a failure injected in setMany leaves the store byte-identical
+- The PasswordUnlockDialog recovery state shows unlock-recovery-restore. A successful restore calls onUnlocked({ isNewVault: false }).
+- DataProblemScreen shows data-problem-restore. The restore runs in replace mode and the unreadable blob ends up in quarantine unchanged.
+- After createVault, meta:settings.recoveryKeyConfirmed === false. After the key step is confirmed it is true. The same holds for the v1 migration and regenerateRecoveryKey.
+- With recoveryKeyConfirmed === false the dashboard shows recovery-key-unconfirmed-banner. With true or a missing field it does not.
+- RecoveryKeySaveStep never asks for the 2-character tail. The requested group is 5 characters long. Typing the 2-character tail does not enable Continue, and typing the requested group in lower case does.
+
+OUT OF SCOPE
+Paid sync, account features, any change to backup/CSV formats or the service worker.
+```
