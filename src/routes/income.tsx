@@ -3,7 +3,11 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { deleteIncome, getAllIncome } from '@/lib/localDb'
+import {
+  deleteIncome,
+  getAllIncome,
+  getAllIncomeCategories,
+} from '@/lib/localDb'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Card } from '@/components/ui/card'
@@ -25,6 +29,11 @@ function IncomePage() {
     queryFn: getAllIncome,
   })
   const { data: allIncome, isLoading, isError } = incomeQuery
+
+  const incomeCategoriesQuery = useQuery({
+    queryKey: ['incomeCategories'],
+    queryFn: getAllIncomeCategories,
+  })
 
   const sorted = useMemo(
     () =>
@@ -77,7 +86,16 @@ function IncomePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
-            <AddIncomeForm onSuccess={handleAdded} />
+            {incomeCategoriesQuery.isError ? (
+              <QueryErrorState
+                onRetry={() => void incomeCategoriesQuery.refetch()}
+              />
+            ) : incomeCategoriesQuery.isSuccess ? (
+              <AddIncomeForm
+                categories={incomeCategoriesQuery.data}
+                onSuccess={handleAdded}
+              />
+            ) : null}
           </div>
 
           <div className="lg:col-span-2">
