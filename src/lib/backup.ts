@@ -18,6 +18,12 @@
 // existing data value is first copied, unchanged, to
 // `quarantine:<key>:<ISO timestamp>` in the same transaction; orphaned data is
 // never deleted.
+//
+// The payload carries `incomeCategories` (additive; schemaVersion stays 1).
+// A payload from before income categories (no `incomeCategories`, or income
+// records with only a free-text `source`) is converted with
+// convertIncomeSources before planning, so old backups restore into
+// categories.
 
 import dayjs from 'dayjs'
 import { get, keys, setMany } from 'idb-keyval'
@@ -32,7 +38,9 @@ import {
 } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
 import { saveFile } from './fileDownload'
+import { convertIncomeSources } from './incomeCategories'
 import {
+  ensureIncomeCategories,
   expenseChunkKey,
   getLocalDbKey,
   getLocalStore,
@@ -66,6 +74,8 @@ export interface BackupPayload {
   expenses: Array<Expense> // raw stored records (no joined `category` field)
   income: Array<IncomeEntry>
   budgets: Array<BudgetEntry>
+  // Optional so backups made before income categories still validate.
+  incomeCategories?: Array<Category>
   settings: { autoLockMinutes: number; backupReminderDays: number }
 }
 
@@ -90,6 +100,7 @@ export interface RestoreSummary {
   expenses: number
   income: number
   categories: number
+  incomeCategories: number
   budgets: number
   added: number
   updated: number
@@ -187,6 +198,7 @@ export async function createBackup(
 
   const skipped: Array<string> = []
   let categories: Array<Category> = []
+  let incomeCategories: Array<Category> = []
   let income: Array<IncomeEntry> = []
   let budgets: Array<BudgetEntry> = []
   const expenses: Array<Expense> = []
@@ -204,7 +216,9 @@ export async function createBackup(
     }
     if (!Array.isArray(value)) continue
     if (key === 'categories') categories = value as Array<Category>
-    else if (key === 'income') income = value as Array<IncomeEntry>
+    else if (key === 'incomeCategories') {
+      incomeCategories = value as Array<Category>
+    } else if (key === 'income') income = value as Array<IncomeEntry>
     else if (key === 'budgets') budgets = value as Array<BudgetEntry>
     else {
       for (const e of value as Array<Expense>) expenses.push(stripCategory(e))
@@ -217,6 +231,7 @@ export async function createBackup(
     expenses,
     income,
     budgets,
+    incomeCategories,
     settings: {
       autoLockMinutes: (await getAppSettings()).autoLockMinutes,
       backupReminderDays: (await getBackupSettings()).backupReminderDays,
@@ -315,13 +330,13 @@ export function backupFileName(now = new Date()): string {
 // ── Restore ───────────────────────────────────────────────────────────────────
 
 // 'replace' when this device holds no expenses, income or budgets (default
-// categories don't count), otherwise 'merge'.
+// expense and income categories don't count), otherwise 'merge'.
 export async function defaultRestoreMode(): Promise<RestoreMode> {
   const store = getLocalStore()
   const dek = getLocalDbKey()
   if (!store || !dek) return 'replace'
   for (const key of await dataKeysOf(store)) {
-    if (key === 'categories') continue
+    if (key === 'categories' || key === 'incomeCategories') continue
     const raw = await get<unknown>(key, store)
     if (!(raw instanceof Uint8Array)) continue
     try {
@@ -349,7 +364,9 @@ function validatePayload(value: unknown): BackupPayload {
     !isRecordList(value.categories) ||
     !isRecordList(value.expenses) ||
     !isRecordList(value.income) ||
-    !isRecordList(value.budgets)
+    !isRecordList(value.budgets) ||
+    (value.incomeCategories !== undefined &&
+      !isRecordList(value.incomeCategories))
   ) {
     throw notABackup()
   }
@@ -365,6 +382,9 @@ function validatePayload(value: unknown): BackupPayload {
     expenses: (value.expenses as Array<Expense>).map(stripCategory),
     income: value.income as Array<IncomeEntry>,
     budgets: value.budgets as Array<BudgetEntry>,
+    ...(value.incomeCategories !== undefined
+      ? { incomeCategories: value.incomeCategories as Array<Category> }
+      : {}),
     settings: settings as BackupPayload['settings'],
   }
 }
@@ -555,15 +575,60 @@ function localExpenseIds(local: LocalData): Set<string> {
   return ids
 }
 
+// The payload after the legacy income conversion: always has a list.
+type PreparedPayload = BackupPayload & { incomeCategories: Array<Category> }
+
+// Converts legacy income (no incomeCategories in the payload, or records with
+// only a free-text source) into income categories. The backup records keep
+// their own updatedAt, so merging the same legacy backup again is a no-op
+// and never overwrites a newer local edit. In a merge the local income
+// categories are reused by name. Defaults are added only when a payload
+// without incomeCategories replaces the data.
+function prepareIncome(
+  payload: BackupPayload,
+  local: LocalData,
+  mode: RestoreMode,
+): PreparedPayload {
+  const needsConversion =
+    payload.incomeCategories === undefined ||
+    payload.income.some(
+      (i) => typeof i.categoryId !== 'string' || i.categoryId === '',
+    )
+  if (!needsConversion) {
+    return { ...payload, incomeCategories: payload.incomeCategories ?? [] }
+  }
+  const base: Array<Category> = [...(payload.incomeCategories ?? [])]
+  if (mode === 'merge') {
+    const ids = new Set(base.map((c) => c.id))
+    for (const c of (local.values.get('incomeCategories') ??
+      []) as Array<Category>) {
+      if (!ids.has(c.id)) base.push(c)
+    }
+  }
+  const converted = convertIncomeSources(payload.income, base, {
+    preserveUpdatedAt: true,
+    addDefaults: mode === 'replace' && payload.incomeCategories === undefined,
+  })
+  return {
+    ...payload,
+    incomeCategories: converted.incomeCategories,
+    income: converted.income,
+  }
+}
+
 interface Plan {
   writes: Map<string, Array<unknown>>
-  counts: Pick<RestoreSummary, 'expenses' | 'income' | 'categories' | 'budgets'>
+  counts: Pick<
+    RestoreSummary,
+    'expenses' | 'income' | 'categories' | 'incomeCategories' | 'budgets'
+  >
   counters: Counters
 }
 
-function planReplace(local: LocalData, payload: BackupPayload): Plan {
+function planReplace(local: LocalData, payload: PreparedPayload): Plan {
   const writes = new Map<string, Array<unknown>>()
   writes.set('categories', payload.categories)
+  writes.set('incomeCategories', payload.incomeCategories)
   writes.set('income', payload.income)
   writes.set('budgets', payload.budgets)
   for (const [key, list] of groupExpenses(payload.expenses)) {
@@ -583,6 +648,7 @@ function planReplace(local: LocalData, payload: BackupPayload): Plan {
     }
   }
   count(localIds(local, 'categories'), payload.categories)
+  count(localIds(local, 'incomeCategories'), payload.incomeCategories)
   count(localIds(local, 'income'), payload.income)
   count(localIds(local, 'budgets'), payload.budgets)
   count(localExpenseIds(local), payload.expenses)
@@ -593,23 +659,35 @@ function planReplace(local: LocalData, payload: BackupPayload): Plan {
       expenses: payload.expenses.length,
       income: payload.income.length,
       categories: payload.categories.length,
+      incomeCategories: payload.incomeCategories.length,
       budgets: payload.budgets.length,
     },
     counters,
   }
 }
 
-function planMerge(local: LocalData, payload: BackupPayload): Plan {
+function planMerge(local: LocalData, payload: PreparedPayload): Plan {
   const writes = new Map<string, Array<unknown>>()
   const counters: Counters = { added: 0, updated: 0, conflicts: 0 }
-  const counts = { expenses: 0, income: 0, categories: 0, budgets: 0 }
+  const counts = {
+    expenses: 0,
+    income: 0,
+    categories: 0,
+    incomeCategories: 0,
+    budgets: 0,
+  }
 
-  const single: Array<['categories' | 'income' | 'budgets', Array<MergeRecord>]> =
+  const single: Array<
     [
-      ['categories', payload.categories],
-      ['income', payload.income],
-      ['budgets', payload.budgets],
+      'categories' | 'incomeCategories' | 'income' | 'budgets',
+      Array<MergeRecord>,
     ]
+  > = [
+    ['categories', payload.categories],
+    ['incomeCategories', payload.incomeCategories],
+    ['income', payload.income],
+    ['budgets', payload.budgets],
+  ]
   for (const [key, incoming] of single) {
     const merged = mergeList(
       (local.values.get(key) ?? []) as Array<MergeRecord>,
@@ -701,6 +779,7 @@ export async function restoreBackup(
   const effectiveMode: RestoreMode = adopt ? 'replace' : mode
   const backupKeys = [
     'categories',
+    'incomeCategories',
     'income',
     'budgets',
     ...groupExpenses(payload.expenses).keys(),
@@ -720,11 +799,12 @@ export async function restoreBackup(
         ? await readOrphaned(store, localKeys)
         : await readLocal(store, targetDek, localKeys, effectiveMode)
 
-    // 5. Compute the final collections.
+    // 5. Convert legacy income, then compute the final collections.
+    const prepared = prepareIncome(payload, local, effectiveMode)
     const plan =
       effectiveMode === 'replace'
-        ? planReplace(local, payload)
-        : planMerge(local, payload)
+        ? planReplace(local, prepared)
+        : planMerge(local, prepared)
 
     const summary: RestoreSummary = {
       mode: effectiveMode,
@@ -792,7 +872,12 @@ export async function restoreBackup(
 
   // 7. After commit.
   if (adopt) unlockLocalDb(backupDek)
-  if (result.written.length > 0) postChanged(result.written)
+  if (result.written.length > 0) {
+    postChanged(result.written)
+    // Safety net: a no-op whenever the restore wrote incomeCategories. Runs
+    // after the restore lock is released (the lock isn't re-entrant).
+    await ensureIncomeCategories()
+  }
   return result.summary
 }
 
