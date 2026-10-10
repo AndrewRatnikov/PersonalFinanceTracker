@@ -9,8 +9,15 @@
 // restoreBackup validates the file, unwraps the backup's DEK with the given
 // secret and decrypts the payload before anything is written. It then writes
 // the result in ONE setMany transaction: re-encrypted data keys, quarantine
-// copies of unreadable local blobs (replace), the adopted header (fresh
-// device) and `meta:settings`.
+// copies of unreadable local blobs (replace), the adopted header (fresh or
+// orphaned device) and `meta:settings`.
+//
+// An orphaned device (data keys but no header, so nothing can be opened) is
+// restored like a fresh device: the backup's header is adopted, the mode is
+// forced to replace and the backup's DEK is unlocked after the commit. Every
+// existing data value is first copied, unchanged, to
+// `quarantine:<key>:<ISO timestamp>` in the same transaction; orphaned data is
+// never deleted.
 
 import dayjs from 'dayjs'
 import { get, keys, setMany } from 'idb-keyval'
@@ -88,7 +95,7 @@ export interface RestoreSummary {
   updated: number
   conflicts: number
   skipped: Array<string> // the backup file's own `skipped` list
-  adoptedVault: boolean // true on a fresh device
+  adoptedVault: boolean // true on a fresh or orphaned device
 }
 
 export type BackupErrorCode =
@@ -492,8 +499,9 @@ function groupExpenses(expenses: Array<Expense>): Map<string, Array<Expense>> {
 interface LocalData {
   // Decrypted value per data key.
   values: Map<string, Array<unknown>>
-  // Raw blobs that could not be decrypted (replace only).
-  unreadable: Map<string, Uint8Array>
+  // Raw stored values that could not be decrypted (replace only), or every
+  // stored value of an orphaned device. Quarantined unchanged.
+  unreadable: Map<string, unknown>
 }
 
 async function readLocal(
@@ -503,7 +511,7 @@ async function readLocal(
   mode: RestoreMode,
 ): Promise<LocalData> {
   const values = new Map<string, Array<unknown>>()
-  const unreadable = new Map<string, Uint8Array>()
+  const unreadable = new Map<string, unknown>()
   for (const key of dataKeys) {
     const raw = await get<unknown>(key, store)
     if (!(raw instanceof Uint8Array)) continue
@@ -516,6 +524,20 @@ async function readLocal(
     }
   }
   return { values, unreadable }
+}
+
+// An orphaned device has no key that could open its data: every stored value
+// under a data key goes to quarantine as it is.
+async function readOrphaned(
+  store: UseStore,
+  dataKeys: Array<string>,
+): Promise<LocalData> {
+  const unreadable = new Map<string, unknown>()
+  for (const key of dataKeys) {
+    const raw = await get<unknown>(key, store)
+    if (raw !== undefined) unreadable.set(key, raw)
+  }
+  return { values: new Map(), unreadable }
 }
 
 function localIds(local: LocalData, key: string): Set<string> {
@@ -655,8 +677,11 @@ export async function restoreBackup(
   const store = getLocalStore()
   const state = await getVaultState()
   const fresh = state === 'none'
+  const orphaned = state === 'orphaned'
+  // A fresh or orphaned device adopts the backup's vault.
+  const adopt = fresh || orphaned
   const localDek = getLocalDbKey()
-  if (!store || (!fresh && (state !== 'v2' || !localDek))) {
+  if (!store || (!adopt && (state !== 'v2' || !localDek))) {
     throw new BackupError(
       'invalid-state',
       'Unlock the app before restoring into it',
@@ -664,15 +689,16 @@ export async function restoreBackup(
   }
   const { dek: backupDek, payload } = await openBackup(backup, secret)
 
-  // 3. Target key and mode. A fresh device adopts the backup's vault.
-  const targetDek = fresh ? backupDek : localDek
+  // 3. Target key and mode. A fresh or orphaned device adopts the backup's
+  //    vault.
+  const targetDek = adopt ? backupDek : localDek
   if (!targetDek) {
     throw new BackupError(
       'invalid-state',
       'Unlock the app before restoring into it',
     )
   }
-  const effectiveMode: RestoreMode = fresh ? 'replace' : mode
+  const effectiveMode: RestoreMode = adopt ? 'replace' : mode
   const backupKeys = [
     'categories',
     'income',
@@ -683,14 +709,16 @@ export async function restoreBackup(
   const lockKeys = [
     ...new Set([...localKeys, ...backupKeys]),
     META_SETTINGS_KEY,
-    ...(fresh ? [META_VAULT_KEY] : []),
+    ...(adopt ? [META_VAULT_KEY] : []),
   ]
 
   const result = await withWriteLock(lockKeys, async () => {
     // 4. Read the local data.
     const local: LocalData = fresh
       ? { values: new Map(), unreadable: new Map() }
-      : await readLocal(store, targetDek, localKeys, effectiveMode)
+      : orphaned
+        ? await readOrphaned(store, localKeys)
+        : await readLocal(store, targetDek, localKeys, effectiveMode)
 
     // 5. Compute the final collections.
     const plan =
@@ -703,7 +731,7 @@ export async function restoreBackup(
       ...plan.counts,
       ...plan.counters,
       skipped: backup.skipped ?? [],
-      adoptedVault: fresh,
+      adoptedVault: adopt,
     }
     if (
       effectiveMode === 'merge' &&
@@ -723,7 +751,7 @@ export async function restoreBackup(
         entries.push([`quarantine:${key}:${now}`, raw])
       }
     }
-    if (fresh) {
+    if (adopt) {
       const header: VaultHeaderV2 = {
         v: 2,
         vaultId: backup.vault.vaultId,
@@ -739,6 +767,11 @@ export async function restoreBackup(
     const settings: Record<string, unknown> = {
       ...(isObject(storedRaw) ? storedRaw : {}),
       lastDataChangeAt: now,
+    }
+    if (adopt) {
+      // The adopted vault's recovery key belongs to the backup; a stale flag
+      // from a lost vault must not nag (a missing field means confirmed).
+      delete settings.recoveryKeyConfirmed
     }
     if (effectiveMode === 'replace') {
       const { autoLockMinutes, backupReminderDays } =
@@ -758,7 +791,7 @@ export async function restoreBackup(
   })
 
   // 7. After commit.
-  if (fresh) unlockLocalDb(backupDek)
+  if (adopt) unlockLocalDb(backupDek)
   if (result.written.length > 0) postChanged(result.written)
   return result.summary
 }
