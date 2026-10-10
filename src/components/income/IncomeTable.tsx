@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import { Loader2, Search, Trash2 } from 'lucide-react'
 
 import type { IncomeEntry } from '@/lib/domain'
+import { incomeSourceLabel } from '@/lib/incomeCategories'
 
 import {
   Table,
@@ -50,7 +51,7 @@ export function IncomeTable({
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
           <TableHead className="pl-6 font-semibold">Date</TableHead>
-          <TableHead className="font-semibold">Source</TableHead>
+          <TableHead className="font-semibold">Category</TableHead>
           <TableHead className="hidden md:table-cell font-semibold">
             Description
           </TableHead>
@@ -104,13 +105,20 @@ export function IncomeTable({
           income.map((entry) => (
             <TableRow
               key={entry.id}
+              data-testid="income-row"
               className="hover:bg-muted/30 transition-colors group"
             >
               <TableCell className="pl-6 text-sm text-muted-foreground">
                 {dayjs(entry.createdAt).format('MMM D, YYYY')}
               </TableCell>
-              <TableCell className="text-sm font-medium">
-                {entry.source}
+              <TableCell
+                data-testid="income-row-category"
+                className="text-sm font-medium"
+              >
+                {entry.category?.icon && (
+                  <span className="mr-1.5">{entry.category.icon}</span>
+                )}
+                <span>{incomeSourceLabel(entry)}</span>
               </TableCell>
               <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[240px]">
                 {entry.description || <span className="opacity-30">-</span>}
