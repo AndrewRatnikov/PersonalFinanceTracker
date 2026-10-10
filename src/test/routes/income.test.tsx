@@ -1,17 +1,20 @@
 // No CONTRACT_GAPs: the income route approach and fake testids (#5) are fully
-// specified in the Interface Contract.
+// specified in the Interface Contract. The route now also queries
+// ['incomeCategories'] and passes the result to AddIncomeForm.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { IncomeEntry } from '@/lib/domain'
+import type { Category, IncomeEntry } from '@/lib/domain'
 import { Route } from '@/routes/income'
+import { getAllIncomeCategories } from '@/lib/localDb'
 
 const { items } = vi.hoisted(() => ({ items: [] as Array<IncomeEntry> }))
 
 vi.mock('@/lib/localDb', () => ({
   getAllIncome: vi.fn(() => Promise.resolve([...items])),
+  getAllIncomeCategories: vi.fn(),
   addIncome: vi.fn(),
   deleteIncome: vi.fn((id: string) => {
     const index = items.findIndex((e) => e.id === id)
@@ -65,12 +68,17 @@ vi.mock('@/components/income/IncomeTable', () => ({
   ),
 }))
 
+const CATEGORIES: Array<Category> = [
+  { id: 'ic1', name: 'Salary', icon: '💼' },
+  { id: 'ic2', name: 'Other', icon: '🪙' },
+]
+
 function fill(count: number) {
   items.length = 0
   for (let i = 0; i < count; i++) {
     items.push({
       id: `i${i}`,
-      source: 'Job',
+      categoryId: 'ic1',
       amount: 100 + i,
       currency: 'UAH',
       createdAt: new Date(Date.UTC(2024, 0, 31, 12, 0, 0) - i * 3_600_000)
@@ -91,6 +99,11 @@ function renderPage() {
     </QueryClientProvider>,
   )
 }
+
+beforeEach(() => {
+  vi.mocked(getAllIncomeCategories).mockReset()
+  vi.mocked(getAllIncomeCategories).mockResolvedValue(CATEGORIES)
+})
 
 describe('income page clamps the page index (#5)', () => {
   beforeEach(() => {
@@ -135,5 +148,61 @@ describe('income page clamps the page index (#5)', () => {
     expect(
       screen.getByTestId('fake-pagination').getAttribute('data-page-index'),
     ).toBe('1')
+  })
+})
+
+describe('income page loads the income categories for the form', () => {
+  beforeEach(() => {
+    fill(2)
+  })
+
+  it('renders the add form with the first category selected once the categories load', async () => {
+    renderPage()
+
+    const form = await screen.findByTestId('add-income-form')
+    expect(form).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByTestId('income-form-category').textContent).toContain(
+        'Salary',
+      )
+    })
+    expect(screen.queryByTestId('income-form-no-categories')).toBeNull()
+    expect(getAllIncomeCategories).toHaveBeenCalled()
+  })
+
+  it('uses the first category of the loaded list, whatever it is', async () => {
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([
+      { id: 'ic9', name: 'Refunds', icon: '↩️' },
+    ])
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('income-form-category').textContent).toContain(
+        'Refunds',
+      )
+    })
+  })
+
+  it('a failed categories query shows a retryable error instead of the form', async () => {
+    vi.mocked(getAllIncomeCategories).mockRejectedValue(new Error('read failed'))
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('query-error')).toBeTruthy()
+    })
+    expect(screen.queryByTestId('add-income-form')).toBeNull()
+    // The income list itself still renders.
+    await waitFor(() => {
+      expect(screen.getAllByTestId('fake-row')).toHaveLength(2)
+    })
+
+    vi.mocked(getAllIncomeCategories).mockResolvedValue(CATEGORIES)
+    fireEvent.click(screen.getByTestId('query-error-retry'))
+    await waitFor(() => {
+      expect(screen.getByTestId('add-income-form')).toBeTruthy()
+    })
+    expect(screen.queryByTestId('query-error')).toBeNull()
   })
 })

@@ -88,7 +88,11 @@ describe('localDb write serialization', () => {
     it('5 concurrent addIncome() store 5 entries', async () => {
       const created = await Promise.all(
         [1, 2, 3, 4, 5].map((n) =>
-          addIncome({ source: `Job ${n}`, amount: n * 10, currency: 'UAH' }),
+          addIncome({
+            categoryId: `ic${n}`,
+            amount: n * 10,
+            currency: 'UAH',
+          }),
         ),
       )
 
@@ -190,23 +194,23 @@ describe('localDb write serialization', () => {
 
     it('addIncome() racing deleteIncome() keeps both effects', async () => {
       const keep = await addIncome({
-        source: 'Keep',
+        categoryId: 'ic-keep',
         amount: 1,
         currency: 'UAH',
       })
       const drop = await addIncome({
-        source: 'Drop',
+        categoryId: 'ic-drop',
         amount: 2,
         currency: 'UAH',
       })
 
       await Promise.all([
         deleteIncome(drop.id),
-        addIncome({ source: 'New', amount: 3, currency: 'UAH' }),
+        addIncome({ categoryId: 'ic-new', amount: 3, currency: 'UAH' }),
       ])
 
-      const sources = (await getAllIncome()).map((i) => i.source).sort()
-      expect(sources).toEqual(['Keep', 'New'])
+      const categoryIds = (await getAllIncome()).map((i) => i.categoryId).sort()
+      expect(categoryIds).toEqual(['ic-keep', 'ic-new'])
       expect((await getAllIncome()).some((i) => i.id === keep.id)).toBe(true)
     })
 
@@ -316,13 +320,13 @@ describe('localDb write serialization', () => {
       mockStore.set('income', new Uint8Array(40))
 
       await expect(
-        addIncome({ source: 'A', amount: 1, currency: 'UAH' }),
+        addIncome({ categoryId: 'ic-a', amount: 1, currency: 'UAH' }),
       ).rejects.toBeInstanceOf(DecryptError)
 
       mockStore.delete('income')
-      await addIncome({ source: 'B', amount: 2, currency: 'UAH' })
+      await addIncome({ categoryId: 'ic-b', amount: 2, currency: 'UAH' })
 
-      expect((await getAllIncome()).map((i) => i.source)).toEqual(['B'])
+      expect((await getAllIncome()).map((i) => i.categoryId)).toEqual(['ic-b'])
     })
   })
 
@@ -331,7 +335,7 @@ describe('localDb write serialization', () => {
       const channel = fakeChannel()
       setSyncChannel(channel)
 
-      await addIncome({ source: 'Job', amount: 10, currency: 'UAH' })
+      await addIncome({ categoryId: 'ic1', amount: 10, currency: 'UAH' })
 
       expect(channel.postMessage).toHaveBeenCalledWith({
         type: 'changed',
@@ -342,7 +346,7 @@ describe('localDb write serialization', () => {
 
     it('deleteIncome posts the income key', async () => {
       const entry = await addIncome({
-        source: 'Job',
+        categoryId: 'ic1',
         amount: 10,
         currency: 'UAH',
       })
@@ -452,7 +456,7 @@ describe('localDb write serialization', () => {
       setSyncChannel(channel)
 
       await expect(
-        addIncome({ source: 'A', amount: 1, currency: 'UAH' }),
+        addIncome({ categoryId: 'ic-a', amount: 1, currency: 'UAH' }),
       ).rejects.toBeInstanceOf(DecryptError)
 
       expect(channel.postMessage).not.toHaveBeenCalled()
@@ -465,7 +469,7 @@ describe('localDb write serialization', () => {
       })
       setSyncChannel(channel)
 
-      await addIncome({ source: 'Job', amount: 10, currency: 'UAH' })
+      await addIncome({ categoryId: 'ic1', amount: 10, currency: 'UAH' })
 
       expect(await getAllIncome()).toHaveLength(1)
     })
@@ -473,7 +477,7 @@ describe('localDb write serialization', () => {
     it('with syncing disabled (null channel) writes still succeed', async () => {
       setSyncChannel(null)
 
-      await addIncome({ source: 'Job', amount: 10, currency: 'UAH' })
+      await addIncome({ categoryId: 'ic1', amount: 10, currency: 'UAH' })
 
       expect(await getAllIncome()).toHaveLength(1)
     })

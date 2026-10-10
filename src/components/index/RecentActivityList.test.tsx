@@ -25,13 +25,19 @@ function mkExpenseItem(overrides: Partial<Expense> = {}): RecentItem {
 function mkIncomeItem(overrides: Partial<IncomeEntry> = {}): RecentItem {
   const income: IncomeEntry = {
     id: 'inc-1',
-    source: 'Salary',
+    categoryId: 'ic-salary',
+    category: { id: 'ic-salary', name: 'Salary', icon: '💼' },
     amount: 500,
     currency: 'UAH',
     createdAt: '2026-07-11T12:00:00.000Z',
     ...overrides,
   }
   return { ...income, kind: 'income' }
+}
+
+function rowText(item: RecentItem): string {
+  render(<RecentActivityList items={[item]} />)
+  return screen.getAllByTestId('recent-activity-item')[0].textContent
 }
 
 describe('root wrapper and empty state', () => {
@@ -94,6 +100,67 @@ describe('criterion 14: income rows', () => {
     expect(amountEl.textContent).toContain(fmt(500))
     expect(amountEl.textContent).toContain('EUR')
     expect(amountEl.className).toContain('text-emerald-600')
+  })
+})
+
+describe('income rows show the income category', () => {
+  it('shows the category name and icon', () => {
+    const text = rowText(mkIncomeItem())
+
+    expect(text).toContain('Salary')
+    expect(text).toContain('💼')
+    expect(text).not.toContain('💰')
+  })
+
+  it('shows another category name and icon for another entry', () => {
+    const text = rowText(
+      mkIncomeItem({
+        categoryId: 'ic-gifts',
+        category: { id: 'ic-gifts', name: 'Gifts', icon: '🎁' },
+      }),
+    )
+
+    expect(text).toContain('Gifts')
+    expect(text).toContain('🎁')
+    expect(text).not.toContain('Salary')
+  })
+
+  it('uses the money-bag icon for a category without an icon', () => {
+    const text = rowText(
+      mkIncomeItem({
+        category: { id: 'ic-salary', name: 'Salary', icon: null },
+      }),
+    )
+
+    expect(text).toContain('Salary')
+    expect(text).toContain('💰')
+  })
+
+  it('prefers the category name over a leftover legacy source', () => {
+    const text = rowText(mkIncomeItem({ source: 'Old text' }))
+
+    expect(text).toContain('Salary')
+    expect(text).not.toContain('Old text')
+  })
+
+  it('falls back to the legacy source for an unconverted record', () => {
+    const text = rowText(
+      mkIncomeItem({
+        categoryId: '',
+        category: undefined,
+        source: 'Freelance gig',
+      }),
+    )
+
+    expect(text).toContain('Freelance gig')
+    expect(text).toContain('💰')
+    expect(text).not.toContain('Uncategorized')
+  })
+
+  it('falls back to Uncategorized when there is neither a category nor a source', () => {
+    const text = rowText(mkIncomeItem({ categoryId: '', category: undefined }))
+
+    expect(text).toContain('Uncategorized')
   })
 })
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BudgetTab } from '@/components/settings/BudgetTab'
@@ -9,6 +9,7 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
   getExpensesForRange,
 } from '@/lib/localDb'
 import { setVaultPhase } from '@/lib/vaultSession'
@@ -20,6 +21,7 @@ import { Route as TransactionsRoute } from '@/routes/transactions'
 
 vi.mock('@/lib/localDb', () => ({
   getAllCategories: vi.fn(),
+  getAllIncomeCategories: vi.fn(),
   getExpensesForRange: vi.fn(),
   getAllExpenses: vi.fn(),
   getAllIncome: vi.fn(),
@@ -30,13 +32,17 @@ vi.mock('@/lib/localDb', () => ({
   deleteIncome: vi.fn(),
   addIncome: vi.fn(),
   addCategory: vi.fn(),
+  addIncomeCategory: vi.fn(),
   updateCategory: vi.fn(),
+  updateIncomeCategory: vi.fn(),
   deleteCategory: vi.fn(),
+  deleteIncomeCategory: vi.fn(),
   upsertBudget: vi.fn(),
   deleteBudget: vi.fn(),
   // Used by the root route and the data problem gate (never at import time).
   initLocalDb: vi.fn(),
   provisionDefaultCategories: vi.fn(),
+  prepareUnlockedVault: vi.fn(),
   unlockLocalDb: vi.fn(),
   clearLocalDb: vi.fn(),
   wipeLocalDbKey: vi.fn(),
@@ -82,8 +88,13 @@ function renderUi(ui: React.ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
+// A non-empty list keeps the income form on its select (the empty list shows a
+// router Link, which needs a router).
+const INCOME_CATEGORIES = [{ id: 'ic1', name: 'Salary', icon: null }]
+
 function mockHealthyData() {
   vi.mocked(getAllCategories).mockResolvedValue([])
+  vi.mocked(getAllIncomeCategories).mockResolvedValue(INCOME_CATEGORIES)
   vi.mocked(getExpensesForRange).mockResolvedValue([])
   vi.mocked(getAllExpenses).mockResolvedValue([])
   vi.mocked(getAllIncome).mockResolvedValue([])
@@ -323,7 +334,31 @@ describe('Settings query error', () => {
     await waitFor(() => {
       expect(getAllCategories).toHaveBeenCalled()
     })
+    await waitFor(() => {
+      expect(getAllIncomeCategories).toHaveBeenCalled()
+    })
     expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+
+  it('CategoriesTab shows the income error in the income section and Retry calls getAllIncomeCategories again', async () => {
+    vi.mocked(getAllCategories).mockResolvedValue(food as never)
+    vi.mocked(getAllIncomeCategories).mockRejectedValue(new Error('boom'))
+
+    renderUi(<CategoriesTab />)
+
+    const income = within(await screen.findByTestId('income-categories-section'))
+    await waitFor(() => {
+      expect(income.getByTestId('query-error')).toBeTruthy()
+    })
+    expect(getAllIncomeCategories).toHaveBeenCalledTimes(1)
+    const expenseCalls = vi.mocked(getAllCategories).mock.calls.length
+
+    fireEvent.click(income.getByTestId('query-error-retry'))
+
+    await waitFor(() => {
+      expect(getAllIncomeCategories).toHaveBeenCalledTimes(2)
+    })
+    expect(vi.mocked(getAllCategories).mock.calls.length).toBe(expenseCalls)
   })
 
   it('BudgetTab renders query-error and Retry calls getAllBudgets again', async () => {
@@ -391,6 +426,26 @@ describe('Income page query error', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('query-error')).toBeNull()
     })
+  })
+
+  it('renders query-error and no form when the income categories fail, and Retry calls getAllIncomeCategories again', async () => {
+    vi.mocked(getAllIncomeCategories).mockRejectedValue(new Error('boom'))
+
+    renderPage(IncomeRoute)
+
+    await screen.findByTestId('query-error')
+    expect(screen.getByTestId('income-page')).toBeTruthy()
+    expect(screen.queryByTestId('add-income-form')).toBeNull()
+    expect(getAllIncomeCategories).toHaveBeenCalledTimes(1)
+
+    vi.mocked(getAllIncomeCategories).mockResolvedValue(INCOME_CATEGORIES)
+    fireEvent.click(screen.getByTestId('query-error-retry'))
+
+    await waitFor(() => {
+      expect(getAllIncomeCategories).toHaveBeenCalledTimes(2)
+    })
+    await screen.findByTestId('add-income-form')
+    expect(screen.queryByTestId('query-error')).toBeNull()
   })
 
   it('shows no error block when income loads', async () => {

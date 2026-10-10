@@ -98,7 +98,7 @@ describe('localDb decrypt failures (#1)', () => {
       mockStore.set('income', bytes)
 
       await expect(
-        addIncome({ source: 'Job', amount: 10, currency: 'UAH' }),
+        addIncome({ categoryId: 'ic1', amount: 10, currency: 'UAH' }),
       ).rejects.toBeInstanceOf(DecryptError)
 
       expect(mockStore.get('income')).toBe(bytes)

@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: fingerprints, ImportOptions and the duplicate counters are
-// fully specified in the Interface Contract (module: localImport).
+// fully specified in the Interface Contract (module: localImport). Income
+// import also reads getAllIncomeCategories and may call addIncomeCategory.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +20,7 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
   upsertBudget,
 } from '@/lib/localDb'
 
@@ -26,14 +28,18 @@ vi.mock('@/lib/localDb', () => ({
   addCategory: vi.fn(),
   addExpense: vi.fn(),
   addIncome: vi.fn(),
+  addIncomeCategory: vi.fn(),
   getAllCategories: vi.fn(),
   getAllExpenses: vi.fn(),
   getAllIncome: vi.fn(),
+  getAllIncomeCategories: vi.fn(),
   upsertBudget: vi.fn(),
 }))
 
 const FOOD = { id: 'c1', name: 'Food', icon: null }
 const TAXI = { id: 'c2', name: 'Taxi', icon: null }
+const JOB = { id: 'ic-job', name: 'Job', icon: null }
+const GIG = { id: 'ic-gig', name: 'Gig', icon: null }
 
 // Local midday, so the local calendar date is the same in every time zone.
 function localNoon(y: number, m: number, d: number): string {
@@ -73,6 +79,7 @@ beforeEach(() => {
   vi.mocked(getAllCategories).mockResolvedValue([FOOD, TAXI])
   vi.mocked(getAllExpenses).mockResolvedValue([])
   vi.mocked(getAllIncome).mockResolvedValue([])
+  vi.mocked(getAllIncomeCategories).mockResolvedValue([JOB, GIG])
 })
 
 describe('expenseFingerprint', () => {
@@ -396,7 +403,8 @@ describe('income: duplicates and Import them anyway', () => {
   const existingIncome = [
     {
       id: 'i1',
-      source: 'Job',
+      categoryId: JOB.id,
+      category: JOB,
       amount: 1000,
       currency: 'USD' as const,
       description: 'salary',
@@ -419,8 +427,42 @@ describe('income: duplicates and Import them anyway', () => {
     expect(result.duplicateRows).toEqual([2])
     expect(result.inserted).toBe(2)
     expect(result.skipped).toBe(0)
-    const sources = vi.mocked(addIncome).mock.calls.map((c) => c[0].source)
-    expect(sources).toEqual(['Job', 'Gig'])
+    const categoryIds = vi
+      .mocked(addIncome)
+      .mock.calls.map((c) => c[0].categoryId)
+    expect(categoryIds).toEqual([JOB.id, GIG.id])
+  })
+
+  it('compares the category name case-insensitively for duplicates', async () => {
+    vi.mocked(getAllIncome).mockResolvedValue(existingIncome)
+
+    const result = await importIncomeFromCSV(
+      [INCOME_HEADER, '2024-02-01,JOB,1000,USD,salary'].join('\n'),
+    )
+
+    expect(result.duplicates).toBe(1)
+    expect(addIncome).not.toHaveBeenCalled()
+  })
+
+  it('treats an existing unconverted record (legacy source) as a duplicate too', async () => {
+    vi.mocked(getAllIncome).mockResolvedValue([
+      {
+        id: 'i1',
+        categoryId: '',
+        source: 'Job',
+        amount: 1000,
+        currency: 'USD' as const,
+        description: 'salary',
+        createdAt: localNoon(2024, 2, 1),
+      },
+    ])
+
+    const result = await importIncomeFromCSV(
+      [INCOME_HEADER, '2024-02-01,Job,1000,USD,salary'].join('\n'),
+    )
+
+    expect(result.duplicates).toBe(1)
+    expect(result.inserted).toBe(0)
   })
 
   it('does not collapse identical rows inside one file', async () => {
@@ -497,7 +539,8 @@ describe('importLocalDataFile passes the options through', () => {
     vi.mocked(getAllIncome).mockResolvedValue([
       {
         id: 'i1',
-        source: 'Job',
+        categoryId: JOB.id,
+        category: JOB,
         amount: 5,
         currency: 'UAH',
         description: null,

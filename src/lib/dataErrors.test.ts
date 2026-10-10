@@ -65,16 +65,21 @@ describe('isDecryptError', () => {
 })
 
 describe('isDataStorageKey', () => {
-  it.each(['categories', 'income', 'budgets', 'expenses_2026_03', 'expenses_1999_12'])(
-    'accepts %s',
-    (key) => {
-      expect(isDataStorageKey(key)).toBe(true)
-    },
-  )
+  it.each([
+    'categories',
+    'incomeCategories',
+    'income',
+    'budgets',
+    'expenses_2026_03',
+    'expenses_1999_12',
+  ])('accepts %s', (key) => {
+    expect(isDataStorageKey(key)).toBe(true)
+  })
 
   it.each([
     'quarantine:expenses_2026_03:2026-03-01T00:00:00.000Z',
     'quarantine:categories:2026-03-01T00:00:00.000Z',
+    'quarantine:incomeCategories:2026-03-01T00:00:00.000Z',
     'expenses_',
     'expenses_2026_3',
     'expenses_26_03',
@@ -82,6 +87,8 @@ describe('isDataStorageKey', () => {
     'xexpenses_2026_03',
     'Categories',
     'categories2',
+    'incomecategories',
+    'incomeCategories2',
     'minima_key_verify_u1',
     '',
   ])('rejects %s', (key) => {
@@ -99,6 +106,13 @@ describe('storageKeyLabel', () => {
     expect(storageKeyLabel('categories')).toBe('Categories')
     expect(storageKeyLabel('income')).toBe('Income')
     expect(storageKeyLabel('budgets')).toBe('Budgets')
+  })
+
+  it('labels the income categories collection', () => {
+    expect(storageKeyLabel('incomeCategories')).toBe('Income categories')
+    expect(storageKeyLabel('incomeCategories')).not.toBe(
+      storageKeyLabel('categories'),
+    )
   })
 
   it('returns anything else unchanged', () => {

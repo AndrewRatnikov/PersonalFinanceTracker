@@ -119,7 +119,7 @@ describe('updatedAt on expenses', () => {
 describe('updatedAt on income', () => {
   it('addIncome sets updatedAt to now', async () => {
     const created = await addIncome({
-      source: 'Job',
+      categoryId: 'ic1',
       amount: 100,
       currency: 'USD',
       createdAt: '2026-02-01T00:00:00.000Z',
@@ -130,14 +130,14 @@ describe('updatedAt on income', () => {
   })
 
   it('gives later entries a later updatedAt', async () => {
-    await addIncome({ source: 'A', amount: 1, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-a', amount: 1, currency: 'USD' })
     vi.setSystemTime(new Date(T2))
-    await addIncome({ source: 'B', amount: 2, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-b', amount: 2, currency: 'USD' })
 
     const income = await getAllIncome()
 
-    expect(income.find((i) => i.source === 'A')?.updatedAt).toBe(T1)
-    expect(income.find((i) => i.source === 'B')?.updatedAt).toBe(T2)
+    expect(income.find((i) => i.categoryId === 'ic-a')?.updatedAt).toBe(T1)
+    expect(income.find((i) => i.categoryId === 'ic-b')?.updatedAt).toBe(T2)
   })
 })
 

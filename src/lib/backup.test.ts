@@ -12,6 +12,12 @@
 // recoveryKeyConfirmed cases. createVault now writes meta:vault and
 // meta:settings with one setMany, so tests that count setMany calls reset the
 // counter after setup.
+//
+// Income categories run: seeds create an income category with
+// addIncomeCategory (a vault after unlock has the incomeCategories key), income
+// records carry categoryId, snapshots include incomeCategories and the summary
+// objects carry the new incomeCategories count. The legacy-payload and
+// round-trip cases live in backup.incomeCategories.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,12 +50,15 @@ import {
   addCategory,
   addExpense,
   addIncome,
+  addIncomeCategory,
   deleteExpense,
   deleteIncome,
+  ensureIncomeCategories,
   getAllBudgets,
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
   getLocalDbKey,
   provisionDefaultCategories,
   updateCategory,
@@ -135,6 +144,7 @@ function wipe() {
 async function seed() {
   const food = await addCategory({ name: 'Food', icon: '🍔' })
   const taxi = await addCategory({ name: 'Taxi' })
+  const incomeCat = await addIncomeCategory({ name: 'Job', icon: '💼' })
   const lunch = await addExpense({
     amount: 10.5,
     currency: 'UAH',
@@ -156,7 +166,7 @@ async function seed() {
     createdAt: '2026-02-20T23:59:59.000Z',
   })
   const salary = await addIncome({
-    source: 'Job',
+    categoryId: incomeCat.id,
     amount: 1000,
     currency: 'USD',
     createdAt: '2026-02-01T09:15:00.000Z',
@@ -166,7 +176,7 @@ async function seed() {
     monthlyLimit: 500,
     currency: 'UAH',
   })
-  return { food, taxi, lunch, ride, dinner, salary, budget }
+  return { food, taxi, incomeCat, lunch, ride, dinner, salary, budget }
 }
 
 function omit(record: object, drop: Array<string>): Record<string, unknown> {
@@ -183,8 +193,11 @@ function sortById(rows: Array<Record<string, unknown>>) {
 async function snapshot() {
   return {
     expenses: sortById((await getAllExpenses()).map((e) => omit(e, ['category']))),
-    income: sortById((await getAllIncome()).map((i) => omit(i, []))),
+    income: sortById((await getAllIncome()).map((i) => omit(i, ['category']))),
     categories: sortById((await getAllCategories()).map((c) => omit(c, []))),
+    incomeCategories: sortById(
+      (await getAllIncomeCategories()).map((c) => omit(c, [])),
+    ),
     budgets: sortById(
       (await getAllBudgets()).map((b) =>
         omit(b, ['categoryName', 'categoryIcon']),
@@ -353,7 +366,7 @@ describe('getVaultHeader', () => {
 describe('openHeaderWithSecret', () => {
   it('opens a header with the password: a non-extractable key that decrypts the data', async () => {
     await setupDevice()
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
     const header = await getVaultHeader()
 
     const key = await openHeaderWithSecret(header, PW)
@@ -369,7 +382,7 @@ describe('openHeaderWithSecret', () => {
 
   it('opens a header with the recovery key in any case, with spaces instead of dashes', async () => {
     const recoveryKey = await setupDevice()
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
     const header = await getVaultHeader()
 
     for (const variant of [
@@ -523,8 +536,25 @@ describe('createBackup', () => {
     expect(lunch?.description).toBe('lunch\nwith colleagues')
     expect(payload.income).toHaveLength(1)
     expect(payload.income[0].createdAt).toBe('2026-02-01T09:15:00.000Z')
+    expect(payload.income[0].categoryId).toBe(s.incomeCat.id)
+    expect('category' in payload.income[0]).toBe(false)
+    expect('source' in payload.income[0]).toBe(false)
     expect(payload.budgets).toHaveLength(1)
     expect(payload.budgets[0].monthlyLimit).toBe(500)
+  })
+
+  it('the payload carries incomeCategories separate from the expense categories', async () => {
+    await setupDevice()
+    const s = await seed()
+
+    const payload = await readPayload(await createBackup())
+
+    expect(payload.incomeCategories?.map((c) => c.id)).toEqual([s.incomeCat.id])
+    expect(payload.incomeCategories?.[0].name).toBe('Job')
+    expect(payload.categories.map((c) => c.id)).not.toContain(s.incomeCat.id)
+    // The list is not mistaken for expense records.
+    expect(payload.expenses.map((e) => e.id)).not.toContain(s.incomeCat.id)
+    expect(payload.expenses).toHaveLength(3)
   })
 
   it('the payload carries the auto-lock and reminder settings', async () => {
@@ -549,6 +579,7 @@ describe('createBackup', () => {
     const payload = await readPayload(await createBackup())
 
     expect(payload.categories).toEqual([])
+    expect(payload.incomeCategories).toEqual([])
     expect(payload.expenses).toEqual([])
     expect(payload.income).toEqual([])
     expect(payload.budgets).toEqual([])
@@ -623,6 +654,7 @@ describe('createBackup', () => {
     expect(payload.expenses.map((e) => e.id)).toEqual([s.lunch.id])
     expect(payload.income).toHaveLength(1)
     expect(payload.categories).toHaveLength(2)
+    expect(payload.incomeCategories).toHaveLength(1)
     expect(payload.budgets).toHaveLength(1)
   })
 
@@ -635,6 +667,22 @@ describe('createBackup', () => {
     const backup = await createBackup({ allowPartial: true })
 
     expect(backup.skipped).toEqual(['expenses_2026_02', 'income'])
+  })
+
+  it('an unreadable incomeCategories key is skipped with allowPartial and fails without it', async () => {
+    await setupDevice()
+    await seed()
+    mockStore.set('incomeCategories', crypto.getRandomValues(new Uint8Array(64)))
+
+    const err = await createBackup().then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(err).toBeInstanceOf(DecryptError)
+    expect((err as DecryptError).storageKey).toBe('incomeCategories')
+
+    const backup = await createBackup({ allowPartial: true })
+    expect(backup.skipped).toEqual(['incomeCategories'])
   })
 })
 
@@ -796,6 +844,7 @@ describe('formatRestoreSummary', () => {
         expenses: 12,
         income: 3,
         categories: 5,
+        incomeCategories: 4,
         budgets: 2,
         added: 10,
         updated: 4,
@@ -815,6 +864,7 @@ describe('formatRestoreSummary', () => {
         expenses: 0,
         income: 1,
         categories: 0,
+        incomeCategories: 0,
         budgets: 9,
         added: 10,
         updated: 0,
@@ -849,6 +899,14 @@ describe('defaultRestoreMode', () => {
     expect(await defaultRestoreMode()).toBe('replace')
   })
 
+  it('is replace when only the default income categories exist', async () => {
+    await setupDevice()
+    await ensureIncomeCategories()
+    expect((await getAllIncomeCategories()).length).toBe(6)
+
+    expect(await defaultRestoreMode()).toBe('replace')
+  })
+
   it('is merge once there is an expense', async () => {
     await setupDevice()
     const cat = await addCategory({ name: 'Food' })
@@ -859,7 +917,7 @@ describe('defaultRestoreMode', () => {
 
   it('is merge once there is income', async () => {
     await setupDevice()
-    await addIncome({ source: 'Job', amount: 1, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 1, currency: 'UAH' })
 
     expect(await defaultRestoreMode()).toBe('merge')
   })
@@ -892,8 +950,9 @@ describe('restoreBackup on a fresh device', () => {
       expenses: 3,
       income: 1,
       categories: 2,
+      incomeCategories: 1,
       budgets: 1,
-      added: 7,
+      added: 8,
       updated: 0,
       conflicts: 0,
       skipped: [],
@@ -942,7 +1001,7 @@ describe('restoreBackup on a fresh device', () => {
 
     expect(summary.mode).toBe('replace')
     expect(summary.adoptedVault).toBe(true)
-    expect(summary.added).toBe(7)
+    expect(summary.added).toBe(8)
   })
 
   it('accepts the recovery key as the secret', async () => {
@@ -1000,6 +1059,7 @@ describe('restoreBackup on a fresh device', () => {
       expenses: 0,
       income: 0,
       categories: 0,
+      incomeCategories: 0,
       budgets: 0,
       adoptedVault: true,
     })
@@ -1021,6 +1081,7 @@ describe('restoreBackup on a fresh device', () => {
         META_VAULT_KEY,
         META_SETTINGS_KEY,
         'categories',
+        'incomeCategories',
         'income',
         'budgets',
         'expenses_2026_01',
@@ -1079,9 +1140,9 @@ describe('restoreBackup rejects without writing', () => {
 
   it('a wrong secret on an existing device, without counting as a failed unlock', async () => {
     await setupDevice()
-    await seed()
+    const s = await seed()
     const text = serializeBackup(await createBackup())
-    await addIncome({ source: 'Later', amount: 1, currency: 'UAH' })
+    await addIncome({ categoryId: s.incomeCat.id, amount: 1, currency: 'UAH' })
     const before = cloneStore()
     ctl.setManyCalls.length = 0
 
@@ -1214,10 +1275,11 @@ describe('restoreBackup rejects without writing', () => {
 // ── restore: orphaned device (data without a header) ──────────────────────────
 
 describe('restoreBackup on an orphaned device', () => {
-  // Data keys of the backup: categories, income, budgets, expenses_2026_01,
-  // expenses_2026_02. expenses_2025_12 is NOT in the backup.
+  // Data keys of the backup: categories, incomeCategories, income, budgets,
+  // expenses_2026_01, expenses_2026_02. expenses_2025_12 is NOT in the backup.
   const BACKUP_KEYS = [
     'categories',
+    'incomeCategories',
     'income',
     'budgets',
     'expenses_2026_01',
@@ -1271,8 +1333,9 @@ describe('restoreBackup on an orphaned device', () => {
       expenses: 3,
       income: 1,
       categories: 2,
+      incomeCategories: 1,
       budgets: 1,
-      added: 7,
+      added: 8,
       updated: 0,
       conflicts: 0,
       skipped: [],
@@ -1537,9 +1600,10 @@ describe('restoreBackup replace on an existing device', () => {
       expenses: 3,
       income: 1,
       categories: 2,
+      incomeCategories: 1,
       budgets: 1,
       added: 2,
-      updated: 5,
+      updated: 6,
       conflicts: 0,
       skipped: [],
       adoptedVault: false,
@@ -1570,15 +1634,16 @@ describe('restoreBackup replace on an existing device', () => {
 
   it('writes everything in one transaction', async () => {
     await setupDevice()
-    await seed()
+    const s = await seed()
     const text = serializeBackup(await createBackup())
-    await addIncome({ source: 'Later', amount: 1, currency: 'UAH' })
+    await addIncome({ categoryId: s.incomeCat.id, amount: 1, currency: 'UAH' })
     ctl.setManyCalls.length = 0
 
     await restoreBackup(text, PW, 'replace')
 
     expect(ctl.setManyCalls).toHaveLength(1)
     expect(ctl.setManyCalls[0]).toContain(META_SETTINGS_KEY)
+    expect(ctl.setManyCalls[0]).toContain('incomeCategories')
     expect(ctl.setManyCalls[0]).not.toContain(META_VAULT_KEY)
   })
 
@@ -1715,7 +1780,7 @@ describe('restoreBackup merge', () => {
     revertTo(older)
     setNow(T3)
     await updateExpense(s.dinner.id, s.dinner.createdAt, { amount: 77 })
-    await addIncome({ source: 'Side', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: s.incomeCat.id, amount: 5, currency: 'UAH' })
 
     const summary = await restoreBackup(text, PW, 'merge')
 
@@ -1724,6 +1789,7 @@ describe('restoreBackup merge', () => {
       expenses: 1,
       income: 0,
       categories: 0,
+      incomeCategories: 0,
       budgets: 0,
       added: 0,
       updated: 1,
@@ -1736,10 +1802,9 @@ describe('restoreBackup merge', () => {
     expect(expenses.find((e) => e.id === s.dinner.id)?.amount).toBe(77)
     expect(expenses.find((e) => e.id === s.lunch.id)?.amount).toBe(10.5)
     expect(expenses).toHaveLength(3)
-    expect((await getAllIncome()).map((i) => i.source).sort()).toEqual([
-      'Job',
-      'Side',
-    ])
+    expect((await getAllIncome()).map((i) => i.amount).sort((a, b) => a - b)).toEqual(
+      [5, 1000],
+    )
   })
 
   it('merging the same file twice adds and changes nothing the second time', async () => {
@@ -1762,7 +1827,13 @@ describe('restoreBackup merge', () => {
     const second = await restoreBackup(text, PW, 'merge')
 
     expect(second).toMatchObject({ added: 0, updated: 0, conflicts: 0 })
-    expect(second.expenses + second.income + second.categories + second.budgets).toBe(0)
+    expect(
+      second.expenses +
+        second.income +
+        second.categories +
+        second.incomeCategories +
+        second.budgets,
+    ).toBe(0)
     expect(ctl.setManyCalls).toHaveLength(0)
     expect(storedSettings()?.lastDataChangeAt).toBe(T3)
     expect(await snapshot()).toEqual(afterFirst)
@@ -1784,6 +1855,7 @@ describe('restoreBackup merge', () => {
       expenses: 1,
       income: 1,
       categories: 0,
+      incomeCategories: 0,
       budgets: 0,
       added: 2,
       updated: 0,
@@ -1791,6 +1863,23 @@ describe('restoreBackup merge', () => {
     })
     expect(await snapshot()).toEqual(before)
     expect(storedSettings()?.lastDataChangeAt).toBe(T2)
+  })
+
+  it('upserts an income category the backup has and the device lacks', async () => {
+    await setupDevice()
+    const s = await seed()
+    const text = serializeBackup(await createBackup())
+    // A device that only has its own, different income category.
+    wipe()
+    await setupDevice(PW2)
+    const own = await addIncomeCategory({ name: 'Own' })
+
+    const summary = await restoreBackup(text, PW, 'merge')
+
+    expect(summary.incomeCategories).toBe(1)
+    expect(summary.added).toBeGreaterThanOrEqual(1)
+    const ids = (await getAllIncomeCategories()).map((c) => c.id).sort()
+    expect(ids).toEqual([own.id, s.incomeCat.id].sort())
   })
 
   it('counts equal timestamps with different content as a conflict and keeps local', async () => {
@@ -1914,12 +2003,18 @@ describe('restoreBackup merge', () => {
 
   it('re-encrypts records with the local key when the backup is from another vault', async () => {
     await setupDevice(PW)
-    await seed()
+    const s = await seed()
     const before = await snapshot()
     const text = serializeBackup(await createBackup())
     wipe()
     await setupDevice(PW2)
-    await addIncome({ source: 'Local', amount: 3, currency: 'UAH' })
+    // Mirror a vault after unlock: income categories (the defaults) exist.
+    await ensureIncomeCategories()
+    const salary = (await getAllIncomeCategories()).find(
+      (c) => c.name === 'Salary',
+    )
+    if (!salary) throw new Error('expected the Salary default')
+    await addIncome({ categoryId: salary.id, amount: 3, currency: 'UAH' })
     const header = await getVaultHeader()
 
     const summary = await restoreBackup(text, PW, 'merge')
@@ -1930,13 +2025,19 @@ describe('restoreBackup merge', () => {
       expenses: 3,
       income: 1,
       categories: 2,
+      incomeCategories: 1,
       budgets: 1,
     })
     const after = await snapshot()
     expect(after.expenses).toEqual(before.expenses)
     expect(after.categories).toEqual(before.categories)
     expect(after.budgets).toEqual(before.budgets)
-    expect(after.income.map((i) => i.source).sort()).toEqual(['Job', 'Local'])
+    expect(after.income.map((i) => i.categoryId).sort()).toEqual(
+      [s.incomeCat.id, salary.id].sort(),
+    )
+    // The six local defaults stay, and the backup's own category is added.
+    expect(after.incomeCategories).toHaveLength(7)
+    expect(after.incomeCategories.map((c) => c.id)).toContain(s.incomeCat.id)
     expect(await getVaultHeader()).toEqual(header)
     lockVault()
     await expect(unlockWithPassword(PW)).rejects.toBeInstanceOf(VaultError)
@@ -2022,12 +2123,14 @@ describe('partial backup round trip', () => {
       expenses: 1,
       income: 1,
       categories: 2,
+      incomeCategories: 1,
       budgets: 1,
     })
     const after = await snapshot()
     expect(after.expenses.map((e) => e.id)).toEqual([s.lunch.id])
     expect(after.income).toEqual(before.income)
     expect(after.categories).toEqual(before.categories)
+    expect(after.incomeCategories).toEqual(before.incomeCategories)
     expect(after.budgets).toEqual(before.budgets)
   })
 

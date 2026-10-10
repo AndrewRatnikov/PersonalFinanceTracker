@@ -2,7 +2,8 @@
 // Interface Contract (Root route). This file replaces the offline-identity
 // tests: the root route no longer has any auth requirement, so those cases
 // (cached user, redirect to /login) are removed by design and replaced by the
-// no-auth / no-vault-redirect cases.
+// no-auth / no-vault-redirect cases. The localDb mock gains
+// prepareUnlockedVault, which __root.tsx imports for handleUnlocked.
 
 import { isRedirect } from '@tanstack/react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,6 +20,7 @@ vi.mock('@/lib/auth', () => ({ getServerUser }))
 vi.mock('@/lib/localDb', () => ({
   initLocalDb: vi.fn(),
   provisionDefaultCategories: vi.fn(),
+  prepareUnlockedVault: vi.fn(),
   unlockLocalDb: vi.fn(),
   clearLocalDb: vi.fn(),
   wipeLocalDbKey: vi.fn(),

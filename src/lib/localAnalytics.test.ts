@@ -25,6 +25,7 @@ afterAll(() => {
 })
 
 const FOOD = { id: 'c1', name: 'Food' }
+const SALARY = { id: 'ic1', name: 'Salary', icon: '💼', updatedAt: '2024-01-01' }
 const RANGE = { from: '2024-01-01', to: '2024-01-31' }
 
 function expense(
@@ -50,7 +51,8 @@ function income(
 ): IncomeEntry {
   return {
     id,
-    source: 'Job',
+    categoryId: 'ic1',
+    category: SALARY,
     amount,
     currency,
     createdAt: '2024-01-12T12:00:00.000Z',

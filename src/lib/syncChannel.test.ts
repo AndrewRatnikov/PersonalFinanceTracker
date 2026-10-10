@@ -51,6 +51,14 @@ describe('queryKeysForStorageKeys', () => {
     ])
   })
 
+  it('maps incomeCategories to incomeCategories, income and analytics', () => {
+    expect(queryKeysForStorageKeys(['incomeCategories'])).toEqual([
+      ['incomeCategories'],
+      ['income'],
+      ['analytics'],
+    ])
+  })
+
   it('maps income to income and analytics', () => {
     expect(queryKeysForStorageKeys(['income'])).toEqual([
       ['income'],
@@ -73,6 +81,11 @@ describe('queryKeysForStorageKeys', () => {
       ['income'],
       ['analytics'],
       ['budgets'],
+    ])
+    expect(queryKeysForStorageKeys(['incomeCategories', 'income'])).toEqual([
+      ['incomeCategories'],
+      ['income'],
+      ['analytics'],
     ])
   })
 
@@ -101,6 +114,25 @@ describe('listenForChanges', () => {
     })
     expect(client.invalidateQueries).toHaveBeenCalledWith({
       queryKey: ['analytics'],
+    })
+  })
+
+  it('invalidates incomeCategories, income and analytics for an incomeCategories message', () => {
+    const channel = fakeChannel()
+    const client = fakeQueryClient()
+    listenForChanges(client, channel)
+
+    channel.addEventListener.mock.calls[0][1](
+      message({ type: 'changed', keys: ['incomeCategories'] }),
+    )
+
+    const keys = client.invalidateQueries.mock.calls.map((c) => c[0]?.queryKey)
+    expect(keys).toEqual([['incomeCategories'], ['income'], ['analytics']])
+    expect(client.invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ['categories'],
+    })
+    expect(client.invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ['budgets'],
     })
   })
 

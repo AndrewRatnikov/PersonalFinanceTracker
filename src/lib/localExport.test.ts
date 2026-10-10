@@ -21,16 +21,19 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
 } from '@/lib/localDb'
 
 vi.mock('@/lib/localDb', () => ({
   getAllExpenses: vi.fn(),
   getAllCategories: vi.fn(),
   getAllIncome: vi.fn(),
+  getAllIncomeCategories: vi.fn(),
   getAllBudgets: vi.fn(),
   addExpense: vi.fn(),
   addIncome: vi.fn(),
   addCategory: vi.fn(),
+  addIncomeCategory: vi.fn(),
   upsertBudget: vi.fn(),
 }))
 vi.mock('@/lib/fileDownload', () => ({ saveFile: vi.fn() }))
@@ -43,6 +46,7 @@ afterAll(() => {
 })
 
 const FOOD = { id: 'c1', name: 'Food', icon: null }
+const JOB = { id: 'ic1', name: 'Job', icon: null }
 
 function readBlob(blob: Blob): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -72,7 +76,8 @@ function seed(
   vi.mocked(getAllIncome).mockResolvedValue(
     incomeDates.map((createdAt, i) => ({
       id: `i${i}`,
-      source: 'Job',
+      categoryId: 'ic1',
+      category: JOB,
       amount: 500,
       currency: 'UAH' as const,
       description: null,
@@ -80,6 +85,7 @@ function seed(
     })),
   )
   vi.mocked(getAllCategories).mockResolvedValue([FOOD])
+  vi.mocked(getAllIncomeCategories).mockResolvedValue([JOB])
   vi.mocked(getAllBudgets).mockResolvedValue([])
 }
 
@@ -88,6 +94,7 @@ function emptyTargetDevice() {
   vi.mocked(getAllExpenses).mockResolvedValue([])
   vi.mocked(getAllIncome).mockResolvedValue([])
   vi.mocked(getAllCategories).mockResolvedValue([FOOD])
+  vi.mocked(getAllIncomeCategories).mockResolvedValue([JOB])
 }
 
 beforeEach(() => {
@@ -140,6 +147,69 @@ describe('buildCsvFiles', () => {
       '"category","monthly_limit","currency"',
       '"Food","300","UAH"',
     ])
+  })
+
+  it('writes the income category name in the source column', async () => {
+    seed([], [])
+    vi.mocked(getAllIncome).mockResolvedValue([
+      {
+        id: 'i1',
+        categoryId: 'ic-sal',
+        category: { id: 'ic-sal', name: 'Salary', icon: '💼' },
+        amount: 1000,
+        currency: 'UAH',
+        description: null,
+        createdAt: '2024-03-11T10:00:00.000Z',
+      },
+      {
+        id: 'i2',
+        categoryId: 'ic-gift',
+        category: { id: 'ic-gift', name: 'Gifts', icon: '🎁' },
+        amount: 20,
+        currency: 'UAH',
+        description: null,
+        createdAt: '2024-03-12T10:00:00.000Z',
+      },
+    ])
+
+    const files = await buildCsvFiles()
+
+    const lines = files['income.csv'].split('\n')
+    expect(lines[0]).toBe('"date","source","amount","currency","description"')
+    expect(lines[1]).toBe('"2024-03-11","Salary","1000","UAH",""')
+    expect(lines[2]).toBe('"2024-03-12","Gifts","20","UAH",""')
+  })
+
+  it('falls back to the legacy source when the category is missing', async () => {
+    seed([], [])
+    vi.mocked(getAllIncome).mockResolvedValue([
+      {
+        id: 'i1',
+        categoryId: '',
+        source: 'Legacy gig',
+        amount: 5,
+        currency: 'UAH',
+        description: null,
+        createdAt: '2024-03-11T10:00:00.000Z',
+      },
+    ])
+
+    const files = await buildCsvFiles()
+
+    expect(files['income.csv'].split('\n')[1]).toBe(
+      '"2024-03-11","Legacy gig","5","UAH",""',
+    )
+  })
+
+  it('does not add income categories to categories.csv', async () => {
+    seed([], ['2024-03-11T10:00:00.000Z'])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([
+      { id: 'ic9', name: 'Salary', icon: '💼' },
+    ])
+
+    const files = await buildCsvFiles()
+
+    expect(files['categories.csv']).not.toContain('Salary')
   })
 
   it('writes only the header line for empty collections', async () => {
@@ -211,6 +281,7 @@ describe('exportAllLocalData writes local calendar dates (#3)', () => {
     expect(result.inserted).toBe(1)
     const imported = vi.mocked(addIncome).mock.calls[0][0]
     expect(dayjs(imported.createdAt).format('YYYY-MM-DD')).toBe('2024-01-15')
+    expect(imported.categoryId).toBe('ic1')
   })
 })
 
@@ -245,6 +316,7 @@ describe('multi-line description round trip (#18)', () => {
     )
     vi.mocked(getAllIncome).mockResolvedValue([])
     vi.mocked(getAllCategories).mockResolvedValue([FOOD])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([])
     vi.mocked(getAllBudgets).mockResolvedValue([])
     const { 'expenses.csv': csv } = await buildCsvFiles()
     emptyTargetDevice()
