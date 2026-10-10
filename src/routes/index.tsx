@@ -9,6 +9,7 @@ import type { CreateExpenseInput } from '@/lib/domain'
 import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 import RecentActivityList from '@/components/index/RecentActivityList'
+import { RecoveryKeyBanner } from '@/components/index/RecoveryKeyBanner'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import { InstallHintCard } from '@/components/InstallHintCard'
 import LandingPage from '@/components/LandingPage'
@@ -154,6 +155,7 @@ function Dashboard() {
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <InstallHintCard />
+        <RecoveryKeyBanner />
         <BackupReminderBanner />
         <DashboardSummarySection summary={summary} />
 

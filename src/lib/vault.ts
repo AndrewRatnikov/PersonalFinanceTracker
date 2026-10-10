@@ -11,6 +11,11 @@
 // same IndexedDB store as the data under `meta:vault`; the brute-force counter
 // lives under `meta:settings`. This module keeps no state of its own and does
 // nothing at import time.
+//
+// Every operation that produces a new recovery key (createVault, the v1
+// migration, regenerateRecoveryKey) writes `recoveryKeyConfirmed: false` into
+// `meta:settings` in the same transaction as the header; the UI sets it to true
+// once the user confirms the key was saved. The key itself is never stored.
 
 import { get, keys, set, setMany } from 'idb-keyval'
 
@@ -130,6 +135,17 @@ async function readSettingsRaw(store: UseStore): Promise<StoredSettings | null> 
   const raw = await get<unknown>(META_SETTINGS_KEY, store)
   if (!raw || typeof raw !== 'object') return null
   return raw as StoredSettings
+}
+
+// The `meta:settings` entry that marks a freshly produced recovery key as not
+// yet confirmed, keeping every other stored field. Only a boolean is written.
+async function unconfirmedKeySettings(
+  store: UseStore,
+): Promise<[string, StoredSettings]> {
+  return [
+    META_SETTINGS_KEY,
+    { ...(await readSettingsRaw(store)), recoveryKeyConfirmed: false },
+  ]
 }
 
 function attemptsOf(s: StoredSettings | null): number {
@@ -505,7 +521,7 @@ export async function createVault(
   password: string,
 ): Promise<{ recoveryKey: string }> {
   const store = requireStore()
-  return withWriteLock(META_VAULT_KEY, async () => {
+  return withWriteLock([META_VAULT_KEY, META_SETTINGS_KEY], async () => {
     const state = await getVaultState()
     if (state !== 'none') {
       throw new VaultError(
@@ -520,7 +536,11 @@ export async function createVault(
     try {
       const dek = await importDek(dekBytes)
       const header = await buildHeader(password, dekBytes, recoveryBytes, dek)
-      await writeHeader(store, header)
+      // One transaction: the header never exists without the unconfirmed flag.
+      await setMany(
+        [[META_VAULT_KEY, header], await unconfirmedKeySettings(store)],
+        store,
+      )
       unlockLocalDb(dek)
       return { recoveryKey: encodeRecoveryKey(recoveryBytes) }
     } finally {
@@ -649,7 +669,16 @@ export async function regenerateRecoveryKey(
     try {
       await openDek(header, dekBytes)
       const recovery = await wrapWithRecoveryKey(recoveryBytes, dekBytes)
-      await writeHeader(store, { ...header, recovery })
+      // Same nesting order (vault, then settings) as recordFailure in unwrapDek.
+      await withWriteLock(META_SETTINGS_KEY, async () =>
+        setMany(
+          [
+            [META_VAULT_KEY, { ...header, recovery }],
+            await unconfirmedKeySettings(store),
+          ],
+          store,
+        ),
+      )
       return encodeRecoveryKey(recoveryBytes)
     } finally {
       dekBytes.fill(0)
@@ -731,7 +760,7 @@ async function migrateV1(
     const dek = await importDek(dekBytes)
     const header = await buildHeader(password, dekBytes, recoveryBytes, dek)
 
-    await withWriteLock([...dataKeys, META_VAULT_KEY], async () => {
+    await withWriteLock([...dataKeys, META_VAULT_KEY, META_SETTINGS_KEY], async () => {
       if ((await get<unknown>(META_VAULT_KEY, store)) !== undefined) {
         throw new VaultError(
           'invalid-state',
@@ -753,7 +782,9 @@ async function migrateV1(
         entries.push([storageKey, await encryptValue(dek, migrated)])
       }
       entries.push([META_VAULT_KEY, header])
-      // One transaction: either everything (data + header) commits or nothing.
+      entries.push(await unconfirmedKeySettings(store))
+      // One transaction: either everything (data, header and the unconfirmed
+      // recovery-key flag) commits or nothing.
       await setMany(entries, store)
     })
 

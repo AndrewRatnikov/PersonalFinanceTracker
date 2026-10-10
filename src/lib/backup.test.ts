@@ -5,6 +5,13 @@
 //
 // Integration style: real crypto, real vault, real localDb, idb-keyval backed
 // by a Map. setMany applies all entries or none and can be made to reject.
+//
+// The validation-fixes run replaces the old "rejects an orphaned device" case
+// with positive orphaned-restore cases (header adopted, every blob moved to
+// quarantine byte-identical inside the one setMany) and adds
+// recoveryKeyConfirmed cases. createVault now writes meta:vault and
+// meta:settings with one setMany, so tests that count setMany calls reset the
+// counter after setup.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -1037,6 +1044,21 @@ describe('restoreBackup on a fresh device', () => {
     expect(await getVaultState()).toBe('none')
     expect(getLocalDbKey()).toBeNull()
   })
+
+  it('drops a stale recoveryKeyConfirmed: false so the adopted vault does not nag', async () => {
+    await setupDevice()
+    const text = serializeBackup(await createBackup())
+    wipe()
+    mockStore.set(META_SETTINGS_KEY, { recoveryKeyConfirmed: false })
+    expect(await getVaultState()).toBe('none')
+
+    await restoreBackup(text, PW, 'replace')
+
+    const settings = storedSettings()
+    expect(settings).toBeDefined()
+    expect('recoveryKeyConfirmed' in (settings ?? {})).toBe(false)
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+  })
 })
 
 // ── restore: secrets and validation ───────────────────────────────────────────
@@ -1061,6 +1083,7 @@ describe('restoreBackup rejects without writing', () => {
     const text = serializeBackup(await createBackup())
     await addIncome({ source: 'Later', amount: 1, currency: 'UAH' })
     const before = cloneStore()
+    ctl.setManyCalls.length = 0
 
     await expectBackupError(restoreBackup(text, WRONG, 'merge'), 'wrong-secret')
     await expectBackupError(restoreBackup(text, WRONG, 'replace'), 'wrong-secret')
@@ -1175,18 +1198,6 @@ describe('restoreBackup rejects without writing', () => {
     expectStoreEquals(before)
   })
 
-  it('an orphaned device (data without a header)', async () => {
-    await setupDevice()
-    const text = serializeBackup(await createBackup())
-    wipe()
-    mockStore.set('income', new Uint8Array([1, 2, 3]))
-    expect(await getVaultState()).toBe('orphaned')
-
-    await expectBackupError(restoreBackup(text, PW, 'replace'), 'invalid-state')
-
-    expect(Array.from(mockStore.keys())).toEqual(['income'])
-  })
-
   it('a v1 device', async () => {
     await setupDevice()
     const text = serializeBackup(await createBackup())
@@ -1197,6 +1208,259 @@ describe('restoreBackup rejects without writing', () => {
     await expectBackupError(restoreBackup(text, PW, 'replace'), 'invalid-state')
 
     expect(mockStore.size).toBe(0)
+  })
+})
+
+// ── restore: orphaned device (data without a header) ──────────────────────────
+
+describe('restoreBackup on an orphaned device', () => {
+  // Data keys of the backup: categories, income, budgets, expenses_2026_01,
+  // expenses_2026_02. expenses_2025_12 is NOT in the backup.
+  const BACKUP_KEYS = [
+    'categories',
+    'income',
+    'budgets',
+    'expenses_2026_01',
+    'expenses_2026_02',
+  ]
+  const ORPHAN_KEYS = [...BACKUP_KEYS, 'expenses_2025_12']
+
+  async function makeBackup() {
+    const recoveryKey = await setupDevice()
+    await seed()
+    const before = await snapshot()
+    const backup = await createBackup()
+    const text = serializeBackup(backup)
+    wipe()
+    return { recoveryKey, before, backup, text }
+  }
+
+  // Data blobs nobody can open (different random bytes per key), and stale
+  // settings from the lost vault.
+  function plantOrphan(): Map<string, Array<number>> {
+    const planted = new Map<string, Array<number>>()
+    for (const key of ORPHAN_KEYS) {
+      const bytes = crypto.getRandomValues(new Uint8Array(48))
+      mockStore.set(key, bytes)
+      planted.set(key, Array.from(bytes))
+    }
+    mockStore.set(META_SETTINGS_KEY, {
+      recoveryKeyConfirmed: false,
+      autoLockMinutes: 60,
+    })
+    return planted
+  }
+
+  it('is detected as orphaned and locked before the restore', async () => {
+    await makeBackup()
+    plantOrphan()
+
+    expect(await getVaultState()).toBe('orphaned')
+    expect(getLocalDbKey()).toBeNull()
+  })
+
+  it('adopts the backup vault, restores every record and unlocks', async () => {
+    const { before, backup, text } = await makeBackup()
+    plantOrphan()
+    setNow(T2)
+
+    const summary = await restoreBackup(text, PW, 'replace')
+
+    expect(summary).toEqual({
+      mode: 'replace',
+      expenses: 3,
+      income: 1,
+      categories: 2,
+      budgets: 1,
+      added: 7,
+      updated: 0,
+      conflicts: 0,
+      skipped: [],
+      adoptedVault: true,
+    })
+    expect(await getVaultState()).toBe('v2')
+    expect(getLocalDbKey()).not.toBeNull()
+    expect(mockStore.get(META_VAULT_KEY)).toEqual({
+      v: 2,
+      createdAt: backup.createdAt,
+      ...backup.vault,
+    })
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('forces replace even when merge is asked for', async () => {
+    const { before, text } = await makeBackup()
+    plantOrphan()
+
+    const summary = await restoreBackup(text, PW, 'merge')
+
+    expect(summary.mode).toBe('replace')
+    expect(summary.adoptedVault).toBe(true)
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('moves every pre-existing blob to quarantine, byte-identical, with one timestamp', async () => {
+    const { text } = await makeBackup()
+    const planted = plantOrphan()
+    setNow(T2)
+
+    await restoreBackup(text, PW, 'replace')
+
+    for (const key of ORPHAN_KEYS) {
+      const quarantined = mockStore.get(`quarantine:${key}:${T2}`)
+      expect(quarantined).toBeInstanceOf(Uint8Array)
+      expect(Array.from(quarantined as Uint8Array)).toEqual(planted.get(key))
+    }
+    const quarantineKeys = Array.from(mockStore.keys()).filter((k) =>
+      k.startsWith('quarantine:'),
+    )
+    expect(quarantineKeys).toHaveLength(ORPHAN_KEYS.length)
+    // Different keys carry different bytes: nothing was swapped around.
+    expect(planted.get('income')).not.toEqual(planted.get('budgets'))
+  })
+
+  it('leaves no orphaned blob readable under its original key', async () => {
+    const { text } = await makeBackup()
+    const planted = plantOrphan()
+
+    await restoreBackup(text, PW, 'replace')
+
+    for (const key of ORPHAN_KEYS) {
+      expect(Array.from(mockStore.get(key) as Uint8Array)).not.toEqual(
+        planted.get(key),
+      )
+    }
+  })
+
+  it('overwrites an orphaned key the backup does not cover with an encrypted empty list', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+
+    await restoreBackup(text, PW, 'replace')
+
+    expect(mockStore.get('expenses_2025_12')).toBeInstanceOf(Uint8Array)
+    expect(await readRaw('expenses_2025_12')).toEqual([])
+  })
+
+  it('writes the header, settings, records and quarantine copies in one setMany', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+    ctl.setManyCalls.length = 0
+    setNow(T2)
+
+    await restoreBackup(text, PW, 'replace')
+
+    expect(ctl.setManyCalls).toHaveLength(1)
+    expect(ctl.setManyCalls[0]).toEqual(
+      expect.arrayContaining([
+        META_VAULT_KEY,
+        META_SETTINGS_KEY,
+        ...BACKUP_KEYS,
+        ...ORPHAN_KEYS.map((key) => `quarantine:${key}:${T2}`),
+      ]),
+    )
+  })
+
+  it('removes the stale recoveryKeyConfirmed flag and marks a data change', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+    setNow(T2)
+
+    await restoreBackup(text, PW, 'replace')
+
+    const settings = storedSettings()
+    expect(settings).toBeDefined()
+    expect('recoveryKeyConfirmed' in (settings ?? {})).toBe(false)
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+    expect(settings?.lastDataChangeAt).toBe(T2)
+  })
+
+  it('the adopted vault unlocks with the backup password and with its recovery key', async () => {
+    const { recoveryKey, before, text } = await makeBackup()
+    plantOrphan()
+
+    await restoreBackup(text, PW, 'replace')
+
+    lockVault()
+    await unlockWithPassword(PW)
+    expect(await snapshot()).toEqual(before)
+    lockVault()
+    await unlockWithRecoveryKey(recoveryKey)
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('accepts the recovery key as the secret', async () => {
+    const { recoveryKey, before, text } = await makeBackup()
+    plantOrphan()
+
+    await restoreBackup(text, recoveryKey.toLowerCase(), 'replace')
+
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('quarantines a stored value that is not binary, unchanged', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+    mockStore.set('income', 'not a blob')
+    setNow(T2)
+
+    await restoreBackup(text, PW, 'replace')
+
+    expect(mockStore.get(`quarantine:income:${T2}`)).toBe('not a blob')
+    expect(mockStore.get('income')).toBeInstanceOf(Uint8Array)
+  })
+
+  it('a failed transaction leaves the store byte-identical, still orphaned and locked', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+    const before = cloneStore()
+    ctl.failSetMany = true
+
+    await expect(restoreBackup(text, PW, 'replace')).rejects.toThrow(
+      'transaction aborted',
+    )
+
+    expectStoreEquals(before)
+    expect(await getVaultState()).toBe('orphaned')
+    expect(getLocalDbKey()).toBeNull()
+  })
+
+  it('a wrong secret writes nothing and leaves the device orphaned', async () => {
+    const { text } = await makeBackup()
+    plantOrphan()
+    const before = cloneStore()
+    ctl.setManyCalls.length = 0
+
+    await expectBackupError(restoreBackup(text, WRONG, 'replace'), 'wrong-secret')
+
+    expectStoreEquals(before)
+    expect(ctl.setManyCalls).toHaveLength(0)
+    expect(await getVaultState()).toBe('orphaned')
+    expect(getLocalDbKey()).toBeNull()
+  })
+
+  it('a text that is not a backup writes nothing', async () => {
+    await makeBackup()
+    plantOrphan()
+    const before = cloneStore()
+
+    await expectBackupError(restoreBackup('not json', PW, 'replace'), 'invalid-file')
+
+    expectStoreEquals(before)
+  })
+
+  it('a smaller orphan (one stray blob) is quarantined unchanged too', async () => {
+    const { before, text } = await makeBackup()
+    mockStore.set('income', new Uint8Array([1, 2, 3]))
+    expect(await getVaultState()).toBe('orphaned')
+    setNow(T3)
+
+    await restoreBackup(text, PW, 'replace')
+
+    expect(
+      Array.from(mockStore.get(`quarantine:income:${T3}`) as Uint8Array),
+    ).toEqual([1, 2, 3])
+    expect(await snapshot()).toEqual(before)
   })
 })
 
@@ -1363,6 +1627,39 @@ describe('restoreBackup replace on an existing device', () => {
     )
   })
 
+  it('the Data problem path: the blob that raised DecryptError is quarantined unchanged in the same setMany as the restored records', async () => {
+    await setupDevice()
+    await seed()
+    const before = await snapshot()
+    const text = serializeBackup(await createBackup())
+    const garbage = crypto.getRandomValues(new Uint8Array(64))
+    mockStore.set('expenses_2026_02', garbage)
+    // The corrupted blob is what the app trips over.
+    await expect(getAllExpenses()).rejects.toBeInstanceOf(DecryptError)
+    ctl.setManyCalls.length = 0
+    setNow(T2)
+
+    const summary = await restoreBackup(text, PW, 'replace')
+
+    expect(summary.mode).toBe('replace')
+    expect(summary.adoptedVault).toBe(false)
+    expect(ctl.setManyCalls).toHaveLength(1)
+    expect(ctl.setManyCalls[0]).toEqual(
+      expect.arrayContaining([
+        'expenses_2026_02',
+        `quarantine:expenses_2026_02:${T2}`,
+        META_SETTINGS_KEY,
+      ]),
+    )
+    expect(ctl.setManyCalls[0]).not.toContain(META_VAULT_KEY)
+    expect(
+      Array.from(
+        mockStore.get(`quarantine:expenses_2026_02:${T2}`) as Uint8Array,
+      ),
+    ).toEqual(Array.from(garbage))
+    expect(await snapshot()).toEqual(before)
+  })
+
   it('restores the auto-lock and reminder settings, but never lastBackupAt', async () => {
     await setupDevice()
     await seed()
@@ -1388,6 +1685,20 @@ describe('restoreBackup replace on an existing device', () => {
     expect(backupSettings.lastBackupAt).toBe('2026-02-15T00:00:00.000Z')
     expect(backupSettings.lastDataChangeAt).toBe(T3)
     expect(storedSettings()?.failedUnlockAttempts).toBe(2)
+  })
+
+  it('leaves recoveryKeyConfirmed as it was (false stays false, true stays true)', async () => {
+    await setupDevice()
+    await seed()
+    const text = serializeBackup(await createBackup())
+    expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
+
+    await restoreBackup(text, PW, 'replace')
+    expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
+
+    await updateAppSettings({ recoveryKeyConfirmed: true })
+    await restoreBackup(text, PW, 'replace')
+    expect(storedSettings()?.recoveryKeyConfirmed).toBe(true)
   })
 })
 
@@ -1539,6 +1850,18 @@ describe('restoreBackup merge', () => {
     expect(summary.added).toBe(1)
     expect((await getAppSettings()).autoLockMinutes).toBe(60)
     expect((await getBackupSettings()).backupReminderDays).toBe(7)
+  })
+
+  it('leaves recoveryKeyConfirmed as it was', async () => {
+    await setupDevice()
+    const s = await seed()
+    const text = serializeBackup(await createBackup())
+    await deleteExpense(s.ride.id, s.ride.createdAt)
+    expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
+
+    await restoreBackup(text, PW, 'merge')
+
+    expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
   })
 
   it('writes the data and the settings in one transaction', async () => {

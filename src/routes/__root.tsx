@@ -17,7 +17,6 @@ import {
   DEFAULT_AUTO_LOCK_MINUTES,
   getAppSettings,
 } from '../lib/appSettings'
-import { startAutoLock } from '../lib/autoLock'
 import { provisionDefaultCategories as provisionLocalCategories } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
@@ -28,9 +27,9 @@ import {
   computeGate,
   connectOtherTabs,
   isDataRoute,
-  lockApp,
   phaseForVaultState,
   setVaultPhase,
+  startTabAutoLock,
   useVaultSession,
 } from '../lib/vaultSession'
 import Header from '../components/Header'
@@ -96,7 +95,8 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 })
 
-// Locks the app after the configured inactivity time while it is unlocked.
+// Locks this tab after the configured inactivity time while it is unlocked.
+// Auto-lock is per tab: it never locks other tabs (spec §2.4).
 function AutoLock({ unlocked }: { unlocked: boolean }) {
   const { data } = useQuery({
     queryKey: APP_SETTINGS_QUERY_KEY,
@@ -106,8 +106,7 @@ function AutoLock({ unlocked }: { unlocked: boolean }) {
   const minutes = data?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES
 
   useEffect(
-    () =>
-      unlocked ? startAutoLock(minutes, () => lockApp(queryClient)) : undefined,
+    () => (unlocked ? startTabAutoLock(minutes, queryClient) : undefined),
     [unlocked, minutes],
   )
 

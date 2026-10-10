@@ -26,8 +26,9 @@ import {
   unlockWithRecoveryKey,
 } from '@/lib/vault'
 
-const { mockStore } = vi.hoisted(() => ({
+const { mockStore, setManyCalls } = vi.hoisted(() => ({
   mockStore: new Map<string, unknown>(),
+  setManyCalls: [] as Array<Array<string>>,
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -38,6 +39,7 @@ vi.mock('idb-keyval', () => ({
     return Promise.resolve()
   },
   setMany: (entries: Array<[string, unknown]>) => {
+    setManyCalls.push(entries.map(([k]) => k))
     for (const [k, v] of entries) mockStore.set(k, v)
     return Promise.resolve()
   },
@@ -67,6 +69,10 @@ function settings(): MetaSettings | undefined {
   return mockStore.get(META_SETTINGS_KEY) as MetaSettings | undefined
 }
 
+function rawSettings(): Record<string, unknown> | undefined {
+  return mockStore.get(META_SETTINGS_KEY) as Record<string, unknown> | undefined
+}
+
 function randomRecoveryKey(): string {
   return encodeRecoveryKey(crypto.getRandomValues(new Uint8Array(20)))
 }
@@ -75,8 +81,19 @@ function incomeBlob(): Array<number> {
   return Array.from(mockStore.get('income') as Uint8Array)
 }
 
+// Every stored value that is not a binary data blob, as one string.
+function plainStoreText(): string {
+  const parts: Array<string> = []
+  for (const [key, value] of mockStore) {
+    if (value instanceof Uint8Array) continue
+    parts.push(key, JSON.stringify(value))
+  }
+  return parts.join('\n')
+}
+
 beforeEach(() => {
   mockStore.clear()
+  setManyCalls.length = 0
   localStorage.clear()
   lockVault()
 })
@@ -236,6 +253,138 @@ describe('createVault', () => {
   })
 })
 
+describe('recoveryKeyConfirmed flag', () => {
+  it('createVault stores recoveryKeyConfirmed: false in meta:settings', async () => {
+    await createVault(PW)
+
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(false)
+  })
+
+  it('createVault writes the header and the flag in one setMany', async () => {
+    await createVault(PW)
+
+    const together = setManyCalls.filter(
+      (keys) =>
+        keys.includes(META_VAULT_KEY) && keys.includes(META_SETTINGS_KEY),
+    )
+    expect(together).toHaveLength(1)
+    // The header is never written without the flag.
+    expect(
+      setManyCalls.filter(
+        (keys) =>
+          keys.includes(META_VAULT_KEY) && !keys.includes(META_SETTINGS_KEY),
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('createVault keeps the existing settings fields', async () => {
+    mockStore.set(META_SETTINGS_KEY, {
+      autoLockMinutes: 5,
+      installHintDismissed: true,
+    })
+
+    await createVault(PW)
+
+    expect(rawSettings()).toEqual({
+      autoLockMinutes: 5,
+      installHintDismissed: true,
+      recoveryKeyConfirmed: false,
+    })
+  })
+
+  it('unlocking later keeps the flag as it was (false stays false, true stays true)', async () => {
+    await createVault(PW)
+    lockVault()
+    await unlockWithPassword(PW)
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(false)
+
+    mockStore.set(META_SETTINGS_KEY, {
+      ...rawSettings(),
+      recoveryKeyConfirmed: true,
+    })
+    lockVault()
+    await unlockWithPassword(PW)
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(true)
+  })
+
+  it('regenerateRecoveryKey sets the flag back to false, in the same setMany as the new header', async () => {
+    await createVault(PW)
+    mockStore.set(META_SETTINGS_KEY, {
+      ...rawSettings(),
+      autoLockMinutes: 5,
+      recoveryKeyConfirmed: true,
+    })
+    setManyCalls.length = 0
+
+    await regenerateRecoveryKey(PW)
+
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(false)
+    expect(rawSettings()?.autoLockMinutes).toBe(5)
+    expect(
+      setManyCalls.filter(
+        (keys) =>
+          keys.includes(META_VAULT_KEY) && keys.includes(META_SETTINGS_KEY),
+      ),
+    ).toHaveLength(1)
+    expect(
+      setManyCalls.filter(
+        (keys) =>
+          keys.includes(META_VAULT_KEY) && !keys.includes(META_SETTINGS_KEY),
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('a failed regenerateRecoveryKey (wrong password) leaves the flag alone', async () => {
+    await createVault(PW)
+    mockStore.set(META_SETTINGS_KEY, {
+      ...rawSettings(),
+      recoveryKeyConfirmed: true,
+    })
+
+    await expect(regenerateRecoveryKey(WRONG)).rejects.toMatchObject({
+      code: 'incorrect-password',
+    })
+
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(true)
+  })
+
+  it('changePassword does not touch the flag', async () => {
+    await createVault(PW)
+    mockStore.set(META_SETTINGS_KEY, {
+      ...rawSettings(),
+      recoveryKeyConfirmed: true,
+    })
+
+    await changePassword(PW, 'second password!')
+
+    expect(rawSettings()?.recoveryKeyConfirmed).toBe(true)
+  })
+
+  it('no stored non-binary value contains the recovery key, with or without dashes, or any of its groups', async () => {
+    const { recoveryKey } = await createVault(PW)
+
+    const text = plainStoreText()
+    expect(text).not.toContain(recoveryKey)
+    expect(text).not.toContain(recoveryKey.replace(/-/g, ''))
+    for (const group of recoveryKey.split('-').slice(0, 6)) {
+      expect(text).not.toContain(group)
+    }
+  })
+
+  it('regenerateRecoveryKey does not store the new key either', async () => {
+    await createVault(PW)
+
+    const { recoveryKey } = await regenerateRecoveryKey(PW)
+
+    const text = plainStoreText()
+    expect(text).not.toContain(recoveryKey)
+    expect(text).not.toContain(recoveryKey.replace(/-/g, ''))
+    for (const group of recoveryKey.split('-').slice(0, 6)) {
+      expect(text).not.toContain(group)
+    }
+  })
+})
+
 describe('create, reload, unlock', () => {
   it('unlocks with the same password after a simulated reload', async () => {
     await createVault(PW)
@@ -306,6 +455,7 @@ describe('brute-force protection', () => {
   it('does not delay the first 4 failures and counts them in meta:settings', async () => {
     await fail(4)
     expect(settings()).toEqual({
+      recoveryKeyConfirmed: false,
       failedUnlockAttempts: 4,
       unlockBlockedUntil: null,
     })
@@ -363,6 +513,7 @@ describe('brute-force protection', () => {
     await expect(unlockWithPassword(PW)).resolves.toEqual({ recoveryKey: null })
 
     expect(settings()).toEqual({
+      recoveryKeyConfirmed: false,
       failedUnlockAttempts: 0,
       unlockBlockedUntil: null,
     })
@@ -372,6 +523,7 @@ describe('brute-force protection', () => {
     await fail(3)
     await unlockWithPassword(PW)
     expect(settings()).toEqual({
+      recoveryKeyConfirmed: false,
       failedUnlockAttempts: 0,
       unlockBlockedUntil: null,
     })
@@ -635,7 +787,7 @@ describe('regenerateRecoveryKey', () => {
 })
 
 describe('Vault damaged', () => {
-  async function corruptVerifier() {
+  function corruptVerifier() {
     const h = header()
     const n = base64ToBytes(h.verifier.ct).length
     mockStore.set(META_VAULT_KEY, {
@@ -650,7 +802,7 @@ describe('Vault damaged', () => {
   it("raises a distinct 'damaged' error when the DEK unwraps but the verifier fails", async () => {
     await createVault(PW)
     lockVault()
-    await corruptVerifier()
+    corruptVerifier()
 
     const err = await unlockWithPassword(PW).catch((e: unknown) => e)
 
@@ -665,7 +817,7 @@ describe('Vault damaged', () => {
   it('does not count a damaged vault as a failed attempt', async () => {
     await createVault(PW)
     lockVault()
-    await corruptVerifier()
+    corruptVerifier()
 
     await expect(unlockWithPassword(PW)).rejects.toMatchObject({
       code: 'damaged',
@@ -677,7 +829,7 @@ describe('Vault damaged', () => {
   it('is distinct from a wrong password on the same corrupted vault', async () => {
     await createVault(PW)
     lockVault()
-    await corruptVerifier()
+    corruptVerifier()
 
     await expect(unlockWithPassword(WRONG)).rejects.toMatchObject({
       code: 'incorrect-password',

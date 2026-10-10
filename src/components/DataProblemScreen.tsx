@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Loader2, TriangleAlert } from 'lucide-react'
 
+import type { RestoreSummary } from '@/lib/backup'
 import { storageKeyLabel } from '@/lib/dataErrors'
+import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -19,6 +21,9 @@ interface DataProblemScreenProps {
   // Makes a partial backup of the readable data. Resolves to the skipped
   // storage keys, or null when the user cancelled the share sheet.
   onBackupReadable?: () => Promise<Array<string> | null>
+  // Shows "Restore from backup" (replace only: the unreadable data goes to
+  // quarantine in the same transaction). Called after a successful restore.
+  onRestored?: (summary: RestoreSummary) => void | Promise<void>
 }
 
 function errorText(err: unknown): string {
@@ -30,7 +35,9 @@ export function DataProblemScreen({
   onRetry,
   onQuarantine,
   onBackupReadable,
+  onRestored,
 }: DataProblemScreenProps) {
+  const [restoreOpen, setRestoreOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +73,16 @@ export function DataProblemScreen({
     }
   }
 
+  const handleRestored = async (summary: RestoreSummary) => {
+    if (!onRestored) return
+    setError(null)
+    try {
+      await onRestored(summary)
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
   return (
     <div
       data-testid="data-problem-screen"
@@ -93,6 +110,16 @@ export function DataProblemScreen({
             Retry if this might be temporary. Quarantine moves the unreadable
             data aside, unchanged, so you can keep using the app.
           </p>
+          {onRestored && (
+            <p
+              data-testid="data-problem-restore-hint"
+              className="text-sm text-muted-foreground"
+            >
+              Restore from backup replaces the data on this device with the
+              backup. The unreadable data is kept aside in quarantine,
+              unchanged.
+            </p>
+          )}
           {backupSkipped !== null && (
             <p
               data-testid="data-problem-backup-done"
@@ -134,6 +161,17 @@ export function DataProblemScreen({
               Back up readable data
             </Button>
           )}
+          {onRestored && (
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="data-problem-restore"
+              onClick={() => setRestoreOpen(true)}
+              disabled={pending}
+            >
+              Restore from backup
+            </Button>
+          )}
           <Button
             type="button"
             data-testid="data-problem-quarantine"
@@ -147,6 +185,14 @@ export function DataProblemScreen({
           </Button>
         </CardFooter>
       </Card>
+      {onRestored && (
+        <RestoreBackupDialog
+          open={restoreOpen}
+          onOpenChange={setRestoreOpen}
+          forceReplace
+          onRestored={(summary) => void handleRestored(summary)}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,11 @@
 // Plaintext app settings in `meta:settings` (spec §4.3), next to the
 // brute-force counter that vault.ts keeps in the same object. Writes merge into
 // the stored object so the counter fields are never lost.
+//
+// `recoveryKeyConfirmed` is false after an operation that produced a recovery
+// key the user hasn't confirmed saving yet (vault.ts writes it), and true once
+// RecoveryKeySaveStep is confirmed. A missing field means confirmed, so vaults
+// created before the field existed don't nag. Never store the key itself.
 
 import { get, set } from 'idb-keyval'
 
@@ -25,6 +30,7 @@ export interface AppSettings {
   autoLockMinutes: number
   installHintDismissed: boolean
   persistRequestedAt: string | null
+  recoveryKeyConfirmed: boolean
 }
 
 function defaults(): AppSettings {
@@ -32,6 +38,7 @@ function defaults(): AppSettings {
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
     installHintDismissed: false,
     persistRequestedAt: null,
+    recoveryKeyConfirmed: true,
   }
 }
 
@@ -62,6 +69,9 @@ export async function getAppSettings(): Promise<AppSettings> {
     }
     if (typeof raw.persistRequestedAt === 'string') {
       result.persistRequestedAt = raw.persistRequestedAt
+    }
+    if (typeof raw.recoveryKeyConfirmed === 'boolean') {
+      result.recoveryKeyConfirmed = raw.recoveryKeyConfirmed
     }
     return result
   } catch {

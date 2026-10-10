@@ -247,14 +247,14 @@ describe('v1 -> v2 migration', () => {
     expect(income[0].updatedAt).toBe(INCOME[0].createdAt)
   })
 
-  it('writes all re-encrypted values plus meta:vault in a single setMany call', async () => {
+  it('writes all re-encrypted values plus meta:vault and meta:settings in a single setMany call', async () => {
     await seedV1()
     await unlockWithPassword(PW)
 
     expect(h.setMany).toHaveBeenCalledTimes(1)
     const entries = h.setMany.mock.calls[0][0] as Array<[string, unknown]>
     expect(entries.map(([k]) => k).sort()).toEqual(
-      [...Object.keys(V1_PLAINTEXT), META_VAULT_KEY].sort(),
+      [...Object.keys(V1_PLAINTEXT), META_VAULT_KEY, META_SETTINGS_KEY].sort(),
     )
   })
 
@@ -320,6 +320,63 @@ describe('v1 -> v2 migration', () => {
   })
 })
 
+describe('migration recoveryKeyConfirmed flag', () => {
+  it('sets recoveryKeyConfirmed: false inside the single migration setMany', async () => {
+    await seedV1()
+
+    await unlockWithPassword(PW)
+
+    const entries = h.setMany.mock.calls[0][0] as Array<[string, unknown]>
+    const settings = entries.find(([k]) => k === META_SETTINGS_KEY)?.[1] as
+      | Record<string, unknown>
+      | undefined
+    expect(settings?.recoveryKeyConfirmed).toBe(false)
+  })
+
+  it('keeps the flag in the stored settings after the success counter reset', async () => {
+    await seedV1()
+
+    await unlockWithPassword(PW)
+
+    const stored = h.mockStore.get(META_SETTINGS_KEY) as Record<string, unknown>
+    expect(stored.recoveryKeyConfirmed).toBe(false)
+    expect(stored.failedUnlockAttempts).toBe(0)
+  })
+
+  it('keeps settings fields that existed before the migration', async () => {
+    await seedV1()
+    h.mockStore.set(META_SETTINGS_KEY, {
+      autoLockMinutes: 5,
+      installHintDismissed: true,
+    })
+
+    await unlockWithPassword(PW)
+
+    const entries = h.setMany.mock.calls[0][0] as Array<[string, unknown]>
+    const settings = entries.find(([k]) => k === META_SETTINGS_KEY)?.[1]
+    expect(settings).toEqual({
+      autoLockMinutes: 5,
+      installHintDismissed: true,
+      recoveryKeyConfirmed: false,
+    })
+    expect(
+      (h.mockStore.get(META_SETTINGS_KEY) as { autoLockMinutes: number })
+        .autoLockMinutes,
+    ).toBe(5)
+  })
+
+  it('does not set the flag when the migration fails or the password is wrong', async () => {
+    await seedV1()
+
+    await expect(unlockWithPassword('nope nope nope')).rejects.toMatchObject({
+      code: 'incorrect-password',
+    })
+
+    const stored = h.mockStore.get(META_SETTINGS_KEY) as Record<string, unknown>
+    expect('recoveryKeyConfirmed' in stored).toBe(false)
+  })
+})
+
 describe('migration failure before commit', () => {
   it('leaves all v1 data, no meta:vault and all v1 keys intact, and can be retried', async () => {
     await seedV1()
@@ -360,6 +417,18 @@ describe('migration failure before commit', () => {
       | { failedUnlockAttempts: number }
       | undefined
     expect(s?.failedUnlockAttempts ?? 0).toBe(0)
+  })
+
+  it('does not leave recoveryKeyConfirmed behind when the commit fails', async () => {
+    await seedV1()
+    h.setMany.mockImplementation(() => Promise.reject(new Error('quota')))
+
+    await expect(unlockWithPassword(PW)).rejects.toThrow('quota')
+
+    const s = h.mockStore.get(META_SETTINGS_KEY) as
+      | Record<string, unknown>
+      | undefined
+    expect(s === undefined || !('recoveryKeyConfirmed' in s)).toBe(true)
   })
 })
 

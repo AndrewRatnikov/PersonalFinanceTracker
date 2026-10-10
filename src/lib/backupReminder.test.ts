@@ -32,17 +32,17 @@ const {
   idbGet,
   idbSet,
 } = vi.hoisted(() => {
-  const mockStore = new Map<string, unknown>()
+  const store = new Map<string, unknown>()
   return {
-    mockStore,
+    mockStore: store,
     getLocalStore: vi.fn(),
     getAllExpenses: vi.fn(),
     getAllIncome: vi.fn(),
     getAllCategories: vi.fn(),
     getAllBudgets: vi.fn(),
-    idbGet: vi.fn((key: string) => Promise.resolve(mockStore.get(key))),
+    idbGet: vi.fn((key: string) => Promise.resolve(store.get(key))),
     idbSet: vi.fn((key: string, value: unknown) => {
-      mockStore.set(key, value)
+      store.set(key, value)
       return Promise.resolve()
     }),
   }

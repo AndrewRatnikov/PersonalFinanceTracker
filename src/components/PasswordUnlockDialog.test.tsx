@@ -3,11 +3,17 @@
 // v1 version: the orphaned-state cases carry over with getVaultState mocked to
 // 'orphaned'; the inline create/unlock form tests moved to the screen tests.
 // Phase 3 adds the "I've lost both" path (RemoveDataDialog with typed DELETE)
-// and the onCancelCreate prop.
+// and the onCancelCreate prop. The validation-fixes run adds the recovery-state
+// "Restore from backup" button (RestoreBackupDialog is faked) and the
+// recoveryKeyConfirmed write after the migrated-key and create confirmations.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { RestoreSummary } from '@/lib/backup'
+import { updateAppSettings } from '@/lib/appSettings'
+import { formatRestoreSummary } from '@/lib/backup'
 import { clearLocalDb } from '@/lib/localDb'
 import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 import {
@@ -22,7 +28,7 @@ import {
 import { PasswordUnlockDialog } from '@/components/PasswordUnlockDialog'
 
 const { MockVaultError } = vi.hoisted(() => {
-  class MockVaultError extends Error {
+  class FakeVaultError extends Error {
     code: string
     retryAfterMs: number
     constructor(code: string, message: string, retryAfterMs = 0) {
@@ -32,7 +38,7 @@ const { MockVaultError } = vi.hoisted(() => {
       this.retryAfterMs = retryAfterMs
     }
   }
-  return { MockVaultError }
+  return { MockVaultError: FakeVaultError }
 })
 
 vi.mock('@/lib/localDb', () => ({
@@ -57,6 +63,47 @@ vi.mock('@/lib/localWipe', () => ({
 vi.mock('@/lib/localExport', () => ({ exportAllLocalData: vi.fn() }))
 vi.mock('@/lib/storagePersistence', () => ({
   requestPersistentStorage: vi.fn(),
+}))
+vi.mock('@/lib/appSettings', () => ({ updateAppSettings: vi.fn() }))
+vi.mock('@/lib/backup', () => ({
+  formatRestoreSummary: vi.fn(),
+  downloadBackup: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+vi.mock('@/components/RestoreBackupDialog', () => ({
+  RestoreBackupDialog: (props: {
+    open: boolean
+    forceReplace?: boolean
+    onRestored?: (summary: RestoreSummary) => void
+  }) =>
+    props.open ? (
+      <div
+        data-testid="fake-restore-backup-dialog"
+        data-force-replace={String(props.forceReplace === true)}
+      >
+        <button
+          type="button"
+          data-testid="fake-restore-backup-confirm"
+          onClick={() =>
+            props.onRestored?.({
+              mode: 'replace',
+              expenses: 4,
+              income: 1,
+              categories: 2,
+              budgets: 1,
+              added: 5,
+              updated: 0,
+              conflicts: 0,
+              skipped: [],
+              adoptedVault: true,
+            })
+          }
+        >
+          confirm
+        </button>
+      </div>
+    ) : null,
 }))
 
 const KEY = 'ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567-XY'
@@ -93,16 +140,21 @@ function submitOf(testId: string) {
   fireEvent.submit(form)
 }
 
-function confirmSavedKey(lastGroup: string) {
+// Math.random() = 0 (set in beforeEach) makes the save step ask for group 1,
+// which is ABCDE for KEY.
+function confirmSavedKey(group: string) {
   fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
-  fireEvent.change(screen.getByTestId('recovery-key-last-group-input'), {
-    target: { value: lastGroup },
+  fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+    target: { value: group },
   })
   fireEvent.click(screen.getByTestId('recovery-key-continue'))
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   vi.resetAllMocks()
+  vi.spyOn(Math, 'random').mockReturnValue(0)
+  vi.mocked(updateAppSettings).mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -144,6 +196,7 @@ describe('PasswordUnlockDialog state routing', () => {
 
     expect(screen.getByTestId('unlock-forgot-password')).toBeTruthy()
     expect(screen.queryByTestId('create-vault-screen')).toBeNull()
+    expect(screen.queryByTestId('unlock-recovery-restore')).toBeNull()
   })
 
   it("shows the unlock screen without 'Forgot password?' for state 'v1'", async () => {
@@ -167,7 +220,7 @@ describe('PasswordUnlockDialog state routing', () => {
 })
 
 describe('PasswordUnlockDialog create flow', () => {
-  it('creates a vault, shows the key and reports isNewVault true only after continue', async () => {
+  async function createUntilKeyStep() {
     vi.mocked(getVaultState).mockResolvedValue('none')
     vi.mocked(createVault).mockResolvedValue({ recoveryKey: KEY })
     const onUnlocked = renderDialog()
@@ -181,13 +234,37 @@ describe('PasswordUnlockDialog create flow', () => {
     })
     submitOf('create-vault-submit')
     await screen.findByTestId('recovery-key-step')
+    return onUnlocked
+  }
+
+  it('creates a vault, shows the key and reports isNewVault true only after continue', async () => {
+    const onUnlocked = await createUntilKeyStep()
     expect(onUnlocked).not.toHaveBeenCalled()
 
-    confirmSavedKey('XY')
+    confirmSavedKey('ABCDE')
 
-    expect(onUnlocked).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledTimes(1)
+    })
     expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: true })
     expect(createVault).toHaveBeenCalledWith('long enough 1')
+  })
+
+  it('marks the recovery key confirmed before reporting the new vault', async () => {
+    const onUnlocked = await createUntilKeyStep()
+    expect(updateAppSettings).not.toHaveBeenCalledWith({
+      recoveryKeyConfirmed: true,
+    })
+
+    confirmSavedKey('abcde')
+
+    await waitFor(() => {
+      expect(onUnlocked).toHaveBeenCalledTimes(1)
+    })
+    expect(updateAppSettings).toHaveBeenCalledWith({ recoveryKeyConfirmed: true })
+    expect(
+      vi.mocked(updateAppSettings).mock.invocationCallOrder.at(-1),
+    ).toBeLessThan(onUnlocked.mock.invocationCallOrder[0])
   })
 })
 
@@ -229,6 +306,7 @@ describe('PasswordUnlockDialog unlock flow', () => {
     })
     expect(screen.queryByTestId('unlock-migrated-key')).toBeNull()
     expect(clearLegacyKeys).not.toHaveBeenCalled()
+    expect(updateAppSettings).not.toHaveBeenCalled()
   })
 
   it('after a v1 migration shows the recovery key first and holds onUnlocked back', async () => {
@@ -248,6 +326,7 @@ describe('PasswordUnlockDialog unlock flow', () => {
     expect(screen.getByTestId('recovery-key-value').textContent).toBe(KEY)
     expect(onUnlocked).not.toHaveBeenCalled()
     expect(clearLegacyKeys).not.toHaveBeenCalled()
+    expect(updateAppSettings).not.toHaveBeenCalled()
   })
 
   it('clears the legacy keys before reporting unlocked once the key is confirmed', async () => {
@@ -262,7 +341,7 @@ describe('PasswordUnlockDialog unlock flow', () => {
     submitOf('unlock-submit')
     await screen.findByTestId('unlock-migrated-key')
 
-    confirmSavedKey('xy')
+    confirmSavedKey('abcde')
 
     await waitFor(() => {
       expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
@@ -286,7 +365,7 @@ describe('PasswordUnlockDialog unlock flow', () => {
     submitOf('unlock-submit')
     await screen.findByTestId('unlock-migrated-key')
 
-    confirmSavedKey('XY')
+    confirmSavedKey('ABCDE')
 
     await waitFor(() => {
       expect(clearLegacyKeys).toHaveBeenCalledTimes(1)
@@ -295,6 +374,69 @@ describe('PasswordUnlockDialog unlock flow', () => {
     pending.resolve(undefined)
     await waitFor(() => {
       expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+    })
+  })
+
+  describe('migrated recovery key confirmation', () => {
+    async function reachMigratedStep() {
+      vi.mocked(getVaultState).mockResolvedValue('v1')
+      vi.mocked(unlockWithPassword).mockResolvedValue({ recoveryKey: KEY })
+      vi.mocked(clearLegacyKeys).mockResolvedValue(undefined)
+      const onUnlocked = renderDialog()
+      await screen.findByTestId('unlock-screen')
+      fireEvent.change(screen.getByTestId('unlock-password-input'), {
+        target: { value: 'old password' },
+      })
+      submitOf('unlock-submit')
+      await screen.findByTestId('unlock-migrated-key')
+      return onUnlocked
+    }
+
+    it('asks for a full group and rejects the 2-character tail', async () => {
+      await reachMigratedStep()
+
+      expect(screen.getByTestId('recovery-key-group-prompt').textContent).toBe(
+        'Type group 1 of your key',
+      )
+      fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+      fireEvent.change(screen.getByTestId('recovery-key-group-input'), {
+        target: { value: 'XY' },
+      })
+      expect(
+        screen.getByTestId<HTMLButtonElement>('recovery-key-continue').disabled,
+      ).toBe(true)
+    })
+
+    it('sets recoveryKeyConfirmed to true before onUnlocked', async () => {
+      const onUnlocked = await reachMigratedStep()
+
+      confirmSavedKey('ABCDE')
+
+      await waitFor(() => {
+        expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+      })
+      expect(updateAppSettings).toHaveBeenCalledWith({
+        recoveryKeyConfirmed: true,
+      })
+      expect(
+        vi.mocked(updateAppSettings).mock.invocationCallOrder[0],
+      ).toBeLessThan(onUnlocked.mock.invocationCallOrder[0])
+    })
+
+    it('still reports unlocked when saving the flag fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(updateAppSettings).mockRejectedValue(new Error('disk full'))
+      const onUnlocked = await reachMigratedStep()
+
+      confirmSavedKey('ABCDE')
+
+      await waitFor(() => {
+        expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+      })
+      expect(updateAppSettings).toHaveBeenCalledWith({
+        recoveryKeyConfirmed: true,
+      })
+      expect(clearLegacyKeys).toHaveBeenCalledTimes(1)
     })
   })
 })
@@ -424,6 +566,85 @@ describe('PasswordUnlockDialog orphaned state', () => {
     await screen.findByTestId('unlock-recovery')
     expect(screen.queryByTestId('create-vault-screen')).toBeNull()
     expect(screen.queryByTestId('unlock-screen')).toBeNull()
+  })
+
+  describe('Restore from backup', () => {
+    beforeEach(() => {
+      vi.mocked(getVaultState).mockResolvedValue('orphaned')
+      vi.mocked(formatRestoreSummary).mockImplementation(
+        (s) => `${s.expenses} expenses restored`,
+      )
+    })
+
+    it('shows a Restore from backup button next to the erase controls', async () => {
+      renderDialog()
+      await screen.findByTestId('unlock-recovery')
+
+      expect(screen.getByTestId('unlock-recovery-restore').textContent).toContain(
+        'Restore from backup',
+      )
+      expect(eraseButton().textContent).toContain(
+        'Erase local data and start fresh',
+      )
+      expect(screen.getByTestId('unlock-erase-input')).toBeTruthy()
+      expect(screen.getByTestId('unlock-recovery').textContent).toContain(
+        'restore your data from a backup',
+      )
+    })
+
+    it('opens no dialog until the button is clicked, then opens it in forceReplace mode', async () => {
+      renderDialog()
+      await screen.findByTestId('unlock-recovery')
+      expect(screen.queryByTestId('fake-restore-backup-dialog')).toBeNull()
+
+      fireEvent.click(screen.getByTestId('unlock-recovery-restore'))
+
+      const dialog = await screen.findByTestId('fake-restore-backup-dialog')
+      expect(dialog.getAttribute('data-force-replace')).toBe('true')
+    })
+
+    it('a successful restore toasts the summary and reports isNewVault false', async () => {
+      const onUnlocked = renderDialog()
+      await screen.findByTestId('unlock-recovery')
+      fireEvent.click(screen.getByTestId('unlock-recovery-restore'))
+      await screen.findByTestId('fake-restore-backup-dialog')
+
+      fireEvent.click(screen.getByTestId('fake-restore-backup-confirm'))
+
+      await waitFor(() => {
+        expect(onUnlocked).toHaveBeenCalledTimes(1)
+      })
+      expect(onUnlocked).toHaveBeenCalledWith({ isNewVault: false })
+      expect(formatRestoreSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'replace', expenses: 4 }),
+      )
+      expect(toast.success).toHaveBeenCalledWith('4 expenses restored')
+      expect(
+        vi.mocked(toast.success).mock.invocationCallOrder[0],
+      ).toBeLessThan(onUnlocked.mock.invocationCallOrder[0])
+    })
+
+    it('does not report unlocked before the restore finishes', async () => {
+      const onUnlocked = renderDialog()
+      await screen.findByTestId('unlock-recovery')
+      fireEvent.click(screen.getByTestId('unlock-recovery-restore'))
+      await screen.findByTestId('fake-restore-backup-dialog')
+
+      expect(onUnlocked).not.toHaveBeenCalled()
+      expect(toast.success).not.toHaveBeenCalled()
+    })
+
+    it('keeps the erase path working while the restore button is there', async () => {
+      vi.mocked(clearLocalDb).mockResolvedValue(undefined)
+      renderDialog()
+      await screen.findByTestId('unlock-recovery')
+      typeErase('DELETE')
+
+      fireEvent.click(eraseButton())
+
+      await screen.findByTestId('create-vault-screen')
+      expect(clearLocalDb).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('erase confirmation', () => {

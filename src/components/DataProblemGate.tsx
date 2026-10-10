@@ -1,9 +1,11 @@
 import { Component } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import { DataProblemScreen } from './DataProblemScreen'
 import type { ReactNode } from 'react'
-import { downloadBackup } from '@/lib/backup'
+import type { RestoreSummary } from '@/lib/backup'
+import { downloadBackup, formatRestoreSummary } from '@/lib/backup'
 import { isDecryptError } from '@/lib/dataErrors'
 import {
   clearDataProblem,
@@ -61,12 +63,21 @@ export function DataProblemGate({ children }: { children: ReactNode }) {
       const result = await downloadBackup({ partial: true })
       return result.status === 'saved' ? result.skipped : null
     }
+    // Restore from backup (replace only) has replaced the data and moved the
+    // unreadable blob to quarantine: refetch everything and bring the routes
+    // back.
+    const handleRestored = async (summary: RestoreSummary) => {
+      await queryClient.resetQueries()
+      clearDataProblem()
+      toast.success(formatRestoreSummary(summary))
+    }
     return (
       <DataProblemScreen
         storageKey={problem.storageKey}
         onRetry={handleRetry}
         onQuarantine={handleQuarantine}
         onBackupReadable={handleBackupReadable}
+        onRestored={handleRestored}
       />
     )
   }

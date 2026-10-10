@@ -12,13 +12,13 @@ import {
 } from '@/lib/appSettings'
 
 const { mockStore, getLocalStore, idbGet, idbSet } = vi.hoisted(() => {
-  const mockStore = new Map<string, unknown>()
+  const store = new Map<string, unknown>()
   return {
-    mockStore,
+    mockStore: store,
     getLocalStore: vi.fn(),
-    idbGet: vi.fn((key: string) => Promise.resolve(mockStore.get(key))),
+    idbGet: vi.fn((key: string) => Promise.resolve(store.get(key))),
     idbSet: vi.fn((key: string, value: unknown) => {
-      mockStore.set(key, value)
+      store.set(key, value)
       return Promise.resolve()
     }),
   }
@@ -38,6 +38,7 @@ const DEFAULTS = {
   autoLockMinutes: 15,
   installHintDismissed: false,
   persistRequestedAt: null,
+  recoveryKeyConfirmed: true,
 }
 
 beforeEach(() => {
@@ -65,12 +66,14 @@ describe('getAppSettings', () => {
       autoLockMinutes: 5,
       installHintDismissed: true,
       persistRequestedAt: '2026-01-02T03:04:05.000Z',
+      recoveryKeyConfirmed: false,
     })
 
     expect(await getAppSettings()).toEqual({
       autoLockMinutes: 5,
       installHintDismissed: true,
       persistRequestedAt: '2026-01-02T03:04:05.000Z',
+      recoveryKeyConfirmed: false,
     })
   })
 
@@ -91,6 +94,7 @@ describe('getAppSettings', () => {
       autoLockMinutes: '5',
       installHintDismissed: 'yes',
       persistRequestedAt: 42,
+      recoveryKeyConfirmed: 'no',
     })
 
     expect(await getAppSettings()).toEqual(DEFAULTS)
@@ -119,6 +123,70 @@ describe('getAppSettings', () => {
   })
 })
 
+describe('recoveryKeyConfirmed', () => {
+  it('treats a missing field as confirmed (true)', async () => {
+    mockStore.set('meta:settings', { autoLockMinutes: 5 })
+
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+  })
+
+  it('reads a stored false as false', async () => {
+    mockStore.set('meta:settings', { recoveryKeyConfirmed: false })
+
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(false)
+  })
+
+  it('reads a stored true as true', async () => {
+    mockStore.set('meta:settings', { recoveryKeyConfirmed: true })
+
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+  })
+
+  it.each([0, null, 'false', 'true', {}])(
+    'treats the non-boolean %j as confirmed (true)',
+    async (value) => {
+      mockStore.set('meta:settings', { recoveryKeyConfirmed: value })
+
+      expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+    },
+  )
+
+  it('updateAppSettings({ recoveryKeyConfirmed: true }) flips a stored false and keeps other fields', async () => {
+    mockStore.set('meta:settings', {
+      recoveryKeyConfirmed: false,
+      autoLockMinutes: 5,
+      failedUnlockAttempts: 2,
+    })
+
+    await updateAppSettings({ recoveryKeyConfirmed: true })
+
+    expect(mockStore.get('meta:settings')).toEqual({
+      recoveryKeyConfirmed: true,
+      autoLockMinutes: 5,
+      failedUnlockAttempts: 2,
+    })
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(true)
+  })
+
+  it('updateAppSettings({ recoveryKeyConfirmed: false }) is stored and read back', async () => {
+    await updateAppSettings({ recoveryKeyConfirmed: false })
+
+    expect((await getAppSettings()).recoveryKeyConfirmed).toBe(false)
+  })
+
+  it('updating another field keeps a stored recoveryKeyConfirmed: false', async () => {
+    mockStore.set('meta:settings', { recoveryKeyConfirmed: false })
+
+    await updateAppSettings({ autoLockMinutes: 60 })
+
+    expect(await getAppSettings()).toEqual({
+      ...DEFAULTS,
+      autoLockMinutes: 60,
+      recoveryKeyConfirmed: false,
+    })
+  })
+})
+
 describe('updateAppSettings', () => {
   it('writes a patch that getAppSettings reads back', async () => {
     await updateAppSettings({ autoLockMinutes: 60 })
@@ -136,6 +204,7 @@ describe('updateAppSettings', () => {
       autoLockMinutes: 5,
       installHintDismissed: true,
       persistRequestedAt: null,
+      recoveryKeyConfirmed: true,
     })
   })
 

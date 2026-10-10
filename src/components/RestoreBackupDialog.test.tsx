@@ -151,6 +151,77 @@ describe('RestoreBackupDialog layout', () => {
     expect(screen.queryByTestId('restore-backup-mode-select')).toBeNull()
     expect(screen.getByTestId('restore-backup-unlock-rule')).toBeTruthy()
   })
+
+  it('shows no replace note on an ordinary or fresh-device dialog', () => {
+    const { unmount } = renderDialog()
+    expect(screen.queryByTestId('restore-backup-replace-note')).toBeNull()
+    unmount()
+
+    renderDialog({ freshDevice: true })
+    expect(screen.queryByTestId('restore-backup-replace-note')).toBeNull()
+  })
+})
+
+describe('RestoreBackupDialog forceReplace', () => {
+  it('hides the mode select and shows the replace note', () => {
+    renderDialog({ forceReplace: true })
+
+    expect(screen.queryByTestId('restore-backup-mode-select')).toBeNull()
+    expect(screen.getByTestId('restore-backup-replace-note').textContent).toBe(
+      'The data on this device will be replaced by the backup.',
+    )
+    expect(screen.getByTestId('restore-backup-unlock-rule')).toBeTruthy()
+  })
+
+  it('does not call defaultRestoreMode', async () => {
+    vi.mocked(defaultRestoreMode).mockResolvedValue('merge')
+    renderDialog({ forceReplace: true })
+    chooseFile()
+    typeSecret('x')
+    await Promise.resolve()
+
+    expect(defaultRestoreMode).not.toHaveBeenCalled()
+  })
+
+  it('restores with (file, secret, "replace")', async () => {
+    vi.mocked(defaultRestoreMode).mockResolvedValue('merge')
+    renderDialog({ forceReplace: true })
+    const file = chooseFile()
+    typeSecret('forced secret')
+
+    fireEvent.click(submit())
+
+    await waitFor(() => {
+      expect(restoreBackup).toHaveBeenCalledTimes(1)
+    })
+    expect(restoreBackup).toHaveBeenCalledWith(file, 'forced secret', 'replace')
+  })
+
+  it('reports the summary through onRestored', async () => {
+    const result = summary({ mode: 'replace', adoptedVault: true })
+    vi.mocked(restoreBackup).mockResolvedValue(result)
+    const { onRestored } = renderDialog({ forceReplace: true })
+    chooseFile()
+    typeSecret('forced secret')
+
+    fireEvent.click(submit())
+
+    await screen.findByTestId('restore-backup-summary')
+    expect(onRestored).toHaveBeenCalledWith(result)
+  })
+
+  it('still shows the error when the restore fails', async () => {
+    vi.mocked(restoreBackup).mockRejectedValue(new Error('bad backup'))
+    const { onRestored } = renderDialog({ forceReplace: true })
+    chooseFile()
+    typeSecret('forced secret')
+
+    fireEvent.click(submit())
+
+    const error = await screen.findByTestId('restore-backup-error')
+    expect(error.textContent).toBe('bad backup')
+    expect(onRestored).not.toHaveBeenCalled()
+  })
 })
 
 describe('RestoreBackupDialog mode default', () => {

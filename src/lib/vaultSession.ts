@@ -4,6 +4,7 @@
 
 import { useSyncExternalStore } from 'react'
 
+import { startAutoLock } from './autoLock'
 import { reloadToHome } from './localWipe'
 import { listenForLockAndWipe, postLock } from './syncChannel'
 import { lockVault } from './vault'
@@ -120,6 +121,20 @@ export function lockApp(
   queryClient.clear()
   if (state.phase === 'unlocked') setVaultPhase('locked')
   if (options.broadcast !== false) postLock()
+}
+
+// Auto-lock locks only the idle tab: it never broadcasts, so an idle tab can't
+// lock a tab that is still in use. A manual lock (lockApp with the default
+// `broadcast`) locks every tab (spec §2.4).
+export function startTabAutoLock(
+  minutes: number,
+  queryClient: Pick<QueryClient, 'clear'>,
+  doc?: Document,
+): () => void {
+  const onLock = () => lockApp(queryClient, { broadcast: false })
+  return doc === undefined
+    ? startAutoLock(minutes, onLock)
+    : startAutoLock(minutes, onLock, doc)
 }
 
 // Reacts to `lock` / `wiped` from other tabs. A wipe also reloads to the home

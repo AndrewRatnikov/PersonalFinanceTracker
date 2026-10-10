@@ -36,7 +36,8 @@ Supersedes the parts of `docs/prd.md` §4.1, §4.9 and `plans/backlog.md` §7–
    - The key is shown as `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XX` (Crockford base32, 160 bits).
    - Actions: **Copy**, **Download .txt**, **Print**.
    - The user must tick "I've saved my recovery key" before continuing.
-   - Then they confirm by typing the **last group** of the key. This catches keys that were never actually saved.
+   - Then they confirm by typing **one full 5-character group** of the key, picked at random from groups 1–6 when the screen opens ("Type group N of your key"). It is never the 2-character tail. Case and surrounding spaces are ignored. This catches keys that were never actually saved.
+   - Until this step is confirmed, `meta:settings.recoveryKeyConfirmed` is `false` (§4.3). If the tab is closed at this step, the key is gone (it is never stored), so the Dashboard shows a persistent banner, "You haven't saved a recovery key for this device", with **"Create a new recovery key"** (Settings → Security), and the "Generate new recovery key" card shows a warning. Confirming a newly generated key clears both.
 4. The vault is created and default categories are provisioned. The app calls `navigator.storage.persist()` (§6.1) and shows the dashboard.
 5. **Install hint** (iOS Safari only, when not running standalone): a one-time card says "Add to Home Screen to keep your data safe". The reason is that Safari can clear site data for sites that aren't installed.
 
@@ -65,12 +66,14 @@ The routes `/analytics`, `/transactions`, `/income` and `/settings` show the unl
 - Locking:
   1. Clears the in-memory key.
   2. Calls `queryClient.clear()` so no decrypted data stays in memory.
-  3. Broadcasts `lock` to other tabs (§5.4).
+  3. A **manual** lock (header icon, "Lock now") broadcasts `lock`, so it locks **all tabs** (§5.4).
   4. Shows the unlock screen.
 - **Auto-lock**:
   - Options: *Off / 1 / 5 / 15 (default) / 60 minutes*.
   - The timer counts inactivity: no pointer, key or visibility events.
   - When the tab is hidden, the time spent hidden counts as inactive time.
+  - Auto-lock is **per tab**: it locks only the idle tab and broadcasts nothing, so an idle tab never locks a tab that is still in use.
+- A `wiped` message (§2.5) still affects every tab.
 - **Data is kept.** Locking never deletes anything.
 
 ### 2.5 Remove data from this device
@@ -146,7 +149,9 @@ interface VaultHeaderV2 {
 
 ### 4.3 Non-sensitive metadata
 
-`meta:settings` holds plaintext, non-sensitive settings: `autoLockMinutes`, `backupReminderDays`, `lastBackupAt`, `lastDataChangeAt`, `installHintDismissed`, `persistRequestedAt`.
+`meta:settings` holds plaintext, non-sensitive settings: `autoLockMinutes`, `backupReminderDays`, `lastBackupAt`, `lastDataChangeAt`, `installHintDismissed`, `persistRequestedAt`, `recoveryKeyConfirmed`.
+
+- `recoveryKeyConfirmed` is set to `false` in the same transaction as every operation that produces a new recovery key (create vault, v1 migration, regenerate), and to `true` only when the save step (§2.1 step 3) is confirmed. A missing field means confirmed. Only this boolean is stored, never the key or anything derived from it. A restore that adopts a backup's vault (fresh or orphaned device) removes the field.
 
 ### 4.4 Brute-force UX
 
@@ -160,7 +165,7 @@ Detection: `localStorage['minima_key_verify_<userId>']` exists and there is no `
 
 1. The user enters their old password. The app derives the v1 key (PBKDF2 200k, the device salt from localStorage) and checks the v1 verifier.
 2. Generate the DEK and the recovery key. Decrypt every v1 value in memory and re-encrypt it with the DEK.
-3. Write all re-encrypted values **plus** `meta:vault` in **one IndexedDB transaction** (`setMany`). If anything fails, the v1 data stays untouched and the user can retry.
+3. Write all re-encrypted values **plus** `meta:vault` (and `recoveryKeyConfirmed: false` in `meta:settings`) in **one IndexedDB transaction** (`setMany`). If anything fails, the v1 data stays untouched and the user can retry.
 4. Show the recovery key screen (§2.1 step 3).
 5. Only then remove the v1 localStorage keys (`minima_device_salt_*`, `minima_key_verify_*`, `minima_offline_user`).
 
@@ -184,8 +189,9 @@ Detection: `localStorage['minima_key_verify_<userId>']` exists and there is no `
   - Names the affected collection or month, e.g. "Expenses · March 2026".
   - Offers **"Back up readable data"**: a `.minima` backup containing everything that still decrypts, with the unreadable keys listed in the file's `skipped` field.
   - Offers **"Quarantine and continue"**: moves the raw blob to `quarantine:<key>:<timestamp>` (never deletes it) so the rest of the app works.
-  - Offers **"Restore from backup"**.
-- **Orphaned data** (data keys exist, but neither `meta:vault` nor a v1 verifier does): show the recovery screen with **Restore from backup** or **Remove data from this device**. Never show "Create password" over existing data.
+  - Offers **"Restore from backup"**, in **replace** mode only (no mode choice; merge would need to read the unreadable data). The copy explains that the data on this device is replaced by the backup and the unreadable data is kept aside in quarantine, unchanged. Every unreadable blob is copied to `quarantine:<key>:<ISO timestamp>` in the same transaction as the restored data.
+- **Orphaned data** (data keys exist, but neither `meta:vault` nor a v1 verifier does): show the recovery screen with **Restore from backup** or **"Erase local data and start fresh"** (typed `DELETE`). Never show "Create password" over existing data.
+  - **Restore from backup** adopts the backup's vault, as on a fresh device (§7.3): the backup's header becomes `meta:vault`, the mode is forced to replace, and the app unlocks with the backup's key. Every existing data blob is first moved, unchanged, to `quarantine:<key>:<ISO timestamp>` in the **same transaction** as the restored data and the header. Orphaned blobs are never deleted. If the transaction fails, nothing changes.
 
 ### 5.3 Every view handles errors
 
@@ -197,7 +203,7 @@ Detection: `localStorage['minima_key_verify_<userId>']` exists and there is no `
 
 - A `BroadcastChannel('minima')` carries these events:
   - `changed:{keys}` after each committed write. Other tabs run `invalidateQueries` for the affected query keys.
-  - `lock`: all tabs lock.
+  - `lock`: all tabs lock. Only a manual lock sends it; auto-lock is per tab and sends nothing (§2.4).
   - `wiped`: all tabs go to `/`.
 
 ### 5.5 Record metadata [sync-ready, cheap now]
@@ -281,6 +287,8 @@ interface BackupPayload {
 4. Records are re-encrypted with the **local** DEK. Everything is written in **one transaction**.
 5. Show a summary, e.g. "212 expenses, 14 income, 9 categories, 6 budgets restored (37 updated, 0 conflicts)".
 - **Restore on a fresh device with no vault:** the landing page offers "Restore from backup". The backup's vault header becomes the local vault, and the user unlocks with the backup's password. They keep the same recovery key.
+- **Restore on an orphaned device** (data but no vault header, §5.2): the recovery screen offers "Restore from backup". It works like a fresh-device restore (the backup's header is adopted, replace only), and every existing blob is moved unchanged to `quarantine:<key>:<ISO timestamp>` in the same transaction.
+- **Restore from the Data problem screen** (§5.2): replace only; unreadable blobs move to quarantine in the same transaction.
 
 ---
 
@@ -328,6 +336,7 @@ Each phase can ship on its own.
 | **3. No-account mode** ✅ Done (run_20261008_064656) | Remove the auth gate from `__root.tsx` · new first-run flow · Lock / Auto-lock · Remove data · Account section behind `ENABLE_ACCOUNTS` · §6.1 persist + install hint | `__root.tsx`, `Header`, `LandingPage`, `settings`, `SignOutDialog` → `LockButton` + `RemoveDataDialog` |
 | **4. Backup** ✅ Done (run_20261008_080410) | §7 `.minima` backup and restore (replace and merge) · §6.2 reminders · §8 CSV zip, dedupe, parser | new `backup.ts`, `localImport.ts`, `localExport.ts`, `DataToolsTab` |
 | **5. Offline hardening** ✅ Done (run_20261008_204753) | §6.3 precache all client assets, app-shell fallback | `vite.config.ts` |
+| **6. Validation fixes** ✅ Done (run_20261010_092310) | per-tab auto-lock · restore on recovery screens · unconfirmed recovery key · group confirmation | `vaultSession.ts`, `backup.ts`, `vault.ts`, recovery screens |
 
 ## 12. Acceptance tests (minimum)
 
@@ -340,7 +349,7 @@ Each phase can ship on its own.
 - **Migration:** a fixture v1 store (200k key, device salt) migrates and all records stay equal. A failure injected mid-migration leaves v1 intact.
 - **Never overwrite:** a corrupted chunk followed by `addExpense` to that month throws, and the raw blob stays byte-identical. Quarantine moves it without changing it.
 - **Orphaned data:** data keys with no header show the recovery screen and never the create-password screen.
-- **Lock:** after locking, `queryClient` is empty and the key is null. Auto-lock fires after the timeout. Lock propagates to a second tab.
+- **Lock:** after locking, `queryClient` is empty and the key is null. Auto-lock fires after the timeout and locks only its own tab. A manual lock propagates to a second tab.
 - **Remove:** the IndexedDB database and `minima_*` localStorage keys are gone, and a second tab returns to `/`.
 - **Backup:**
   - Backup → remove → restore on an empty device gives identical records (ids, timestamps).

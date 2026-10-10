@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Loader2, TriangleAlert } from 'lucide-react'
+import { KeyRound, Loader2, TriangleAlert, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 
+import type { RestoreSummary } from '@/lib/backup'
 import type { UnlockResult } from '@/lib/vault'
+import { updateAppSettings } from '@/lib/appSettings'
+import { formatRestoreSummary } from '@/lib/backup'
 import { clearLegacyKeys, getVaultState } from '@/lib/vault'
 import { clearLocalDb } from '@/lib/localDb'
 import { RemoveDataDialog } from '@/components/RemoveDataDialog'
+import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 import { CreateVaultScreen } from '@/components/vault/CreateVaultScreen'
 import { RecoverScreen } from '@/components/vault/RecoverScreen'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
@@ -34,7 +39,9 @@ interface PasswordUnlockDialogProps {
 // remove    -> "I've lost both" from recover: remove all data (typed DELETE)
 // migrated  -> a v1 unlock migrated the store; show the new recovery key
 // recovery  -> data keys without a vault ('orphaned') or the state check
-//              failed: never offer "Create password" over data that may exist
+//              failed: never offer "Create password" over data that may exist.
+//              Offers "Restore from backup" (replace only; the existing data
+//              is kept in quarantine) or "Erase local data and start fresh".
 type Mode =
   | { kind: 'checking' }
   | { kind: 'create' }
@@ -55,6 +62,7 @@ export function PasswordUnlockDialog({
   const [eraseError, setEraseError] = useState<string | null>(null)
   const [erasing, setErasing] = useState(false)
   const [finishing, setFinishing] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +97,12 @@ export function PasswordUnlockDialog({
   const handleMigratedKeyConfirmed = async () => {
     setFinishing(true)
     try {
+      await updateAppSettings({ recoveryKeyConfirmed: true })
+    } catch (err) {
+      // The Dashboard banner keeps asking for a new key; never block unlock.
+      console.error('Could not save the recovery key confirmation:', err)
+    }
+    try {
       await clearLegacyKeys()
     } catch (err) {
       // The stale v1 keys are harmless once meta:vault exists.
@@ -96,6 +110,12 @@ export function PasswordUnlockDialog({
     } finally {
       setFinishing(false)
     }
+    onUnlocked({ isNewVault: false })
+  }
+
+  // restoreBackup has adopted the backup's vault and unlocked localDb.
+  const handleRecoveryRestored = (summary: RestoreSummary) => {
+    toast.success(formatRestoreSummary(summary))
     onUnlocked({ isNewVault: false })
   }
 
@@ -196,12 +216,22 @@ export function PasswordUnlockDialog({
                 <CardTitle>Local data can't be opened</CardTitle>
               </div>
               <CardDescription>
-                This device has saved data, but no password to open it. Without
-                that password the data cannot be recovered. You can erase it
-                and start fresh.
+                This device has saved data, but no password to open it. You can
+                restore your data from a backup, or erase it and start fresh.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                data-testid="unlock-recovery-restore"
+                disabled={erasing}
+                onClick={() => setRestoreOpen(true)}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Restore from backup
+              </Button>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="unlock-erase-input">Type DELETE to confirm</Label>
                 <Input
@@ -237,6 +267,12 @@ export function PasswordUnlockDialog({
               </Button>
             </CardFooter>
           </Card>
+          <RestoreBackupDialog
+            open={restoreOpen}
+            onOpenChange={setRestoreOpen}
+            forceReplace
+            onRestored={handleRecoveryRestored}
+          />
         </div>
       )
     case 'checking':

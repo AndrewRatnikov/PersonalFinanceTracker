@@ -13,7 +13,7 @@ import { lockApp } from '@/lib/vaultSession'
 import { SecurityTab } from '@/components/settings/SecurityTab'
 
 const { MockVaultError } = vi.hoisted(() => {
-  class MockVaultError extends Error {
+  class FakeVaultError extends Error {
     code: string
     retryAfterMs: number
     constructor(code: string, message: string, retryAfterMs = 0) {
@@ -23,7 +23,7 @@ const { MockVaultError } = vi.hoisted(() => {
       this.retryAfterMs = retryAfterMs
     }
   }
-  return { MockVaultError }
+  return { MockVaultError: FakeVaultError }
 })
 
 vi.mock('@/lib/vault', () => ({
@@ -46,6 +46,7 @@ const SETTINGS = {
   autoLockMinutes: 15,
   installHintDismissed: false,
   persistRequestedAt: null,
+  recoveryKeyConfirmed: true,
 }
 
 let client = new QueryClient()
@@ -87,6 +88,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   cleanup()
 })
 
@@ -290,6 +292,8 @@ describe('Generate new recovery key', () => {
   })
 
   it('shows success, hides the step and clears the password after confirming', async () => {
+    // Math.random() = 0 makes the save step ask for group 1 (ABCDE).
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     vi.mocked(regenerateRecoveryKey).mockResolvedValue({ recoveryKey: NEW_KEY })
     renderTab()
     setValue('regenerate-key-password', 'my password')
@@ -298,7 +302,7 @@ describe('Generate new recovery key', () => {
 
     expect(screen.getByTestId('recovery-key-continue').textContent).toBe('Done')
     fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
-    setValue('recovery-key-last-group-input', 'xy')
+    setValue('recovery-key-group-input', 'abcde')
     fireEvent.click(screen.getByTestId('recovery-key-continue'))
 
     await waitFor(() => {
@@ -329,5 +333,117 @@ describe('Generate new recovery key', () => {
     })
     expect(screen.queryByTestId('recovery-key-step')).toBeNull()
     expect(screen.queryByTestId('regenerate-key-success')).toBeNull()
+  })
+
+  it('does not write the confirmed flag before the key step is confirmed', async () => {
+    vi.mocked(regenerateRecoveryKey).mockResolvedValue({ recoveryKey: NEW_KEY })
+    renderTab()
+
+    setValue('regenerate-key-password', 'my password')
+    submitOf('regenerate-key-submit')
+    await screen.findByTestId('recovery-key-step')
+
+    expect(updateAppSettings).not.toHaveBeenCalled()
+  })
+})
+
+describe('Unconfirmed recovery key warning', () => {
+  it('shows the warning when recoveryKeyConfirmed is false', async () => {
+    vi.mocked(getAppSettings).mockResolvedValue({
+      ...SETTINGS,
+      recoveryKeyConfirmed: false,
+    })
+    renderTab()
+
+    const warning = await screen.findByTestId('regenerate-key-unconfirmed-warning')
+    expect(warning.textContent).toContain(
+      "You haven't saved a recovery key for this device",
+    )
+  })
+
+  it('hides the warning when recoveryKeyConfirmed is true', async () => {
+    renderTab()
+
+    await waitFor(() => {
+      expect(getAppSettings).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(select().value).toBe('15')
+    })
+    expect(screen.queryByTestId('regenerate-key-unconfirmed-warning')).toBeNull()
+  })
+
+  it('hides the warning while a new key is being shown', async () => {
+    vi.mocked(getAppSettings).mockResolvedValue({
+      ...SETTINGS,
+      recoveryKeyConfirmed: false,
+    })
+    vi.mocked(regenerateRecoveryKey).mockResolvedValue({ recoveryKey: NEW_KEY })
+    renderTab()
+    await screen.findByTestId('regenerate-key-unconfirmed-warning')
+
+    setValue('regenerate-key-password', 'my password')
+    submitOf('regenerate-key-submit')
+    await screen.findByTestId('recovery-key-step')
+
+    expect(screen.queryByTestId('regenerate-key-unconfirmed-warning')).toBeNull()
+  })
+
+  it('confirming the regenerated key sets the flag, reloads settings and clears the warning', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    let confirmed = false
+    vi.mocked(getAppSettings).mockImplementation(() =>
+      Promise.resolve({ ...SETTINGS, recoveryKeyConfirmed: confirmed }),
+    )
+    vi.mocked(updateAppSettings).mockImplementation(() => {
+      confirmed = true
+      return Promise.resolve(undefined)
+    })
+    vi.mocked(regenerateRecoveryKey).mockResolvedValue({ recoveryKey: NEW_KEY })
+    renderTab()
+    await screen.findByTestId('regenerate-key-unconfirmed-warning')
+    const callsBefore = vi.mocked(getAppSettings).mock.calls.length
+
+    setValue('regenerate-key-password', 'my password')
+    submitOf('regenerate-key-submit')
+    await screen.findByTestId('recovery-key-step')
+    fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+    setValue('recovery-key-group-input', 'ABCDE')
+    fireEvent.click(screen.getByTestId('recovery-key-continue'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('regenerate-key-success')).toBeTruthy()
+    })
+    expect(updateAppSettings).toHaveBeenCalledWith({ recoveryKeyConfirmed: true })
+    await waitFor(() => {
+      expect(vi.mocked(getAppSettings).mock.calls.length).toBeGreaterThan(
+        callsBefore,
+      )
+    })
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId('regenerate-key-unconfirmed-warning'),
+      ).toBeNull()
+    })
+  })
+
+  it('still finishes the regenerate flow when saving the flag fails', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(updateAppSettings).mockRejectedValue(new Error('disk full'))
+    vi.mocked(regenerateRecoveryKey).mockResolvedValue({ recoveryKey: NEW_KEY })
+    renderTab()
+
+    setValue('regenerate-key-password', 'my password')
+    submitOf('regenerate-key-submit')
+    await screen.findByTestId('recovery-key-step')
+    fireEvent.click(screen.getByTestId('recovery-key-saved-checkbox'))
+    setValue('recovery-key-group-input', 'ABCDE')
+    fireEvent.click(screen.getByTestId('recovery-key-continue'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('regenerate-key-success')).toBeTruthy()
+    })
+    expect(updateAppSettings).toHaveBeenCalledWith({ recoveryKeyConfirmed: true })
   })
 })
