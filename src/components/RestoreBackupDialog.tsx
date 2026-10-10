@@ -27,6 +27,9 @@ interface RestoreBackupDialogProps {
   // Landing page: the device has no vault, so the backup's vault is adopted
   // and the mode is always replace (no mode select).
   freshDevice?: boolean
+  // Recovery screens (orphaned data, Data problem): hides the mode select,
+  // skips defaultRestoreMode and always restores with 'replace'.
+  forceReplace?: boolean
   onRestored?: (summary: RestoreSummary) => void
 }
 
@@ -42,8 +45,10 @@ export function RestoreBackupDialog({
   open,
   onOpenChange,
   freshDevice = false,
+  forceReplace = false,
   onRestored,
 }: RestoreBackupDialogProps) {
+  const replaceOnly = freshDevice || forceReplace
   const [file, setFile] = useState<File | null>(null)
   const [secret, setSecret] = useState('')
   const [mode, setMode] = useState<RestoreMode>('merge')
@@ -61,7 +66,7 @@ export function RestoreBackupDialog({
       setSummary(null)
       return
     }
-    if (freshDevice) return
+    if (replaceOnly) return
     let cancelled = false
     defaultRestoreMode().then(
       (value) => {
@@ -74,7 +79,7 @@ export function RestoreBackupDialog({
     return () => {
       cancelled = true
     }
-  }, [open, freshDevice])
+  }, [open, replaceOnly])
 
   const canSubmit =
     file !== null && secret.length > 0 && !pending && summary === null
@@ -87,7 +92,7 @@ export function RestoreBackupDialog({
       const result = await restoreBackup(
         file,
         secret,
-        freshDevice ? 'replace' : mode,
+        replaceOnly ? 'replace' : mode,
       )
       setSummary(result)
       onRestored?.(result)
@@ -143,7 +148,16 @@ export function RestoreBackupDialog({
             </p>
           </div>
 
-          {!freshDevice && (
+          {forceReplace && (
+            <p
+              data-testid="restore-backup-replace-note"
+              className="text-sm text-muted-foreground"
+            >
+              The data on this device will be replaced by the backup.
+            </p>
+          )}
+
+          {!replaceOnly && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="restore-backup-mode">Restore mode</Label>
               <select
