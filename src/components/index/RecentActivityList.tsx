@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 
 import type { RecentItem } from '@/lib/dashboardSummary'
+import { incomeSourceLabel } from '@/lib/incomeCategories'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -28,9 +29,11 @@ export default function RecentActivityList({ items }: RecentActivityListProps) {
             const timeString = date.format('hh:mm A')
             const dateString = date.format('MMM D')
             const isIncome = item.kind === 'income'
-            const icon = isIncome ? '💰' : item.category?.icon || '🏷️'
+            const icon = isIncome
+              ? item.category?.icon || '💰'
+              : item.category?.icon || '🏷️'
             const label = isIncome
-              ? item.source
+              ? incomeSourceLabel(item)
               : item.category?.name || 'Uncategorized'
 
             return (
