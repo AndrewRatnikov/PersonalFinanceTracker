@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import type { CreateIncomeInput, Currency } from '@/lib/domain'
+import type { Category, CreateIncomeInput, Currency } from '@/lib/domain'
 import { addIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
 
@@ -19,21 +20,29 @@ import {
 } from '@/components/ui/select'
 
 interface AddIncomeFormProps {
+  /** Income categories; the first one is selected by default. */
+  categories: Array<Category>
   onSuccess: () => void
 }
 
-export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
+export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UAH')
-  const [source, setSource] = useState('')
+  const [selected, setSelected] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // The first category is the default, even when the list arrives later or
+  // the selected one disappears.
+  const categoryId = categories.some((c) => c.id === selected)
+    ? selected
+    : (categories[0]?.id ?? '')
+  const selectedCategory = categories.find((c) => c.id === categoryId)
 
   const mutation = useMutation({
     mutationFn: (data: CreateIncomeInput) => addIncome(data),
     onSuccess: () => {
       setAmount('')
-      setSource('')
       setDescription('')
       setErrors({})
       toast.success('Income saved')
@@ -49,7 +58,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
     setErrors({})
 
     const result = createIncomeSchema.safeParse({
-      source: source.trim(),
+      categoryId,
       amount: Number(amount),
       currency,
       description: description.trim() || undefined,
@@ -70,7 +79,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
 
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm">
-      <form onSubmit={handleSubmit}>
+      <form data-testid="add-income-form" onSubmit={handleSubmit}>
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
           <div className="space-y-2">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -80,6 +89,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
               className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}
             >
               <input
+                data-testid="income-form-amount"
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -114,19 +124,66 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Source
+            <Label
+              htmlFor="income-category"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
+              Category
             </Label>
-            <Input
-              type="text"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              placeholder="e.g. Salary, Freelance"
-              disabled={mutation.isPending}
-              className={errors.source ? 'border-destructive' : ''}
-            />
-            {errors.source && (
-              <p className="text-xs text-destructive">{errors.source}</p>
+            {categories.length === 0 ? (
+              <Link
+                to="/settings"
+                search={{ tab: 'categories' }}
+                data-testid="income-form-no-categories"
+                className="block text-sm text-primary underline underline-offset-4"
+              >
+                Add income categories in Settings → Categories
+              </Link>
+            ) : (
+              <Select
+                value={categoryId}
+                onValueChange={(v) => setSelected(v)}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger
+                  id="income-category"
+                  data-testid="income-form-category"
+                  className={`h-11 ${errors.categoryId ? 'border-destructive' : ''}`}
+                >
+                  <SelectValue placeholder="Select a category">
+                    {selectedCategory && (
+                      <span className="flex items-center gap-2">
+                        {selectedCategory.icon && (
+                          <span className="text-base">
+                            {selectedCategory.icon}
+                          </span>
+                        )}
+                        <span>{selectedCategory.name}</span>
+                      </span>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      <div className="flex items-center gap-2">
+                        {cat.icon && (
+                          <span className="text-base">{cat.icon}</span>
+                        )}
+                        <span>{cat.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {errors.categoryId && (
+              <p
+                data-testid="income-form-category-error"
+                className="text-xs text-destructive"
+              >
+                {errors.categoryId}
+              </p>
             )}
           </div>
 
@@ -138,6 +195,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
               </span>
             </Label>
             <Input
+              data-testid="income-form-description"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -148,6 +206,7 @@ export function AddIncomeForm({ onSuccess }: AddIncomeFormProps) {
           </div>
 
           <Button
+            data-testid="income-form-submit"
             type="submit"
             disabled={mutation.isPending}
             className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
