@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { CURRENCIES } from './domain'
 
 export const createIncomeSchema = z.object({
-  source: z.string().min(1, 'Source is required'),
+  categoryId: z.string().min(1, 'Category is required'),
   amount: z.number().positive('Amount must be greater than 0'),
   currency: z.enum(CURRENCIES),
   description: z.string().optional(),
