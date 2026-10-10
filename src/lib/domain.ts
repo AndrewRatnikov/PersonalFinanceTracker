@@ -98,6 +98,8 @@ export interface AnalyticsRangeSummary {
   timeline: Array<AnalyticsTimelinePoint>
   totalIncome: number
   budgetVariance: Array<BudgetVarianceItem>
+  /** Income in the selected currency grouped by income category, total desc. */
+  incomeBreakdown: Array<CategoryBreakdownItem>
 }
 
 export interface CreateExpenseInput {
@@ -110,17 +112,25 @@ export interface CreateExpenseInput {
 
 export interface IncomeEntry {
   id: string
-  source: string
+  /** Id of an income category (storage key `incomeCategories`). */
+  categoryId: string
+  /**
+   * Legacy free text. Read only for conversion and as a display fallback;
+   * never written by new or updated records.
+   */
+  source?: string
   amount: number
   currency: Currency
   description?: string | null
   createdAt: string
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** Joined at read time by getAllIncome()/addIncome(); never stored. */
+  category?: Category
 }
 
 export interface CreateIncomeInput {
-  source: string
+  categoryId: string
   amount: number
   currency: Currency
   description?: string
