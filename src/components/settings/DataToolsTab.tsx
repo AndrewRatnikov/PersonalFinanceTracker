@@ -360,6 +360,13 @@ export function DataToolsTab() {
                             {result && result.duplicates > 0
                               ? `, ${result.duplicates} duplicates`
                               : ''}
+                            {result?.createdCategories
+                              ? `, ${result.createdCategories} new income ${
+                                  result.createdCategories === 1
+                                    ? 'category'
+                                    : 'categories'
+                                } created`
+                              : ''}
                           </span>
                           {result && result.errors.length > 0 && (
                             <ul className="text-muted-foreground text-xs list-disc list-inside mt-1 space-y-0.5">
