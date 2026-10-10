@@ -91,6 +91,7 @@ vi.mock('@/components/RestoreBackupDialog', () => ({
               expenses: 4,
               income: 1,
               categories: 2,
+              incomeCategories: 0,
               budgets: 1,
               added: 5,
               updated: 0,

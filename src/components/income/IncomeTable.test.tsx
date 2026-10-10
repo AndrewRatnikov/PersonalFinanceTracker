@@ -69,7 +69,7 @@ describe('IncomeTable category cell', () => {
       entry({ category: { id: 'ic1', name: 'Salary', icon: null } }),
     ])
 
-    expect(screen.getByTestId('income-row-category').textContent?.trim()).toBe(
+    expect(screen.getByTestId('income-row-category').textContent.trim()).toBe(
       'Salary',
     )
   })
