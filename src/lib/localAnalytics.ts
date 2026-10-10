@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 
 import { getAllBudgets, getAllIncome, getExpensesForRange } from './localDb'
 import { normalizeRange } from './analyticsUtils'
+import { incomeSourceLabel } from './incomeCategories'
 import type { RangeInput } from './analyticsUtils'
 import type { ExcludedCurrencyTotal } from './dashboardSummary'
 import type {
@@ -117,11 +118,32 @@ export async function computeRangeAnalytics(
   const totalIncome = rangeIncome
     .filter((e) => e.currency === currency)
     .reduce((sum, e) => sum + Number(e.amount), 0)
+  // Income in the selected currency, grouped by income category.
+  const incomeMap = new Map<string, CategoryBreakdownItem>()
   for (const i of rangeIncome) {
     if (i.currency !== currency) {
       getExcluded(i.currency).income += Number(i.amount)
+      continue
+    }
+    const amount = Number(i.amount)
+    if (!Number.isFinite(amount) || amount <= 0) continue
+    // Legacy (unconverted) records have no categoryId.
+    const categoryId = i.categoryId || ''
+    const existing = incomeMap.get(categoryId)
+    if (existing) {
+      existing.total += amount
+    } else {
+      incomeMap.set(categoryId, {
+        categoryId,
+        name: incomeSourceLabel(i),
+        icon: i.category?.icon ?? null,
+        total: amount,
+      })
     }
   }
+  const incomeBreakdown = Array.from(incomeMap.values()).sort(
+    (a, b) => b.total - a.total,
+  )
 
   const excluded = [...excludedMap.values()].sort((a, b) =>
     a.currency.localeCompare(b.currency),
@@ -153,6 +175,7 @@ export async function computeRangeAnalytics(
     timeline,
     totalIncome,
     budgetVariance,
+    incomeBreakdown,
     excluded,
   }
 }
