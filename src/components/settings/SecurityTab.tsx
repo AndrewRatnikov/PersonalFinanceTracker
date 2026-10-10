@@ -149,6 +149,11 @@ function ChangePasswordCard() {
 }
 
 function RegenerateKeyCard() {
+  const queryClient = useQueryClient()
+  const { data: settings } = useQuery({
+    queryKey: APP_SETTINGS_QUERY_KEY,
+    queryFn: getAppSettings,
+  })
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<string | null>(null)
@@ -170,11 +175,22 @@ function RegenerateKeyCard() {
     }
   }
 
-  const handleConfirmed = () => {
+  // regenerateRecoveryKey stored recoveryKeyConfirmed: false; the user has now
+  // saved the new key. A failed write only leaves the warning showing.
+  const handleConfirmed = async () => {
+    try {
+      await updateAppSettings({ recoveryKeyConfirmed: true })
+    } catch (err) {
+      console.error('Could not save the recovery key confirmation:', err)
+    }
+    void queryClient.invalidateQueries({ queryKey: APP_SETTINGS_QUERY_KEY })
     setNewKey(null)
     setPassword('')
     setSuccess(true)
   }
+
+  const showUnconfirmedWarning =
+    settings?.recoveryKeyConfirmed === false && newKey === null
 
   return (
     <Card>
@@ -188,11 +204,20 @@ function RegenerateKeyCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {showUnconfirmedWarning && (
+          <p
+            data-testid="regenerate-key-unconfirmed-warning"
+            className="text-sm text-destructive"
+          >
+            You haven&apos;t saved a recovery key for this device. Generate a
+            new one and save it.
+          </p>
+        )}
         {newKey !== null ? (
           <RecoveryKeySaveStep
             recoveryKey={newKey}
             confirmLabel="Done"
-            onConfirmed={handleConfirmed}
+            onConfirmed={() => void handleConfirmed()}
           />
         ) : (
           <form
