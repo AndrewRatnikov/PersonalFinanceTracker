@@ -17,7 +17,9 @@ import {
   DEFAULT_AUTO_LOCK_MINUTES,
   getAppSettings,
 } from '../lib/appSettings'
-import { provisionDefaultCategories as provisionLocalCategories } from '../lib/localDb'
+import { isDecryptError } from '../lib/dataErrors'
+import { reportDataProblem } from '../lib/dataProblem'
+import { prepareUnlockedVault } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
 import { listenForChanges } from '../lib/syncChannel'
@@ -157,9 +159,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // Another tab locked the vault or removed all data.
   useEffect(() => connectOtherTabs(queryClient), [])
 
-  // vault.ts has already unlocked localDb with the vault DEK.
+  // vault.ts has already unlocked localDb with the vault DEK. After every
+  // unlock (new vault, password, recovery key, v1 migration): default expense
+  // categories for a new vault, then the income categories (defaults and the
+  // conversion of legacy income sources). A DecryptError goes to the Data
+  // problem screen; unreadable data is never overwritten.
   const handleUnlocked = async ({ isNewVault }: { isNewVault: boolean }) => {
-    if (isNewVault) await provisionLocalCategories()
+    try {
+      await prepareUnlockedVault({ isNewVault })
+    } catch (err) {
+      if (isDecryptError(err)) reportDataProblem(err)
+      else console.error('Could not prepare local data after unlock:', err)
+    }
     setVaultPhase('unlocked')
     void queryClient.invalidateQueries()
     // A new vault already asked in CreateVaultScreen.
