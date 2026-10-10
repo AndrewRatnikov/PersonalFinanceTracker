@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { KeyRound, Loader2, Lock } from 'lucide-react'
 
+import { updateAppSettings } from '@/lib/appSettings'
 import { requestPersistentStorage } from '@/lib/storagePersistence'
 import { VaultError, createVault } from '@/lib/vault'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
@@ -39,6 +40,7 @@ export function CreateVaultScreen({
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,6 +73,19 @@ export function CreateVaultScreen({
     }
   }
 
+  // createVault stored recoveryKeyConfirmed: false; the user has now saved the
+  // key. A failed write only leaves the Dashboard banner showing.
+  const handleKeyConfirmed = async () => {
+    if (confirming) return
+    setConfirming(true)
+    try {
+      await updateAppSettings({ recoveryKeyConfirmed: true })
+    } catch (err) {
+      console.error('Could not save the recovery key confirmation:', err)
+    }
+    onCreated()
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 backdrop-blur-sm">
       <Card className="w-full max-w-sm mx-4 my-4" data-testid="create-vault-screen">
@@ -89,7 +104,7 @@ export function CreateVaultScreen({
             <CardContent>
               <RecoveryKeySaveStep
                 recoveryKey={recoveryKey}
-                onConfirmed={onCreated}
+                onConfirmed={() => void handleKeyConfirmed()}
               />
             </CardContent>
           </>
