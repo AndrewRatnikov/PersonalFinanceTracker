@@ -13,25 +13,33 @@ interface RecoveryKeySaveStepProps {
 
 const DOWNLOAD_FILENAME = 'minima-recovery-key.txt'
 
-function lastGroupOf(recoveryKey: string): string {
-  const parts = recoveryKey.split('-')
-  return parts[parts.length - 1].toUpperCase()
+// The key has six full 5-character groups and a 2-character tail.
+const FULL_GROUPS = 6
+
+// Picks which full group (1-6) the user must type back. Never the tail.
+export function pickConfirmationGroup(
+  random: () => number = Math.random,
+): number {
+  return Math.min(FULL_GROUPS, Math.floor(random() * FULL_GROUPS) + 1)
 }
 
 // Shows a recovery key and only lets the user continue once they have ticked
-// "I've saved my recovery key" and typed its last group. Rendered inside the
-// caller's card; it has no overlay of its own.
+// "I've saved my recovery key" and typed one full group of it, picked at
+// random from groups 1-6 when the step mounts (spec §2.1 step 3). Case and
+// surrounding spaces are ignored. Rendered inside the caller's card; it has
+// no overlay of its own.
 export function RecoveryKeySaveStep({
   recoveryKey,
   onConfirmed,
   confirmLabel,
 }: RecoveryKeySaveStepProps) {
   const [saved, setSaved] = useState(false)
-  const [lastGroup, setLastGroup] = useState('')
+  const [group] = useState(() => pickConfirmationGroup())
+  const [typedGroup, setTypedGroup] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const expected = lastGroupOf(recoveryKey)
-  const canContinue = saved && lastGroup.trim().toUpperCase() === expected
+  const expected = recoveryKey.split('-')[group - 1].toUpperCase()
+  const canContinue = saved && typedGroup.trim().toUpperCase() === expected
 
   const handleCopy = () => {
     const clipboard = (navigator as { clipboard?: Clipboard | undefined })
@@ -126,15 +134,18 @@ export function RecoveryKeySaveStep({
       </label>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="recovery-key-last-group">
-          Type the last group of your key
+        <Label
+          data-testid="recovery-key-group-prompt"
+          htmlFor="recovery-key-group-input"
+        >
+          Type group {group} of your key
         </Label>
         <Input
-          id="recovery-key-last-group"
-          data-testid="recovery-key-last-group-input"
+          id="recovery-key-group-input"
+          data-testid="recovery-key-group-input"
           type="text"
-          value={lastGroup}
-          onChange={(e) => setLastGroup(e.target.value)}
+          value={typedGroup}
+          onChange={(e) => setTypedGroup(e.target.value)}
           autoComplete="off"
           className="font-mono uppercase"
         />
