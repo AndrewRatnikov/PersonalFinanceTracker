@@ -152,8 +152,11 @@ function AnalyticsPage() {
     )
   }
 
+  // A range with income but no expenses still shows the income donut.
   const hasData =
-    analytics.categoryBreakdown.length > 0 || analytics.timeline.length > 0
+    analytics.categoryBreakdown.length > 0 ||
+    analytics.timeline.length > 0 ||
+    analytics.incomeBreakdown.length > 0
 
   const totalSpent = analytics.categoryBreakdown.reduce(
     (sum, item) => sum + item.total,
@@ -209,11 +212,24 @@ function AnalyticsPage() {
 
         {hasData ? (
           <>
-            <section>
+            <section data-testid="analytics-category-donut">
               <h2 className="text-sm font-semibold mb-2">By Category</h2>
               <CategoryDonutChart
                 data={analytics.categoryBreakdown}
                 currency={currency}
+                ariaLabel="Spending by category"
+              />
+            </section>
+
+            <section data-testid="analytics-income-donut">
+              <h2 className="text-sm font-semibold mb-2">
+                Where your money comes from
+              </h2>
+              <CategoryDonutChart
+                data={analytics.incomeBreakdown}
+                currency={currency}
+                emptyText="No income in this period."
+                ariaLabel="Income by category"
               />
             </section>
 
@@ -235,7 +251,7 @@ function AnalyticsPage() {
             )}
           </>
         ) : (
-          <section className="mt-4">
+          <section data-testid="analytics-no-data" className="mt-4">
             <Card className="border-dashed bg-transparent">
               <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
                 No data found for this period. Try expanding the range.
