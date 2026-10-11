@@ -42,18 +42,20 @@ export async function buildCsvFiles(): Promise<Record<string, string>> {
     ]),
   )
 
-  // income.csv — date, source, amount, currency, description
+  // income.csv — date, source, amount, currency, description. The `source`
+  // column holds the income category name (legacy free text as a fallback),
+  // so old exports stay importable.
   const incomeRows = income.map((i) =>
     csvRow([
       dayjs(i.createdAt).format('YYYY-MM-DD'),
-      i.source,
+      i.category?.name ?? i.source ?? '',
       i.amount,
       i.currency,
       i.description ?? '',
     ]),
   )
 
-  // categories.csv — name, icon
+  // categories.csv — name, icon (expense categories only)
   const categoryRows = categories.map((c) => csvRow([c.name, c.icon ?? '']))
 
   // budgets.csv — category, monthly_limit, currency

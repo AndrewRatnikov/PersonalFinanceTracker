@@ -50,7 +50,7 @@ function mkIncome(
 ): IncomeEntry {
   return {
     id: overrideId ?? id('inc'),
-    source: 'Salary',
+    categoryId: 'ic-salary',
     amount,
     currency,
     createdAt,

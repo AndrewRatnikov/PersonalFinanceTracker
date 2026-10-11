@@ -27,14 +27,31 @@ const MAX_SLICES = 10
 interface Props {
   data: Array<CategoryBreakdownItem>
   currency: Currency
+  /** Text of the empty card. Defaults to "No data found." */
+  emptyText?: string
+  /** When set, the root card gets role="figure" and this aria-label. */
+  ariaLabel?: string
 }
 
-export default function CategoryDonutChart({ data, currency }: Props) {
+export default function CategoryDonutChart({
+  data,
+  currency,
+  emptyText,
+  ariaLabel,
+}: Props) {
+  const figureProps = ariaLabel
+    ? { role: 'figure', 'aria-label': ariaLabel }
+    : {}
+
   if (data.length === 0) {
     return (
-      <Card className="border-dashed bg-transparent h-48 flex items-center justify-center">
+      <Card
+        className="border-dashed bg-transparent h-48 flex items-center justify-center"
+        data-testid="category-donut-empty"
+        {...figureProps}
+      >
         <CardContent className="text-muted-foreground text-sm">
-          No data found.
+          {emptyText ?? 'No data found.'}
         </CardContent>
       </Card>
     )
@@ -69,7 +86,10 @@ export default function CategoryDonutChart({ data, currency }: Props) {
   const grandTotal = chartData.reduce((sum, d) => sum + d.value, 0)
 
   return (
-    <Card className="border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+    <Card
+      className="border-border bg-card/50 backdrop-blur-sm overflow-hidden"
+      {...figureProps}
+    >
       {/* Donut */}
       <div className="h-52 w-full py-4">
         <ResponsiveContainer width="100%" height="100%">

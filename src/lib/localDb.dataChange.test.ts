@@ -105,7 +105,7 @@ describe('lastDataChangeAt is set after every committed mutation', () => {
     expect(changedAt()).toBe(T2)
 
     setNow(T3)
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
     expect(changedAt()).toBe(T3)
   })
 
@@ -172,13 +172,17 @@ describe('lastDataChangeAt is set after every committed mutation', () => {
   })
 
   it('addIncome', async () => {
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
 
     expect(changedAt()).toBe(T1)
   })
 
   it('deleteIncome', async () => {
-    const inc = await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    const inc = await addIncome({
+      categoryId: 'ic1',
+      amount: 5,
+      currency: 'UAH',
+    })
 
     setNow(T2)
     await deleteIncome(inc.id)
@@ -240,7 +244,7 @@ describe('lastDataChangeAt merges into meta:settings', () => {
       lastBackupAt: '2026-05-01T00:00:00.000Z',
     })
 
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
 
     expect(mockStore.get('meta:settings')).toEqual({
       autoLockMinutes: 5,
@@ -286,14 +290,14 @@ describe('lastDataChangeAt is not set when nothing committed', () => {
     mockStore.set('income', crypto.getRandomValues(new Uint8Array(64)))
 
     await expect(
-      addIncome({ source: 'Job', amount: 5, currency: 'UAH' }),
+      addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' }),
     ).rejects.toThrow()
 
     expect(changedAt()).toBeUndefined()
   })
 
   it('quarantineKey is not a data change', async () => {
-    await addIncome({ source: 'Job', amount: 5, currency: 'UAH' })
+    await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
     expect(changedAt()).toBe(T1)
 
     setNow(T2)
@@ -310,12 +314,12 @@ describe('a failed lastDataChangeAt write', () => {
     ctl.failSettingsWrite = true
 
     const created = await addIncome({
-      source: 'Job',
+      categoryId: 'ic1',
       amount: 5,
       currency: 'UAH',
     })
 
-    expect(created.source).toBe('Job')
+    expect(created.categoryId).toBe('ic1')
     expect(errorSpy).toHaveBeenCalled()
     expect(changedAt()).toBeUndefined()
     expect(mockStore.get('income')).toBeInstanceOf(Uint8Array)

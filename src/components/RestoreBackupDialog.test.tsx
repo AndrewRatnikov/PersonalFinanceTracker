@@ -30,6 +30,7 @@ function summary(patch: Partial<RestoreSummary> = {}): RestoreSummary {
     expenses: 3,
     income: 1,
     categories: 2,
+    incomeCategories: 0,
     budgets: 1,
     added: 5,
     updated: 2,

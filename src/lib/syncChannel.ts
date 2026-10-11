@@ -88,6 +88,8 @@ function queryKeysFor(storageKey: string): Array<Array<string>> {
   switch (storageKey) {
     case 'categories':
       return [['categories'], ['expenses'], ['budgets']]
+    case 'incomeCategories':
+      return [['incomeCategories'], ['income'], ['analytics']]
     case 'income':
       return [['income'], ['analytics']]
     case 'budgets':

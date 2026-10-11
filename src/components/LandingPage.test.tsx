@@ -47,6 +47,7 @@ const SUMMARY: RestoreSummary = {
   expenses: 4,
   income: 1,
   categories: 2,
+  incomeCategories: 0,
   budgets: 1,
   added: 8,
   updated: 0,

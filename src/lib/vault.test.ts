@@ -146,6 +146,11 @@ describe('getVaultState', () => {
     expect(await getVaultState()).toBe('orphaned')
   })
 
+  it("is 'orphaned' when only the incomeCategories key exists", async () => {
+    mockStore.set('incomeCategories', new Uint8Array([1, 2, 3]))
+    expect(await getVaultState()).toBe('orphaned')
+  })
+
   it("is 'orphaned' for an expenses chunk key too", async () => {
     mockStore.set('expenses_2026_03', new Uint8Array([1, 2, 3]))
     expect(await getVaultState()).toBe('orphaned')
@@ -401,14 +406,14 @@ describe('create, reload, unlock', () => {
 
   it('decrypts data written before the reload', async () => {
     await createVault(PW)
-    await addIncome({ source: 'Job', amount: 100, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-job', amount: 100, currency: 'USD' })
     lockVault()
     await unlockWithPassword(PW)
 
     const income = await getAllIncome()
 
     expect(income).toHaveLength(1)
-    expect(income[0].source).toBe('Job')
+    expect(income[0].categoryId).toBe('ic-job')
     expect(income[0].amount).toBe(100)
   })
 
@@ -595,12 +600,12 @@ describe('recovery key', () => {
 
   it('can read data written under the password after unlocking with the recovery key', async () => {
     const { recoveryKey } = await createVault(PW)
-    await addIncome({ source: 'Gift', amount: 7, currency: 'EUR' })
+    await addIncome({ categoryId: 'ic-gift', amount: 7, currency: 'EUR' })
     lockVault()
 
     await unlockWithRecoveryKey(recoveryKey)
 
-    expect((await getAllIncome()).map((i) => i.source)).toEqual(['Gift'])
+    expect((await getAllIncome()).map((i) => i.categoryId)).toEqual(['ic-gift'])
   })
 
   it("rejects a well-formed but wrong recovery key with the right message", async () => {
@@ -655,7 +660,7 @@ describe('resetPasswordWithRecoveryKey', () => {
 
   it('keeps the recovery key valid and unchanged, and does not re-encrypt data', async () => {
     const { recoveryKey } = await createVault(PW)
-    await addIncome({ source: 'Job', amount: 1, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-job', amount: 1, currency: 'USD' })
     const blobBefore = incomeBlob()
     const before = header()
     lockVault()
@@ -703,7 +708,7 @@ describe('changePassword', () => {
 
   it('leaves data blobs byte-identical and the recovery key working', async () => {
     const { recoveryKey } = await createVault(PW)
-    await addIncome({ source: 'Job', amount: 5, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-job', amount: 5, currency: 'USD' })
     const blobBefore = incomeBlob()
     const before = header()
 
@@ -758,7 +763,7 @@ describe('regenerateRecoveryKey', () => {
 
   it('uses a new recovery salt and keeps the password and data intact', async () => {
     await createVault(PW)
-    await addIncome({ source: 'Job', amount: 5, currency: 'USD' })
+    await addIncome({ categoryId: 'ic-job', amount: 5, currency: 'USD' })
     const blobBefore = incomeBlob()
     const before = header()
 

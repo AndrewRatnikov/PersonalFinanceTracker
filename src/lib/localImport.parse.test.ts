@@ -17,15 +17,18 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
 } from '@/lib/localDb'
 
 vi.mock('@/lib/localDb', () => ({
   addCategory: vi.fn(),
   addExpense: vi.fn(),
   addIncome: vi.fn(),
+  addIncomeCategory: vi.fn(),
   getAllCategories: vi.fn(),
   getAllExpenses: vi.fn(),
   getAllIncome: vi.fn(),
+  getAllIncomeCategories: vi.fn(),
   upsertBudget: vi.fn(),
 }))
 
@@ -212,7 +215,7 @@ describe('parseAmount', () => {
   it('removes spaces and non-breaking spaces used as thousands separators', () => {
     expect(parseAmount('1 234,50')).toBe(1234.5)
     expect(parseAmount('1 234,50')).toBe(1234.5)
-    expect(parseAmount('1 234 567')).toBe(1234567)
+    expect(parseAmount('1 234 567')).toBe(1234567)
   })
 
   it('is NaN for empty or non-numeric input', () => {
@@ -228,12 +231,14 @@ describe('parseAmount', () => {
 
 describe('imports use the new parser', () => {
   const FOOD = { id: 'c1', name: 'Food', icon: null }
+  const JOB = { id: 'ic1', name: 'Job', icon: null }
 
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(getAllCategories).mockResolvedValue([FOOD])
     vi.mocked(getAllExpenses).mockResolvedValue([])
     vi.mocked(getAllIncome).mockResolvedValue([])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([JOB])
   })
 
   it('a semicolon-delimited expenses file with decimal commas imports', async () => {
@@ -265,7 +270,7 @@ describe('imports use the new parser', () => {
 
     expect(result.inserted).toBe(1)
     expect(vi.mocked(addIncome).mock.calls[0][0].amount).toBe(1500.75)
-    expect(vi.mocked(addIncome).mock.calls[0][0].source).toBe('Job')
+    expect(vi.mocked(addIncome).mock.calls[0][0].categoryId).toBe('ic1')
   })
 
   it('a quoted multi-line description reaches addExpense unchanged', async () => {

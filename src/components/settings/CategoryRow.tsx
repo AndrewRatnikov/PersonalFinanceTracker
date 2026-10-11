@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
 import type { Category } from '../../lib/domain'
-import { deleteCategory, updateCategory } from '@/lib/localDb'
+import {
+  deleteCategory,
+  deleteIncomeCategory,
+  updateCategory,
+  updateIncomeCategory,
+} from '@/lib/localDb'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -21,9 +26,16 @@ interface CategoryRowProps {
   category: Category
   onMutate: () => void
   onError: (msg: string) => void
+  /** Which category list the row belongs to. Defaults to 'expense'. */
+  kind?: 'expense' | 'income'
 }
 
-export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
+export function CategoryRow({
+  category,
+  onMutate,
+  onError,
+  kind = 'expense',
+}: CategoryRowProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(category.name)
   const [editIcon, setEditIcon] = useState(category.icon ?? '')
@@ -32,7 +44,8 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const save = async () => {
     setIsPending(true)
     try {
-      await updateCategory({
+      const update = kind === 'income' ? updateIncomeCategory : updateCategory
+      await update({
         id: category.id,
         name: editName,
         icon: editIcon || null,
@@ -49,7 +62,8 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   const remove = async () => {
     setIsPending(true)
     try {
-      await deleteCategory(category.id)
+      const del = kind === 'income' ? deleteIncomeCategory : deleteCategory
+      await del(category.id)
       onMutate()
     } catch (e: any) {
       onError(e?.message ?? 'Failed to delete category')
@@ -102,14 +116,20 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
   }
 
   return (
-    <Card className="border-border bg-card/40 transition-colors hover:bg-accent/30 group">
+    <Card
+      data-testid="category-row"
+      className="border-border bg-card/40 transition-colors hover:bg-accent/30 group"
+    >
       <CardContent className="px-3 py-2.5 flex items-center gap-3">
         {category.icon && (
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-secondary/50 text-base shadow-sm">
             {category.icon}
           </div>
         )}
-        <span className="flex-1 text-sm font-medium text-foreground">
+        <span
+          data-testid="category-row-name"
+          className="flex-1 text-sm font-medium text-foreground"
+        >
           {category.name}
         </span>
 
@@ -142,12 +162,14 @@ export function CategoryRow({ category, onMutate, onError }: CategoryRowProps) {
                 <AlertDialogDescription data-testid="category-delete-description">
                   Are you sure you want to delete{' '}
                   <strong>{category.name}</strong>? A category that is still
-                  used by expenses cannot be deleted.
+                  used by {kind === 'income' ? 'income entries' : 'expenses'}{' '}
+                  cannot be deleted.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  data-testid="category-delete-confirm"
                   onClick={remove}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >

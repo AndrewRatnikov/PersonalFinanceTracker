@@ -219,6 +219,17 @@ describe('localDb quarantine and orphan detection', () => {
       expect(mockStore.get(qKey as string)).toBe(bytes)
     })
 
+    it('quarantines an incomeCategories blob like any other data key', async () => {
+      const bytes = garbage()
+      mockStore.set('incomeCategories', bytes)
+
+      const qKey = await quarantineKey('incomeCategories')
+
+      expect(mockStore.has('incomeCategories')).toBe(false)
+      expect(qKey?.startsWith('quarantine:incomeCategories:')).toBe(true)
+      expect(mockStore.get(qKey as string)).toBe(bytes)
+    })
+
     it('posts a changed message for the quarantined key', async () => {
       mockStore.set(CHUNK, garbage())
       const channel = {
@@ -286,7 +297,7 @@ describe('localDb quarantine and orphan detection', () => {
 
       expect(qKey?.startsWith('quarantine:income:')).toBe(true)
       await expect(getAllIncome()).resolves.toEqual([])
-      await addIncome({ source: 'Job', amount: 1, currency: 'UAH' })
+      await addIncome({ categoryId: 'ic1', amount: 1, currency: 'UAH' })
       expect(await getAllIncome()).toHaveLength(1)
     })
   })
@@ -332,6 +343,7 @@ describe('localDb quarantine and orphan detection', () => {
     it.each([
       ['an expenses chunk', 'expenses_2024_03'],
       ['categories', 'categories'],
+      ['income categories', 'incomeCategories'],
       ['income', 'income'],
       ['budgets', 'budgets'],
     ])('is true when the store holds %s', async (_name, key) => {

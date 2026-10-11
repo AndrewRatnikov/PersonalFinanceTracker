@@ -1,6 +1,7 @@
 // No CONTRACT_GAPs: import behaviour for #11 and #10 (import trim) is fully
 // specified in the Interface Contract. Phase 4: the mock now includes
 // getAllExpenses and getAllIncome (snapshot reads for duplicate detection).
+// Income import also needs getAllIncomeCategories and addIncomeCategory.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,18 +14,22 @@ import {
   addCategory,
   addExpense,
   addIncome,
+  addIncomeCategory,
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getAllIncomeCategories,
 } from '@/lib/localDb'
 
 vi.mock('@/lib/localDb', () => ({
   addCategory: vi.fn(),
   addExpense: vi.fn(),
   addIncome: vi.fn(),
+  addIncomeCategory: vi.fn(),
   getAllCategories: vi.fn(),
   getAllExpenses: vi.fn(),
   getAllIncome: vi.fn(),
+  getAllIncomeCategories: vi.fn(),
   upsertBudget: vi.fn(),
 }))
 
@@ -36,6 +41,9 @@ describe('import: invalid dates are skipped (#11)', () => {
     ])
     vi.mocked(getAllExpenses).mockResolvedValue([])
     vi.mocked(getAllIncome).mockResolvedValue([])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([
+      { id: 'ic1', name: 'Job', icon: null },
+    ])
   })
 
   it('expenses: skips an impossible date and an empty date, imports the valid row', async () => {
@@ -87,6 +95,7 @@ describe('import: invalid dates are skipped (#11)', () => {
     expect(result.errors).toContain('Row 4: invalid date ""')
     expect(addIncome).toHaveBeenCalledTimes(1)
     expect(vi.mocked(addIncome).mock.calls[0][0].amount).toBe(100)
+    expect(vi.mocked(addIncome).mock.calls[0][0].categoryId).toBe('ic1')
   })
 })
 
@@ -98,6 +107,7 @@ describe('import: category names are compared trimmed (#10)', () => {
     ])
     vi.mocked(getAllExpenses).mockResolvedValue([])
     vi.mocked(getAllIncome).mockResolvedValue([])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([])
   })
 
   it('skips a padded duplicate of an existing category without calling addCategory', async () => {
@@ -124,6 +134,7 @@ describe('import: existing behaviour is preserved (Phase 4, #20)', () => {
     ])
     vi.mocked(getAllExpenses).mockResolvedValue([])
     vi.mocked(getAllIncome).mockResolvedValue([])
+    vi.mocked(getAllIncomeCategories).mockResolvedValue([])
   })
 
   it('expenses: reports each invalid row once, with the original texts and numbering', async () => {
@@ -192,6 +203,7 @@ describe('import: existing behaviour is preserved (Phase 4, #20)', () => {
     expect(result.errors).toEqual(['Row 2: missing source'])
     expect(result.skipped).toBe(1)
     expect(addIncome).not.toHaveBeenCalled()
+    expect(addIncomeCategory).not.toHaveBeenCalled()
   })
 
   it('categories: a row without a name is reported', async () => {

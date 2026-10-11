@@ -1,7 +1,8 @@
-import { clear, createStore, del, get, keys, set } from 'idb-keyval'
+import { clear, createStore, del, get, keys, set, setMany } from 'idb-keyval'
 
 import { decryptValue, encryptValue } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
+import { convertIncomeSources } from './incomeCategories'
 import { postChanged } from './syncChannel'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
@@ -26,7 +27,10 @@ export const ENABLE_SUPABASE_SYNC = false
 // guarded behind a Premium check. Not implemented yet.
 
 // Expenses are stored in per-month chunks: `expenses_YYYY_MM`.
-// All other collections are small enough to store as single keys.
+// All other collections are small enough to store as single keys:
+// `categories` (expense categories), `incomeCategories`, `income`, `budgets`.
+// Income records reference an income category by `categoryId`; legacy records
+// with a free-text `source` are converted by ensureIncomeCategories().
 //
 // Every mutation runs its whole read-modify-write under withWriteLock for the
 // storage key(s) it touches, and announces the written keys on the sync
@@ -37,6 +41,7 @@ export const ENABLE_SUPABASE_SYNC = false
 // quarantine) `meta:settings.lastDataChangeAt` is set for the backup reminder.
 interface LocalDbMap {
   categories: Array<Category>
+  incomeCategories: Array<Category>
   income: Array<IncomeEntry>
   budgets: Array<BudgetEntry>
 }
@@ -95,6 +100,20 @@ async function writeStore<TKey extends LocalDbKey>(
   if (!store) return
   const encrypted = await encryptValue(_key, data)
   await set(key, encrypted, store)
+}
+
+// Encrypts every value and writes them all in ONE IndexedDB transaction
+// (idb-keyval setMany). If the transaction fails nothing is written.
+async function writeStoreMany(values: Partial<LocalDbMap>): Promise<void> {
+  const key = _key
+  if (!key) throw new Error('LocalDb not initialized')
+  if (!store) return
+  const entries: Array<[IDBValidKey, Uint8Array]> = []
+  for (const [k, v] of Object.entries(values)) {
+    entries.push([k, await encryptValue(key, v)])
+  }
+  if (entries.length === 0) return
+  await setMany(entries, store)
 }
 
 // ── Expense chunk helpers ─────────────────────────────────────────────────────
@@ -397,11 +416,17 @@ export async function getAllCategories(): Promise<Array<Category>> {
   return (await readStore('categories')) ?? []
 }
 
-export async function addCategory(
+type CategoryKey = 'categories' | 'incomeCategories'
+
+// Shared by the expense and the income category mutations: the whole
+// read-modify-write runs under the lock of `key`. Names are trimmed and unique
+// ignoring case.
+async function addCategoryIn(
+  key: CategoryKey,
   input: CreateCategoryInput,
 ): Promise<Category> {
-  const entry = await withWriteLock('categories', async () => {
-    const categories = (await readStore('categories')) ?? []
+  const entry = await withWriteLock(key, async () => {
+    const categories = (await readStore(key)) ?? []
     const name = input.name.trim()
     if (!name) throw new Error('Category name is required')
     if (
@@ -417,18 +442,19 @@ export async function addCategory(
       icon: input.icon ?? null,
       updatedAt: new Date().toISOString(),
     }
-    await writeStore('categories', [...categories, created])
+    await writeStore(key, [...categories, created])
     return created
   })
-  await afterCommit(['categories'])
+  await afterCommit([key])
   return entry
 }
 
-export async function updateCategory(
+async function updateCategoryIn(
+  key: CategoryKey,
   input: UpdateCategoryInput,
 ): Promise<Category> {
-  const result = await withWriteLock('categories', async () => {
-    const categories = (await readStore('categories')) ?? []
+  const result = await withWriteLock(key, async () => {
+    const categories = (await readStore(key)) ?? []
     const name = input.name.trim()
     if (!name) throw new Error('Category name is required')
     if (
@@ -446,13 +472,25 @@ export async function updateCategory(
         ? { ...c, name, icon: input.icon ?? null, updatedAt }
         : c,
     )
-    await writeStore('categories', updated)
+    await writeStore(key, updated)
     const found = updated.find((c) => c.id === input.id)
     if (!found) throw new Error(`Category not found: ${input.id}`)
     return found
   })
-  await afterCommit(['categories'])
+  await afterCommit([key])
   return result
+}
+
+export async function addCategory(
+  input: CreateCategoryInput,
+): Promise<Category> {
+  return addCategoryIn('categories', input)
+}
+
+export async function updateCategory(
+  input: UpdateCategoryInput,
+): Promise<Category> {
+  return updateCategoryIn('categories', input)
 }
 
 export async function deleteCategory(id: string): Promise<void> {
@@ -515,10 +553,96 @@ export async function provisionDefaultCategories(): Promise<void> {
   if (wrote) await afterCommit(['categories'])
 }
 
+// ── Income categories ─────────────────────────────────────────────────────────
+
+export async function getAllIncomeCategories(): Promise<Array<Category>> {
+  return (await readStore('incomeCategories')) ?? []
+}
+
+export async function addIncomeCategory(
+  input: CreateCategoryInput,
+): Promise<Category> {
+  return addCategoryIn('incomeCategories', input)
+}
+
+export async function updateIncomeCategory(
+  input: UpdateCategoryInput,
+): Promise<Category> {
+  return updateCategoryIn('incomeCategories', input)
+}
+
+export async function deleteIncomeCategory(id: string): Promise<void> {
+  await withWriteLock(['income', 'incomeCategories'], async () => {
+    const income = (await readStore('income')) ?? []
+    const using = income.filter((e) => e.categoryId === id).length
+    if (using > 0) {
+      throw new Error(
+        using === 1
+          ? '1 income entry uses this category'
+          : `${using} income entries use this category`,
+      )
+    }
+    const categories = (await readStore('incomeCategories')) ?? []
+    await writeStore(
+      'incomeCategories',
+      categories.filter((c) => c.id !== id),
+    )
+  })
+  await afterCommit(['incomeCategories'])
+}
+
+// Provisions the default income categories and converts legacy free-text
+// income sources into categories, once: when `incomeCategories` already
+// exists (even as an unreadable blob) it does nothing. Both keys are written
+// in one transaction. A DecryptError on `income` propagates and nothing is
+// written. Returns true when it wrote.
+export async function ensureIncomeCategories(): Promise<boolean> {
+  const s = store
+  if (!_key || !s) return false
+  const wrote = await withWriteLock(['income', 'incomeCategories'], async () => {
+    const existing = await get<unknown>('incomeCategories', s)
+    if (existing !== undefined) return false
+    const income = (await readStore('income')) ?? []
+    const converted = convertIncomeSources(income, [], { addDefaults: true })
+    await writeStoreMany({
+      incomeCategories: converted.incomeCategories,
+      income: converted.income,
+    })
+    return true
+  })
+  if (wrote) await afterCommit(['incomeCategories', 'income'])
+  return wrote
+}
+
+// Runs after every unlock: default expense categories for a new vault, then
+// the income categories (defaults and legacy conversion). Errors, including
+// DecryptError, propagate to the caller.
+export async function prepareUnlockedVault({
+  isNewVault,
+}: {
+  isNewVault: boolean
+}): Promise<void> {
+  if (isNewVault) await provisionDefaultCategories()
+  await ensureIncomeCategories()
+}
+
 // ── Income ────────────────────────────────────────────────────────────────────
 
+function joinIncomeCategories(
+  income: Array<IncomeEntry>,
+  categories: Array<Category>,
+): Array<IncomeEntry> {
+  const categoryMap = new Map(categories.map((c) => [c.id, c]))
+  return income.map((i) => ({
+    ...i,
+    category: categoryMap.get(i.categoryId),
+  }))
+}
+
 export async function getAllIncome(): Promise<Array<IncomeEntry>> {
-  return (await readStore('income')) ?? []
+  const income = (await readStore('income')) ?? []
+  const categories = (await readStore('incomeCategories')) ?? []
+  return joinIncomeCategories(income, categories)
 }
 
 export async function addIncome(
@@ -529,7 +653,7 @@ export async function addIncome(
     const now = new Date().toISOString()
     const created: IncomeEntry = {
       id: crypto.randomUUID(),
-      source: input.source,
+      categoryId: input.categoryId,
       amount: input.amount,
       currency: input.currency,
       description: input.description,
@@ -540,7 +664,9 @@ export async function addIncome(
     return created
   })
   await afterCommit(['income'])
-  return entry
+  const categories = (await readStore('incomeCategories')) ?? []
+  const category = categories.find((c) => c.id === entry.categoryId)
+  return { ...entry, category }
 }
 
 export async function deleteIncome(id: string): Promise<void> {
