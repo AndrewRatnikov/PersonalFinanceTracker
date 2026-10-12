@@ -1,0 +1,28 @@
+{
+  "$comment": "Read by the AI Orchestrator from the original branch. `sizing`: a run that touches any of these paths (on top of built-in defaults: schema, migrations, auth, crypto, dependencies, build/deploy config) always runs the full pipeline; see size-run.py.",
+  "sizing": {
+    "max_files": 3,
+    "sensitive_paths": [
+      "src/lib/localDb.ts",
+      "src/lib/vault.ts",
+      "src/lib/vaultSession.ts",
+      "src/lib/crypto.ts",
+      "src/lib/backup.ts",
+      "src/lib/writeLock.ts",
+      "src/lib/dataErrors.ts",
+      "src/lib/dataProblem.ts",
+      "src/lib/localWipe.ts",
+      "src/lib/syncChannel.ts",
+      "src/lib/appSettings.ts",
+      "src/lib/queryClient.ts",
+      "src/lib/localImport.ts",
+      "src/lib/storagePersistence.ts",
+      "src/lib/supabase.ts",
+      "src/lib/account*.ts",
+      "src/components/vault/**",
+      "src/components/DataProblem*",
+      "src/routes/__root.tsx",
+      "scripts/precacheCheck.ts"
+    ]
+  }
+}
