@@ -113,11 +113,11 @@ export default function CategoryDonutChart({
             </Pie>
             <Tooltip
               contentStyle={{
-                backgroundColor: 'hsl(var(--popover))',
-                border: '1px solid hsl(var(--border))',
+                backgroundColor: 'var(--popover)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                color: 'hsl(var(--popover-foreground))',
+                color: 'var(--popover-foreground)',
                 fontSize: '12px',
               }}
               itemStyle={{ fontWeight: 600, padding: '0 4px' }}
