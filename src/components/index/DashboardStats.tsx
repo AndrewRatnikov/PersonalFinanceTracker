@@ -55,31 +55,33 @@ export default function DashboardStats({
           >
             <XAxis
               dataKey="name"
-              stroke="hsl(var(--muted-foreground))"
+              stroke="var(--muted-foreground)"
+              tick={{ fill: 'var(--muted-foreground)' }}
               fontSize={12}
               tickLine={false}
               axisLine={false}
               dy={10}
             />
             <YAxis
-              stroke="hsl(var(--muted-foreground))"
+              stroke="var(--muted-foreground)"
+              tick={{ fill: 'var(--muted-foreground)' }}
               fontSize={12}
               tickLine={false}
               axisLine={false}
               tickFormatter={(value) => `${value}`}
             />
             <Tooltip
-              cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
+              cursor={{ fill: 'var(--muted)', opacity: 0.3 }}
               contentStyle={{
-                backgroundColor: 'hsl(var(--popover))',
-                border: '1px solid hsl(var(--border))',
+                backgroundColor: 'var(--popover)',
+                border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)',
                 boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                color: 'hsl(var(--popover-foreground))',
+                color: 'var(--popover-foreground)',
               }}
-              itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 'bold' }}
+              itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
               labelStyle={{
-                color: 'hsl(var(--muted-foreground))',
+                color: 'var(--muted-foreground)',
                 marginBottom: '4px',
               }}
               formatter={(value: any) => [
@@ -89,7 +91,7 @@ export default function DashboardStats({
             />
             <Bar
               dataKey="total"
-              fill="hsl(var(--primary))"
+              fill="var(--primary)"
               radius={[6, 6, 0, 0]}
               maxBarSize={45}
               className="opacity-90 hover:opacity-100 transition-opacity"
