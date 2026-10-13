@@ -20,7 +20,7 @@ Tests use Vitest + jsdom (`vitest.config.ts`, separate from `vite.config.ts`) an
 
 **Framework:** TanStack Start (React 19 + TanStack Router file-based routing + Vite + Nitro/Vercel SSR). Routes live in `src/routes/`; the route tree is auto-generated into `src/routeTree.gen.ts` — do not edit it manually. `@/` is an alias for `src/`.
 
-**UI:** Tailwind CSS v4 + shadcn/ui components (in `src/components/ui/`). `components.json` controls shadcn config. Charts use Recharts.
+**UI:** Tailwind CSS v4 + shadcn/ui components (in `src/components/ui/`). `components.json` controls shadcn config. Charts use Recharts. Theme variables in `src/styles.css` hold full oklch colours, so use `var(--token)` in inline styles and chart props, never `hsl(var(--token))`.
 
 ### Storage — local-first, encrypted IndexedDB
 
