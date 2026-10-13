@@ -27,11 +27,11 @@ function formatValue(value: number): string {
 }
 
 const tooltipStyle = {
-  backgroundColor: 'hsl(var(--popover))',
-  border: '1px solid hsl(var(--border))',
+  backgroundColor: 'var(--popover)',
+  border: '1px solid var(--border)',
   borderRadius: '8px',
   boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-  color: 'hsl(var(--popover-foreground))',
+  color: 'var(--popover-foreground)',
   fontSize: '12px',
 }
 
@@ -74,7 +74,8 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
         >
           <XAxis
             type="number"
-            stroke="hsl(var(--muted-foreground))"
+            stroke="var(--muted-foreground)"
+            tick={{ fill: 'var(--muted-foreground)' }}
             fontSize={11}
             tickLine={false}
             axisLine={false}
@@ -83,7 +84,8 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
           <YAxis
             type="category"
             dataKey="name"
-            stroke="hsl(var(--muted-foreground))"
+            stroke="var(--muted-foreground)"
+            tick={{ fill: 'var(--muted-foreground)' }}
             fontSize={12}
             tickLine={false}
             axisLine={false}
@@ -94,7 +96,7 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
             contentStyle={tooltipStyle}
             itemStyle={{ fontWeight: 600, padding: '0 4px' }}
             labelStyle={{
-              color: 'hsl(var(--muted-foreground))',
+              color: 'var(--muted-foreground)',
               marginBottom: '4px',
             }}
             formatter={(value, name) => [
@@ -105,7 +107,7 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
           <Legend
             wrapperStyle={{
               fontSize: '12px',
-              color: 'hsl(var(--muted-foreground))',
+              color: 'var(--muted-foreground)',
             }}
           />
           <Bar
