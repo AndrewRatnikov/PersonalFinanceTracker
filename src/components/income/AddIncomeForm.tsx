@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import type { Category, CreateIncomeInput, Currency } from '@/lib/domain'
-import { addIncome } from '@/lib/localDb'
+import type {
+  Category,
+  CreateIncomeInput,
+  Currency,
+  QuickRepeat,
+} from '@/lib/domain'
+import { addIncome, addRepeatingIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
 
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,7 +35,9 @@ export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
   const [currency, setCurrency] = useState<Currency>('UAH')
   const [selected, setSelected] = useState('')
   const [description, setDescription] = useState('')
+  const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const queryClient = useQueryClient()
 
   // The first category is the default, even when the list arrives later or
   // the selected one disappears.
@@ -40,11 +47,21 @@ export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
   const selectedCategory = categories.find((c) => c.id === categoryId)
 
   const mutation = useMutation({
-    mutationFn: (data: CreateIncomeInput) => addIncome(data),
-    onSuccess: () => {
+    mutationFn: ({
+      data,
+      repeat: unit,
+    }: {
+      data: CreateIncomeInput
+      repeat: QuickRepeat
+    }) => (unit === 'none' ? addIncome(data) : addRepeatingIncome(data, unit)),
+    onSuccess: (_saved, { repeat: unit }) => {
       setAmount('')
       setDescription('')
+      setRepeat('none')
       setErrors({})
+      if (unit !== 'none') {
+        void queryClient.invalidateQueries({ queryKey: ['recurring'] })
+      }
       toast.success('Income saved')
       onSuccess()
     },
@@ -74,7 +91,7 @@ export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
       return
     }
 
-    mutation.mutate(result.data)
+    mutation.mutate({ data: result.data, repeat })
   }
 
   return (
@@ -203,6 +220,29 @@ export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
               disabled={mutation.isPending}
               className={errors.description ? 'border-destructive' : ''}
             />
+          </div>
+
+          {/* Repeat — creates a matching recurring item starting today */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="income-repeat-select"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
+              Repeat
+            </Label>
+            <select
+              id="income-repeat-select"
+              data-testid="income-repeat"
+              value={repeat}
+              onChange={(e) => setRepeat(e.target.value as QuickRepeat)}
+              disabled={mutation.isPending}
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <option value="none">Don't repeat</option>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+              <option value="year">Yearly</option>
+            </select>
           </div>
 
           <Button
