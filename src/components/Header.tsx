@@ -4,6 +4,7 @@ import {
   Home,
   List,
   Menu,
+  Repeat,
   Settings,
   TrendingUp,
   User2,
@@ -22,13 +23,26 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 
-const NAV_LINKS = [
+interface NavLink {
+  to: '/' | '/analytics' | '/transactions' | '/income' | '/recurring' | '/settings'
+  icon: typeof Home
+  label: string
+  testId?: string
+}
+
+const NAV_LINKS: ReadonlyArray<NavLink> = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/transactions', icon: List, label: 'Transactions' },
   { to: '/income', icon: TrendingUp, label: 'Income' },
+  {
+    to: '/recurring',
+    icon: Repeat,
+    label: 'Recurring',
+    testId: 'nav-link-recurring',
+  },
   { to: '/settings', icon: Settings, label: 'Settings' },
-] as const
+]
 
 const NAV_LINK_CLASS =
   'flex items-center gap-3 p-3 rounded-md hover:bg-accent transition-colors text-foreground'
@@ -179,10 +193,11 @@ export default function Header() {
             </SheetHeader>
 
             <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
-              {NAV_LINKS.map(({ to, icon: Icon, label }) => (
+              {NAV_LINKS.map(({ to, icon: Icon, label, testId }) => (
                 <SheetClose key={to} asChild>
                   <Link
                     to={to}
+                    data-testid={testId}
                     className={NAV_LINK_CLASS}
                     activeProps={{ className: NAV_LINK_ACTIVE_CLASS }}
                   >
