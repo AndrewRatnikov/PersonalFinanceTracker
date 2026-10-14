@@ -67,6 +67,10 @@ const { mockStore, ctl } = vi.hoisted(() => ({
   ctl: {
     failSetMany: false,
     setManyCalls: [] as Array<Array<string>>,
+    // Lock names held (by the fake navigator.locks) at each setMany call.
+    heldAtSetMany: [] as Array<Array<string>>,
+    held: new Set<string>(),
+    requested: [] as Array<string>,
   },
 }))
 
@@ -80,6 +84,7 @@ vi.mock('idb-keyval', () => ({
   // Applies all entries or none, like an IndexedDB transaction.
   setMany: (entries: Array<[string, unknown]>) => {
     ctl.setManyCalls.push(entries.map(([key]) => key))
+    ctl.heldAtSetMany.push(Array.from(ctl.held))
     if (ctl.failSetMany) return Promise.reject(new Error('transaction aborted'))
     for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
@@ -203,6 +208,9 @@ beforeEach(async () => {
   mockStore.clear()
   ctl.failSetMany = false
   ctl.setManyCalls.length = 0
+  ctl.heldAtSetMany.length = 0
+  ctl.held.clear()
+  ctl.requested.length = 0
   dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
     'encrypt',
     'decrypt',
@@ -634,6 +642,182 @@ describe('processDueRecurring: concurrency and atomicity (acceptance 7, 8, 9)', 
     expect((await storedExpenses()).map((r) => r.id).sort()).toEqual(idsBefore)
     const [item] = await storedRecurring()
     expect(item.handledThrough).toBe(TODAY)
+  })
+})
+
+// A fake Web Locks manager: exclusive per name (FIFO), records every requested
+// name and the set of names held together. writeLock.ts reads navigator.locks
+// on every call, so installing it here is enough.
+function installFakeLocks() {
+  const tails = new Map<string, Promise<void>>()
+  const fake = {
+    request: async (name: string, callback: () => Promise<unknown>) => {
+      const previous = tails.get(name) ?? Promise.resolve()
+      let release!: () => void
+      const current = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      tails.set(
+        name,
+        previous.then(() => current),
+      )
+      await previous
+      ctl.requested.push(name)
+      ctl.held.add(name)
+      try {
+        return await callback()
+      } finally {
+        ctl.held.delete(name)
+        release()
+      }
+    },
+  }
+  Object.defineProperty(navigator, 'locks', { value: fake, configurable: true })
+}
+
+function removeFakeLocks() {
+  Reflect.deleteProperty(navigator, 'locks')
+}
+
+function lastHeld(): Array<string> {
+  return ctl.heldAtSetMany[ctl.heldAtSetMany.length - 1]
+}
+
+describe('write locks held around the single setMany (acceptance 8)', () => {
+  beforeEach(() => {
+    installFakeLocks()
+  })
+
+  afterEach(() => {
+    removeFakeLocks()
+  })
+
+  const FOUR_DATES = ['2026-02-15', '2026-03-15', '2026-04-15', '2026-05-15']
+  const chunkLocks = (dates: Array<string>) =>
+    Array.from(new Set(dates.map((d) => `minima:${expenseChunkKey(occurrenceCreatedAt(d))}`)))
+
+  it('processDueRecurring (expense item) holds recurring and every target chunk together at setMany', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await seedRecurring([makeItem({ categoryId: category.id })])
+    ctl.setManyCalls.length = 0
+    ctl.heldAtSetMany.length = 0
+    ctl.requested.length = 0
+
+    await processDueRecurring(TODAY)
+
+    const expected = ['minima:recurring', ...chunkLocks(FOUR_DATES)]
+    for (const name of expected) expect(ctl.requested).toContain(name)
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    for (const name of expected) expect(lastHeld()).toContain(name)
+    expect(ctl.held.size).toBe(0)
+  })
+
+  it('processDueRecurring (income item) holds recurring and income together at setMany', async () => {
+    const category = await addIncomeCategory({ name: 'Salary' })
+    await seedRecurring([
+      makeItem({ kind: 'income', categoryId: category.id, startDate: '2026-04-15' }),
+    ])
+    ctl.heldAtSetMany.length = 0
+    ctl.requested.length = 0
+
+    await processDueRecurring(TODAY)
+
+    expect(ctl.requested).toContain('minima:recurring')
+    expect(ctl.requested).toContain('minima:income')
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:income')
+  })
+
+  it('confirmRecurringOccurrence holds recurring and the target chunk together at setMany', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await seedRecurring([makeItem({ mode: 'ask', categoryId: category.id })])
+    ctl.heldAtSetMany.length = 0
+    ctl.requested.length = 0
+
+    await confirmRecurringOccurrence('r1', '2026-02-15')
+
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    expect(lastHeld()).toContain('minima:recurring')
+    for (const name of chunkLocks(['2026-02-15'])) expect(lastHeld()).toContain(name)
+  })
+
+  it('confirmRecurringOccurrence for an income item holds recurring and income', async () => {
+    const category = await addIncomeCategory({ name: 'Salary' })
+    await seedRecurring([
+      makeItem({ kind: 'income', mode: 'ask', categoryId: category.id }),
+    ])
+    ctl.heldAtSetMany.length = 0
+
+    await confirmRecurringOccurrence('r1', '2026-02-15')
+
+    expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:income')
+  })
+
+  it('addRecurring with createThroughToday holds recurring and every target chunk at setMany', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    ctl.heldAtSetMany.length = 0
+    ctl.requested.length = 0
+
+    await addRecurring(makeInput(category.id), {
+      createThroughToday: true,
+      today: TODAY,
+    })
+
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    expect(lastHeld()).toContain('minima:recurring')
+    for (const name of chunkLocks(FOUR_DATES)) expect(lastHeld()).toContain(name)
+  })
+
+  it('addRepeatingExpense holds recurring and the chunk of today at setMany', async () => {
+    const category = await addCategory({ name: 'Streaming' })
+    ctl.heldAtSetMany.length = 0
+
+    await addRepeatingExpense(
+      { amount: 30, currency: 'USD', categoryId: category.id },
+      'month',
+    )
+
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    expect(lastHeld()).toContain('minima:recurring')
+    for (const name of chunkLocks([TODAY])) expect(lastHeld()).toContain(name)
+  })
+
+  it('addRepeatingIncome holds recurring and income at setMany', async () => {
+    const category = await addIncomeCategory({ name: 'Salary' })
+    ctl.heldAtSetMany.length = 0
+
+    await addRepeatingIncome(
+      { amount: 5000, currency: 'EUR', categoryId: category.id },
+      'month',
+    )
+
+    expect(ctl.heldAtSetMany).toHaveLength(1)
+    expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:income')
+  })
+
+  it('a manual addExpense racing processDueRecurring in the same chunk loses nothing', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await seedRecurring([makeItem({ categoryId: category.id })])
+
+    await Promise.all([
+      processDueRecurring(TODAY),
+      addExpense({
+        amount: 5,
+        currency: 'UAH',
+        categoryId: category.id,
+        createdAt: occurrenceCreatedAt('2026-03-15'),
+      }),
+    ])
+
+    const records = await storedExpenses()
+    expect(records).toHaveLength(5)
+    expect(records.filter((r) => r.recurringId === 'r1')).toHaveLength(4)
+    expect(records.filter((r) => r.amount === 5)).toHaveLength(1)
+    const [item] = await storedRecurring()
+    expect(item.occurrenceCount).toBe(4)
   })
 })
 
