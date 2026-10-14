@@ -3,6 +3,17 @@ import { clear, createStore, del, get, keys, set, setMany } from 'idb-keyval'
 import { decryptValue, encryptValue } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
 import { convertIncomeSources } from './incomeCategories'
+import {
+  addDaysToDate,
+  dueOccurrences,
+  lastOccurrenceOnOrBefore,
+  markOccurrenceHandled,
+  nextOccurrence,
+  occurrenceCreatedAt,
+  occurrencesBetween,
+  toLocalDateString,
+} from './recurrence'
+import { recurringInputSchema, recurringInputSchemaFor } from './schemas'
 import { postChanged } from './syncChannel'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
@@ -12,10 +23,15 @@ import type {
   CreateCategoryInput,
   CreateExpenseInput,
   CreateIncomeInput,
+  CreateRecurringInput,
   Expense,
   IncomeEntry,
+  RecurringItem,
+  RecurringKind,
+  RecurringOccurrence,
   UpdateCategoryInput,
   UpdateExpenseInput,
+  UpdateRecurringInput,
   UpsertBudgetInput,
 } from './domain'
 
@@ -28,7 +44,8 @@ export const ENABLE_SUPABASE_SYNC = false
 
 // Expenses are stored in per-month chunks: `expenses_YYYY_MM`.
 // All other collections are small enough to store as single keys:
-// `categories` (expense categories), `incomeCategories`, `income`, `budgets`.
+// `categories` (expense categories), `incomeCategories`, `income`, `budgets`,
+// `recurring` (recurring items).
 // Income records reference an income category by `categoryId`; legacy records
 // with a free-text `source` are converted by ensureIncomeCategories().
 //
@@ -44,6 +61,7 @@ interface LocalDbMap {
   incomeCategories: Array<Category>
   income: Array<IncomeEntry>
   budgets: Array<BudgetEntry>
+  recurring: Array<RecurringItem>
 }
 
 type LocalDbKey = keyof LocalDbMap
@@ -105,6 +123,13 @@ async function writeStore<TKey extends LocalDbKey>(
 // Encrypts every value and writes them all in ONE IndexedDB transaction
 // (idb-keyval setMany). If the transaction fails nothing is written.
 async function writeStoreMany(values: Partial<LocalDbMap>): Promise<void> {
+  await writeKeysMany(values)
+}
+
+// Like writeStoreMany, but the values may also be expense chunks
+// (`expenses_YYYY_MM` -> Array<Expense>), so one transaction can carry single
+// keys and chunks together.
+async function writeKeysMany(values: object): Promise<void> {
   const key = _key
   if (!key) throw new Error('LocalDb not initialized')
   if (!store) return
@@ -380,6 +405,14 @@ export async function updateExpense(
       createdAt,
       updatedAt: new Date().toISOString(),
     }
+    // A generated record keeps its idempotency key (recurringId +
+    // occurrenceDate); ordinary records keep their exact shape.
+    if (existing.recurringId !== undefined) {
+      updated.recurringId = existing.recurringId
+    }
+    if (existing.occurrenceDate !== undefined) {
+      updated.occurrenceDate = existing.occurrenceDate
+    }
 
     const newKey = expenseChunkKey(createdAt)
     let writtenKeys: Array<string>
@@ -493,9 +526,25 @@ export async function updateCategory(
   return updateCategoryIn('categories', input)
 }
 
+// Refuses while a recurring item of `kind` uses the category.
+async function assertNoRecurringUses(
+  kind: RecurringKind,
+  categoryId: string,
+): Promise<void> {
+  const items = (await readStore('recurring')) ?? []
+  const using = items.filter(
+    (i) => i.kind === kind && i.categoryId === categoryId,
+  ).length
+  if (using > 0) {
+    throw new Error(
+      `Used by ${using} recurring item${using === 1 ? '' : 's'}`,
+    )
+  }
+}
+
 export async function deleteCategory(id: string): Promise<void> {
   const budgetsChanged = await withWriteLock(
-    ['budgets', 'categories'],
+    ['budgets', 'categories', 'recurring'],
     async () => {
       // Check all expense chunks for references to this category. This only
       // reads chunks, so it takes no chunk locks.
@@ -507,6 +556,7 @@ export async function deleteCategory(id: string): Promise<void> {
           `${using} expense${using === 1 ? '' : 's'} use this category`,
         )
       }
+      await assertNoRecurringUses('expense', id)
       const categories = (await readStore('categories')) ?? []
       await writeStore(
         'categories',
@@ -572,7 +622,7 @@ export async function updateIncomeCategory(
 }
 
 export async function deleteIncomeCategory(id: string): Promise<void> {
-  await withWriteLock(['income', 'incomeCategories'], async () => {
+  await withWriteLock(['income', 'incomeCategories', 'recurring'], async () => {
     const income = (await readStore('income')) ?? []
     const using = income.filter((e) => e.categoryId === id).length
     if (using > 0) {
@@ -582,6 +632,7 @@ export async function deleteIncomeCategory(id: string): Promise<void> {
           : `${using} income entries use this category`,
       )
     }
+    await assertNoRecurringUses('income', id)
     const categories = (await readStore('incomeCategories')) ?? []
     await writeStore(
       'incomeCategories',
@@ -615,15 +666,18 @@ export async function ensureIncomeCategories(): Promise<boolean> {
 }
 
 // Runs after every unlock: default expense categories for a new vault, then
-// the income categories (defaults and legacy conversion). Errors, including
-// DecryptError, propagate to the caller.
+// the income categories (defaults and legacy conversion), then the due
+// recurring occurrences. Errors, including DecryptError, propagate to the
+// caller. Returns how many recurring records were created.
 export async function prepareUnlockedVault({
   isNewVault,
 }: {
   isNewVault: boolean
-}): Promise<void> {
+}): Promise<{ recurringCreated: number }> {
   if (isNewVault) await provisionDefaultCategories()
   await ensureIncomeCategories()
+  const { created } = await processDueRecurring()
+  return { recurringCreated: created }
 }
 
 // ── Income ────────────────────────────────────────────────────────────────────
@@ -741,4 +795,586 @@ export async function deleteBudget(id: string): Promise<void> {
     )
   })
   await afterCommit(['budgets'])
+}
+
+// ── Recurring items ───────────────────────────────────────────────────────────
+//
+// Items live in the single key `recurring`. A generated record carries
+// `recurringId` + `occurrenceDate`: that pair is the idempotency key, so an
+// occurrence that already has a record (another tab, a retry, a restored
+// backup) is never created twice. Every write runs under the lock of
+// `recurring` plus every target key (expense chunks or `income`) and goes out
+// in ONE setMany, so the item and its records commit together or not at all.
+
+type GeneratedRecord = Expense | IncomeEntry
+
+interface OccurrenceOverrides {
+  amount?: number
+  description?: string | null
+}
+
+const RECURRING_ATTEMPTS = 3
+const DATE_STRING_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function categoryKeyFor(kind: RecurringKind): CategoryKey {
+  return kind === 'income' ? 'incomeCategories' : 'categories'
+}
+
+// The storage key a generated record of `kind` on `date` is written to.
+function occurrenceTargetKey(kind: RecurringKind, date: string): string {
+  return kind === 'income'
+    ? 'income'
+    : expenseChunkKey(occurrenceCreatedAt(date))
+}
+
+function occurrenceTargetKeys(
+  kind: RecurringKind,
+  dates: Array<string>,
+): Array<string> {
+  return Array.from(new Set(dates.map((d) => occurrenceTargetKey(kind, d))))
+}
+
+async function readOccurrenceTarget(
+  key: string,
+): Promise<Array<GeneratedRecord>> {
+  if (key === 'income') return (await readStore('income')) ?? []
+  return readChunk(key)
+}
+
+async function categoryIdsFor(kind: RecurringKind): Promise<Array<string>> {
+  return ((await readStore(categoryKeyFor(kind))) ?? []).map((c) => c.id)
+}
+
+// Validates with recurringInputSchemaFor (the categories of the input's kind)
+// and throws the first issue's message.
+async function validateRecurringInput(
+  input: CreateRecurringInput,
+): Promise<CreateRecurringInput> {
+  const base = recurringInputSchema.safeParse(input)
+  if (!base.success) throw new Error(base.error.issues[0].message)
+  const checked = recurringInputSchemaFor(
+    await categoryIdsFor(base.data.kind),
+  ).safeParse(input)
+  if (!checked.success) throw new Error(checked.error.issues[0].message)
+  return checked.data
+}
+
+// Builds one record per date, grouped by target key. A date is skipped when
+// its target already holds a record with the same recurringId +
+// occurrenceDate. Returns only the targets that gained a record. Must run
+// under the lock of every target key.
+async function planOccurrenceWrites(
+  item: RecurringItem,
+  dates: Array<string>,
+  overrides?: OccurrenceOverrides,
+): Promise<{ values: Record<string, Array<GeneratedRecord>>; created: number }> {
+  const lists = new Map<string, Array<GeneratedRecord>>()
+  const values: Record<string, Array<GeneratedRecord>> = {}
+  let created = 0
+  const now = new Date().toISOString()
+  const amount = overrides?.amount ?? item.amount
+  const description =
+    overrides?.description !== undefined
+      ? overrides.description === ''
+        ? null
+        : overrides.description
+      : item.description
+  for (const date of dates) {
+    const key = occurrenceTargetKey(item.kind, date)
+    const list = lists.get(key) ?? (await readOccurrenceTarget(key))
+    if (
+      list.some((r) => r.recurringId === item.id && r.occurrenceDate === date)
+    ) {
+      lists.set(key, list)
+      continue
+    }
+    const record: GeneratedRecord = {
+      id: crypto.randomUUID(),
+      amount,
+      currency: item.currency,
+      categoryId: item.categoryId,
+      description,
+      createdAt: occurrenceCreatedAt(date),
+      updatedAt: now,
+      recurringId: item.id,
+      occurrenceDate: date,
+    }
+    const next = [...list, record]
+    lists.set(key, next)
+    values[key] = next
+    created++
+  }
+  return { values, created }
+}
+
+// True when `date` is an occurrence of the item that isn't handled yet.
+function isUnhandledOccurrence(item: RecurringItem, date: string): boolean {
+  if (!DATE_STRING_RE.test(date)) return false
+  if (item.handledThrough !== null && date <= item.handledThrough) return false
+  if (item.handledAhead.includes(date)) return false
+  const dates = occurrencesBetween(item, item.handledThrough, date)
+  return dates[dates.length - 1] === date
+}
+
+export async function getAllRecurring(): Promise<Array<RecurringItem>> {
+  return (await readStore('recurring')) ?? []
+}
+
+export async function getDueRecurring(
+  today: string = toLocalDateString(),
+): Promise<Array<RecurringOccurrence>> {
+  return dueOccurrences(await getAllRecurring(), today)
+}
+
+type ItemOutcome = { created: number; touched: boolean }
+
+const UNTOUCHED: ItemOutcome = { created: 0, touched: false }
+
+// One auto item: plan the target keys outside the lock, then re-read and
+// re-check under the lock of `recurring` + those keys. When an edit in
+// between needs a key that isn't locked, release and plan again.
+async function processRecurringItem(
+  first: RecurringItem,
+  today: string,
+): Promise<ItemOutcome> {
+  let candidate: RecurringItem | undefined = first
+  for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      candidate = ((await readStore('recurring')) ?? []).find(
+        (i) => i.id === first.id,
+      )
+    }
+    if (!candidate || candidate.mode !== 'auto' || candidate.paused) {
+      return UNTOUCHED
+    }
+    const planned = occurrencesBetween(
+      candidate,
+      candidate.handledThrough,
+      today,
+    )
+    if (planned.length === 0) return UNTOUCHED
+    const lockedTargets = occurrenceTargetKeys(candidate.kind, planned)
+
+    const result = await withWriteLock(
+      ['recurring', ...lockedTargets],
+      async (): Promise<
+        | { status: 'done' }
+        | { status: 'retry' }
+        | { status: 'written'; created: number; keys: Array<string> }
+      > => {
+        const items = (await readStore('recurring')) ?? []
+        const index = items.findIndex((i) => i.id === first.id)
+        if (index === -1) return { status: 'done' }
+        const item = items[index]
+        if (item.mode !== 'auto' || item.paused) return { status: 'done' }
+        const dates = occurrencesBetween(item, item.handledThrough, today)
+        if (dates.length === 0) return { status: 'done' }
+        if (
+          occurrenceTargetKeys(item.kind, dates).some(
+            (k) => !lockedTargets.includes(k),
+          )
+        ) {
+          return { status: 'retry' }
+        }
+
+        // D2: never write records with a dangling category; the item stays
+        // pending until the user picks one.
+        if (!(await categoryIdsFor(item.kind)).includes(item.categoryId)) {
+          console.warn(
+            `Recurring item ${item.id}: category ${item.categoryId} not found, skipped`,
+          )
+          return { status: 'done' }
+        }
+
+        // Dates already handled out of order (an ask item switched to auto)
+        // are not created again.
+        const ahead = new Set(item.handledAhead)
+        const toCreate = dates.filter((d) => !ahead.has(d))
+        const plan = await planOccurrenceWrites(item, toCreate)
+        const handledThrough = dates[dates.length - 1]
+        const nextItems = [...items]
+        nextItems[index] = {
+          ...item,
+          handledThrough,
+          handledAhead: item.handledAhead.filter((d) => d > handledThrough),
+          occurrenceCount: item.occurrenceCount + toCreate.length,
+          updatedAt: new Date().toISOString(),
+        }
+        const values = { recurring: nextItems, ...plan.values }
+        await writeKeysMany(values)
+        return {
+          status: 'written',
+          created: plan.created,
+          keys: Object.keys(values),
+        }
+      },
+    )
+
+    if (result.status === 'retry') continue
+    if (result.status === 'done') return UNTOUCHED
+    await afterCommit(result.keys)
+    return { created: result.created, touched: true }
+  }
+  console.warn(
+    `Recurring item ${first.id} kept changing while being processed; will retry later`,
+  )
+  return UNTOUCHED
+}
+
+// Creates the due occurrences of every active auto-mode item, one item at a
+// time, each in its own transaction. `created` counts records actually
+// written; `itemsTouched` counts items whose entry was written. Any error
+// (DecryptError, a failed setMany) propagates; items committed before it stay
+// committed.
+export async function processDueRecurring(
+  today: string = toLocalDateString(),
+): Promise<{ created: number; itemsTouched: number }> {
+  if (!_key || !store) return { created: 0, itemsTouched: 0 }
+  const items = (await readStore('recurring')) ?? []
+  let created = 0
+  let itemsTouched = 0
+  for (const item of items) {
+    if (item.mode !== 'auto' || item.paused) continue
+    const outcome = await processRecurringItem(item, today)
+    created += outcome.created
+    if (outcome.touched) itemsTouched++
+  }
+  return { created, itemsTouched }
+}
+
+export async function addRecurring(
+  input: CreateRecurringInput,
+  options: { createThroughToday: boolean; today?: string },
+): Promise<RecurringItem> {
+  const today = options.today ?? toLocalDateString()
+  // Validate the shape before planning, so the schedule maths only sees a
+  // valid schedule. The category is checked again under the lock.
+  const base = recurringInputSchema.safeParse(input)
+  if (!base.success) throw new Error(base.error.issues[0].message)
+  const through = occurrencesBetween(base.data, null, today)
+  const createNow =
+    options.createThroughToday && base.data.mode === 'auto' && through.length > 0
+  const targetKeys = createNow
+    ? occurrenceTargetKeys(base.data.kind, through)
+    : []
+
+  const { item, keys: written } = await withWriteLock(
+    ['recurring', ...targetKeys],
+    async () => {
+      const data = await validateRecurringInput(input)
+      const now = new Date().toISOString()
+      // Ask mode with createThroughToday leaves the past occurrences due.
+      const leaveDue = options.createThroughToday && data.mode === 'ask'
+      const created: RecurringItem = {
+        id: crypto.randomUUID(),
+        kind: data.kind,
+        amount: data.amount,
+        currency: data.currency,
+        categoryId: data.categoryId,
+        description: data.description ?? null,
+        frequency: data.frequency,
+        startDate: data.startDate,
+        end: data.end,
+        mode: data.mode,
+        paused: false,
+        handledThrough: leaveDue ? null : (through[through.length - 1] ?? null),
+        handledAhead: [],
+        occurrenceCount: leaveDue ? 0 : through.length,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const records = createNow
+        ? (await planOccurrenceWrites(created, through)).values
+        : {}
+      const items = (await readStore('recurring')) ?? []
+      const values = { recurring: [...items, created], ...records }
+      await writeKeysMany(values)
+      return { item: created, keys: Object.keys(values) }
+    },
+  )
+  await afterCommit(written)
+  return item
+}
+
+export async function updateRecurring(
+  id: string,
+  patch: UpdateRecurringInput,
+): Promise<RecurringItem> {
+  const result = await withWriteLock('recurring', async () => {
+    const items = (await readStore('recurring')) ?? []
+    const index = items.findIndex((i) => i.id === id)
+    if (index === -1) throw new Error(`Recurring item not found: ${id}`)
+    const existing = items[index]
+    const defined = Object.fromEntries(
+      Object.entries(patch as Record<string, unknown>).filter(
+        ([, v]) => v !== undefined,
+      ),
+    ) as UpdateRecurringInput
+    const data = await validateRecurringInput({
+      kind: existing.kind,
+      amount: existing.amount,
+      currency: existing.currency,
+      categoryId: existing.categoryId,
+      description: existing.description,
+      frequency: existing.frequency,
+      startDate: existing.startDate,
+      end: existing.end,
+      mode: existing.mode,
+      ...defined,
+    })
+    // Edits apply to future occurrences only: the progress fields are kept
+    // and already created records are never touched.
+    const updated: RecurringItem = {
+      ...existing,
+      kind: data.kind,
+      amount: data.amount,
+      currency: data.currency,
+      categoryId: data.categoryId,
+      description: data.description ?? null,
+      frequency: data.frequency,
+      startDate: data.startDate,
+      end: data.end,
+      mode: data.mode,
+      updatedAt: new Date().toISOString(),
+    }
+    const next = [...items]
+    next[index] = updated
+    await writeStoreMany({ recurring: next })
+    return updated
+  })
+  await afterCommit(['recurring'])
+  return result
+}
+
+// Pausing stops generation. Resuming skips the occurrences that fell inside
+// the pause (D3): handledThrough moves to the last occurrence before today,
+// so today's occurrence onward is generated as normal.
+export async function setRecurringPaused(
+  id: string,
+  paused: boolean,
+  today: string = toLocalDateString(),
+): Promise<RecurringItem> {
+  const result = await withWriteLock('recurring', async () => {
+    const items = (await readStore('recurring')) ?? []
+    const index = items.findIndex((i) => i.id === id)
+    if (index === -1) throw new Error(`Recurring item not found: ${id}`)
+    const existing = items[index]
+    let updated: RecurringItem = {
+      ...existing,
+      paused,
+      updatedAt: new Date().toISOString(),
+    }
+    if (!paused && existing.paused) {
+      let handledThrough = existing.handledThrough
+      const last = lastOccurrenceOnOrBefore(
+        existing,
+        addDaysToDate(today, -1),
+      )
+      if (last !== null && (handledThrough === null || last > handledThrough)) {
+        handledThrough = last
+      }
+      const ahead = new Set(existing.handledAhead)
+      for (;;) {
+        const next = nextOccurrence(existing, handledThrough)
+        if (next === null || !ahead.has(next)) break
+        handledThrough = next
+      }
+      const through = handledThrough
+      updated = {
+        ...updated,
+        handledThrough: through,
+        handledAhead: existing.handledAhead.filter(
+          (d) => through === null || d > through,
+        ),
+      }
+    }
+    const next = [...items]
+    next[index] = updated
+    await writeStoreMany({ recurring: next })
+    return updated
+  })
+  await afterCommit(['recurring'])
+  return result
+}
+
+// Removes the item only: the records it created keep their recurringId and
+// become ordinary records.
+export async function deleteRecurring(id: string): Promise<void> {
+  await withWriteLock('recurring', async () => {
+    const items = (await readStore('recurring')) ?? []
+    await writeStoreMany({ recurring: items.filter((i) => i.id !== id) })
+  })
+  await afterCommit(['recurring'])
+}
+
+// Ask mode: creates the record for one due occurrence (with optional
+// overrides for that record only) and marks the date handled. When a record
+// for the date already exists, nothing new is created.
+export async function confirmRecurringOccurrence(
+  itemId: string,
+  date: string,
+  overrides?: OccurrenceOverrides,
+): Promise<void> {
+  if (!DATE_STRING_RE.test(date)) throw new Error('Occurrence is not due')
+  // The target is `income` or the chunk of this date, depending on the
+  // item's kind; locking both avoids reading the item before the lock.
+  const lockKeys = [
+    'recurring',
+    'income',
+    expenseChunkKey(occurrenceCreatedAt(date)),
+  ]
+  const written = await withWriteLock(lockKeys, async () => {
+    const items = (await readStore('recurring')) ?? []
+    const index = items.findIndex((i) => i.id === itemId)
+    if (index === -1) throw new Error(`Recurring item not found: ${itemId}`)
+    const item = items[index]
+    if (!isUnhandledOccurrence(item, date)) {
+      throw new Error('Occurrence is not due')
+    }
+    if (!(await categoryIdsFor(item.kind)).includes(item.categoryId)) {
+      throw new Error('Category not found')
+    }
+    const plan = await planOccurrenceWrites(item, [date], overrides)
+    const next = [...items]
+    next[index] = {
+      ...markOccurrenceHandled(item, date),
+      updatedAt: new Date().toISOString(),
+    }
+    const values = { recurring: next, ...plan.values }
+    await writeKeysMany(values)
+    return Object.keys(values)
+  })
+  await afterCommit(written)
+}
+
+// Ask mode: marks one due occurrence handled without creating anything.
+export async function skipRecurringOccurrence(
+  itemId: string,
+  date: string,
+): Promise<void> {
+  await withWriteLock('recurring', async () => {
+    const items = (await readStore('recurring')) ?? []
+    const index = items.findIndex((i) => i.id === itemId)
+    if (index === -1) throw new Error(`Recurring item not found: ${itemId}`)
+    const item = items[index]
+    if (!isUnhandledOccurrence(item, date)) {
+      throw new Error('Occurrence is not due')
+    }
+    const next = [...items]
+    next[index] = {
+      ...markOccurrenceHandled(item, date),
+      updatedAt: new Date().toISOString(),
+    }
+    await writeStoreMany({ recurring: next })
+  })
+  await afterCommit(['recurring'])
+}
+
+type QuickRepeatUnit = 'week' | 'month' | 'year'
+
+// The auto-mode item behind a Quick Add / Add Income "Repeat": starts today
+// and today's occurrence is already handled (the record saved with it).
+function quickRepeatItem(
+  kind: RecurringKind,
+  input: CreateExpenseInput | CreateIncomeInput,
+  unit: QuickRepeatUnit,
+  today: string,
+  now: string,
+  id: string,
+): RecurringItem {
+  return {
+    id,
+    kind,
+    amount: input.amount,
+    currency: input.currency,
+    categoryId: input.categoryId,
+    description: input.description ?? null,
+    frequency: { unit, interval: 1 },
+    startDate: today,
+    end: { type: 'never' },
+    mode: 'auto',
+    paused: false,
+    handledThrough: today,
+    handledAhead: [],
+    occurrenceCount: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+// Saves the expense (as addExpense) and a matching auto-mode recurring item
+// starting today, in one transaction.
+export async function addRepeatingExpense(
+  input: CreateExpenseInput,
+  unit: QuickRepeatUnit,
+): Promise<Expense> {
+  if (
+    input.createdAt !== undefined &&
+    isNaN(new Date(input.createdAt).getTime())
+  ) {
+    throw new Error(`addRepeatingExpense: invalid createdAt "${input.createdAt}"`)
+  }
+  const today = toLocalDateString()
+  const now = new Date().toISOString()
+  const recurringId = crypto.randomUUID()
+  const entry: Expense = {
+    id: crypto.randomUUID(),
+    amount: input.amount,
+    currency: input.currency,
+    categoryId: input.categoryId,
+    description: input.description,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
+    recurringId,
+    occurrenceDate: today,
+  }
+  const item = quickRepeatItem('expense', input, unit, today, now, recurringId)
+  const chunkKey = expenseChunkKey(entry.createdAt)
+  await withWriteLock([chunkKey, 'recurring'], async () => {
+    const chunk = await readChunk(chunkKey)
+    const items = (await readStore('recurring')) ?? []
+    await writeKeysMany({
+      [chunkKey]: [...chunk, entry],
+      recurring: [...items, item],
+    })
+  })
+  await afterCommit([chunkKey, 'recurring'])
+  const categories = (await readStore('categories')) ?? []
+  const category = categories.find((c) => c.id === entry.categoryId)
+  return { ...entry, category }
+}
+
+// Saves the income entry (as addIncome) and a matching auto-mode recurring
+// item starting today, in one transaction.
+export async function addRepeatingIncome(
+  input: CreateIncomeInput,
+  unit: QuickRepeatUnit,
+): Promise<IncomeEntry> {
+  const today = toLocalDateString()
+  const now = new Date().toISOString()
+  const recurringId = crypto.randomUUID()
+  const entry: IncomeEntry = {
+    id: crypto.randomUUID(),
+    categoryId: input.categoryId,
+    amount: input.amount,
+    currency: input.currency,
+    description: input.description,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
+    recurringId,
+    occurrenceDate: today,
+  }
+  const item = quickRepeatItem('income', input, unit, today, now, recurringId)
+  await withWriteLock(['income', 'recurring'], async () => {
+    const income = (await readStore('income')) ?? []
+    const items = (await readStore('recurring')) ?? []
+    await writeStoreMany({
+      income: [...income, entry],
+      recurring: [...items, item],
+    })
+  })
+  await afterCommit(['income', 'recurring'])
+  const categories = (await readStore('incomeCategories')) ?? []
+  const category = categories.find((c) => c.id === entry.categoryId)
+  return { ...entry, category }
 }
