@@ -26,6 +26,7 @@ const SINGLE_KEY_LABELS: Record<string, string> = {
   income: 'Income',
   budgets: 'Budgets',
   incomeCategories: 'Income categories',
+  recurring: 'Recurring',
 }
 
 // True for the keys that hold user data in the current (v1) format.
