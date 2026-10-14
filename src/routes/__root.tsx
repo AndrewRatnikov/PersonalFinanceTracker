@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import {
   HeadContent,
   Scripts,
@@ -21,6 +21,7 @@ import { isDecryptError } from '../lib/dataErrors'
 import { reportDataProblem } from '../lib/dataProblem'
 import { prepareUnlockedVault } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
+import { recurringCreatedMessage } from '../lib/recurrence'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
 import { listenForChanges } from '../lib/syncChannel'
 import { getVaultState } from '../lib/vault'
@@ -39,6 +40,7 @@ import { OfflineBanner } from '../components/OfflineBanner'
 import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
 import NotFoundPage from '../components/NotFoundPage'
 import { DataProblemGate } from '../components/DataProblemGate'
+import { RecurringScheduler } from '../components/RecurringScheduler'
 
 import appCss from '../styles.css?url'
 import type { VaultState } from '../lib/vault'
@@ -162,11 +164,15 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // vault.ts has already unlocked localDb with the vault DEK. After every
   // unlock (new vault, password, recovery key, v1 migration): default expense
   // categories for a new vault, then the income categories (defaults and the
-  // conversion of legacy income sources). A DecryptError goes to the Data
-  // problem screen; unreadable data is never overwritten.
+  // conversion of legacy income sources), then the due recurring
+  // occurrences (one toast when any were created). A DecryptError goes to the
+  // Data problem screen; unreadable data is never overwritten.
   const handleUnlocked = async ({ isNewVault }: { isNewVault: boolean }) => {
     try {
-      await prepareUnlockedVault({ isNewVault })
+      const { recurringCreated } = await prepareUnlockedVault({ isNewVault })
+      if (recurringCreated > 0) {
+        toast.success(recurringCreatedMessage(recurringCreated))
+      }
     } catch (err) {
       if (isDecryptError(err)) reportDataProblem(err)
       else console.error('Could not prepare local data after unlock:', err)
@@ -197,6 +203,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <Header />
           <OfflineBanner />
           <AutoLock unlocked={phase === 'unlocked'} />
+          <RecurringScheduler unlocked={phase === 'unlocked'} />
           {showGate && (
             <PasswordUnlockDialog
               onUnlocked={(result) => void handleUnlocked(result)}
