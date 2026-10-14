@@ -4,11 +4,12 @@ import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
-import type { CreateExpenseInput } from '@/lib/domain'
+import type { CreateExpenseInput, QuickRepeat } from '@/lib/domain'
 
 import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 import RecentActivityList from '@/components/index/RecentActivityList'
+import RecurringDashboardSection from '@/components/index/RecurringDashboardSection'
 import { RecoveryKeyBanner } from '@/components/index/RecoveryKeyBanner'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import { InstallHintCard } from '@/components/InstallHintCard'
@@ -19,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import {
   addExpense,
+  addRepeatingExpense,
   getAllBudgets,
   getAllCategories,
   getAllIncome,
@@ -98,9 +100,20 @@ function Dashboard() {
   )
 
   const addMutation = useMutation({
-    mutationFn: (data: CreateExpenseInput) => addExpense(data),
-    onSuccess: () => {
+    mutationFn: ({
+      data,
+      repeat,
+    }: {
+      data: CreateExpenseInput
+      repeat: QuickRepeat
+    }) =>
+      repeat === 'none' ? addExpense(data) : addRepeatingExpense(data, repeat),
+    onSuccess: (_saved, { repeat }) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
+      // A repeat also created a recurring item.
+      if (repeat !== 'none') {
+        void queryClient.invalidateQueries({ queryKey: ['recurring'] })
+      }
       toast.success('Expense saved')
     },
     onError: (error: any) => {
@@ -109,10 +122,13 @@ function Dashboard() {
     },
   })
 
-  const handleCreateExpense = async (data: CreateExpenseInput) => {
+  const handleCreateExpense = async (
+    data: CreateExpenseInput,
+    repeat: QuickRepeat,
+  ) => {
     setIsPending(true)
     try {
-      await addMutation.mutateAsync(data)
+      await addMutation.mutateAsync({ data, repeat })
     } finally {
       setIsPending(false)
     }
@@ -158,6 +174,7 @@ function Dashboard() {
         <RecoveryKeyBanner />
         <BackupReminderBanner />
         <DashboardSummarySection summary={summary} />
+        <RecurringDashboardSection today={todayStr} />
 
         <section>
           <h2 className="text-xl font-bold mb-4">Quick Add</h2>
