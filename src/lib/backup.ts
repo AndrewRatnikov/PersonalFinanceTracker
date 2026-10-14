@@ -19,7 +19,10 @@
 // `quarantine:<key>:<ISO timestamp>` in the same transaction; orphaned data is
 // never deleted.
 //
-// The payload carries `incomeCategories` (additive; schemaVersion stays 1).
+// The payload carries `incomeCategories` and `recurring` (both additive;
+// schemaVersion stays 1). A restore never generates recurring records itself:
+// the next processDueRecurring run does, and its idempotency check
+// (recurringId + occurrenceDate) prevents duplicates.
 // A payload from before income categories (no `incomeCategories`, or income
 // records with only a free-text `source`) is converted with
 // convertIncomeSources before planning, so old backups restore into
@@ -58,7 +61,13 @@ import {
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
 import type { SaveResult } from './fileDownload'
-import type { BudgetEntry, Category, Expense, IncomeEntry } from './domain'
+import type {
+  BudgetEntry,
+  Category,
+  Expense,
+  IncomeEntry,
+  RecurringItem,
+} from './domain'
 import type { VaultHeaderV2 } from './vault'
 
 export const BACKUP_FORMAT = 'minima-backup'
@@ -76,6 +85,8 @@ export interface BackupPayload {
   budgets: Array<BudgetEntry>
   // Optional so backups made before income categories still validate.
   incomeCategories?: Array<Category>
+  // Optional so backups made before recurring items still validate.
+  recurring?: Array<RecurringItem>
   settings: { autoLockMinutes: number; backupReminderDays: number }
 }
 
@@ -201,6 +212,7 @@ export async function createBackup(
   let incomeCategories: Array<Category> = []
   let income: Array<IncomeEntry> = []
   let budgets: Array<BudgetEntry> = []
+  let recurring: Array<RecurringItem> = []
   const expenses: Array<Expense> = []
 
   for (const key of await dataKeysOf(store)) {
@@ -220,6 +232,7 @@ export async function createBackup(
       incomeCategories = value as Array<Category>
     } else if (key === 'income') income = value as Array<IncomeEntry>
     else if (key === 'budgets') budgets = value as Array<BudgetEntry>
+    else if (key === 'recurring') recurring = value as Array<RecurringItem>
     else {
       for (const e of value as Array<Expense>) expenses.push(stripCategory(e))
     }
@@ -232,6 +245,7 @@ export async function createBackup(
     income,
     budgets,
     incomeCategories,
+    recurring,
     settings: {
       autoLockMinutes: (await getAppSettings()).autoLockMinutes,
       backupReminderDays: (await getBackupSettings()).backupReminderDays,
@@ -329,8 +343,8 @@ export function backupFileName(now = new Date()): string {
 
 // ── Restore ───────────────────────────────────────────────────────────────────
 
-// 'replace' when this device holds no expenses, income or budgets (default
-// expense and income categories don't count), otherwise 'merge'.
+// 'replace' when this device holds no expenses, income, budgets or recurring
+// items (default expense and income categories don't count), otherwise 'merge'.
 export async function defaultRestoreMode(): Promise<RestoreMode> {
   const store = getLocalStore()
   const dek = getLocalDbKey()
@@ -366,7 +380,8 @@ function validatePayload(value: unknown): BackupPayload {
     !isRecordList(value.income) ||
     !isRecordList(value.budgets) ||
     (value.incomeCategories !== undefined &&
-      !isRecordList(value.incomeCategories))
+      !isRecordList(value.incomeCategories)) ||
+    (value.recurring !== undefined && !isRecordList(value.recurring))
   ) {
     throw notABackup()
   }
@@ -384,6 +399,9 @@ function validatePayload(value: unknown): BackupPayload {
     budgets: value.budgets as Array<BudgetEntry>,
     ...(value.incomeCategories !== undefined
       ? { incomeCategories: value.incomeCategories as Array<Category> }
+      : {}),
+    ...(value.recurring !== undefined
+      ? { recurring: value.recurring as Array<RecurringItem> }
       : {}),
     settings: settings as BackupPayload['settings'],
   }
@@ -631,6 +649,8 @@ function planReplace(local: LocalData, payload: PreparedPayload): Plan {
   writes.set('incomeCategories', payload.incomeCategories)
   writes.set('income', payload.income)
   writes.set('budgets', payload.budgets)
+  const recurring = payload.recurring ?? []
+  writes.set('recurring', recurring)
   for (const [key, list] of groupExpenses(payload.expenses)) {
     writes.set(key, list)
   }
@@ -651,6 +671,7 @@ function planReplace(local: LocalData, payload: PreparedPayload): Plan {
   count(localIds(local, 'incomeCategories'), payload.incomeCategories)
   count(localIds(local, 'income'), payload.income)
   count(localIds(local, 'budgets'), payload.budgets)
+  count(localIds(local, 'recurring'), recurring)
   count(localExpenseIds(local), payload.expenses)
 
   return {
@@ -699,6 +720,16 @@ function planMerge(local: LocalData, payload: PreparedPayload): Plan {
       counts[key] = merged.written
     }
   }
+
+  // Recurring items: upsert by id, the newer updatedAt wins. They have no
+  // count of their own in RestoreSummary; they show in added / updated /
+  // conflicts.
+  const mergedRecurring = mergeList(
+    (local.values.get('recurring') ?? []) as Array<MergeRecord>,
+    payload.recurring ?? [],
+    counters,
+  )
+  if (mergedRecurring) writes.set('recurring', mergedRecurring.records)
 
   // Expenses: upsert by id across month chunks.
   const chunks = new Map<string, Array<Expense>>()
@@ -782,6 +813,7 @@ export async function restoreBackup(
     'incomeCategories',
     'income',
     'budgets',
+    'recurring',
     ...groupExpenses(payload.expenses).keys(),
   ]
   const localKeys = fresh ? [] : await dataKeysOf(store)
