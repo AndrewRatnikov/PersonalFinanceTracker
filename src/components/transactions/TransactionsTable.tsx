@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
-import { Edit2, Loader2, Search, Trash2, WifiOff } from 'lucide-react'
+import {
+  Edit2,
+  Loader2,
+  Repeat,
+  Search,
+  Trash2,
+  WifiOff,
+} from 'lucide-react'
 import type { Category, Expense } from '@/lib/domain'
 import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
@@ -162,6 +169,15 @@ export function TransactionsTable({
                   ) : (
                     <span className="text-muted-foreground italic text-xs">
                       Uncategorized
+                    </span>
+                  )}
+                  {tx.recurringId && (
+                    <span
+                      title="From a recurring item"
+                      data-testid="transaction-recurring-icon"
+                      className="ml-1.5 inline-flex align-middle text-muted-foreground"
+                    >
+                      <Repeat size={12} />
                     </span>
                   )}
                 </TableCell>
