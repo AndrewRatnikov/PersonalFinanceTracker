@@ -23,6 +23,7 @@ export const DATA_ROUTES: ReadonlyArray<string> = [
   '/analytics',
   '/transactions',
   '/income',
+  '/recurring',
   '/settings',
 ]
 
