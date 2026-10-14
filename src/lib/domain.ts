@@ -23,6 +23,10 @@ export interface Expense {
   createdAt: string
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** Id of the recurring item that generated this record. */
+  recurringId?: string
+  /** Local calendar date (YYYY-MM-DD) of the occurrence it was generated for. */
+  occurrenceDate?: string
   category?: Category
 }
 
@@ -125,6 +129,10 @@ export interface IncomeEntry {
   createdAt: string
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** Id of the recurring item that generated this record. */
+  recurringId?: string
+  /** Local calendar date (YYYY-MM-DD) of the occurrence it was generated for. */
+  occurrenceDate?: string
   /** Joined at read time by getAllIncome()/addIncome(); never stored. */
   category?: Category
 }
@@ -155,3 +163,71 @@ export interface UpdateExpenseInput {
   description?: string
   createdAt?: string
 }
+
+// ── Recurring items (storage key `recurring`) ────────────────────────────────
+
+export type RecurringKind = 'expense' | 'income'
+
+export type RecurrenceUnit = 'day' | 'week' | 'month' | 'year'
+
+export interface RecurringFrequency {
+  unit: RecurrenceUnit
+  /** >= 1 */
+  interval: number
+}
+
+export type RecurringEnd =
+  | { type: 'never' }
+  | { type: 'onDate'; date: string }
+  | { type: 'afterCount'; count: number }
+
+/** auto = create when due; ask = show as "Due" until confirmed or skipped. */
+export type RecurringMode = 'auto' | 'ask'
+
+export interface RecurringItem {
+  id: string
+  kind: RecurringKind
+  amount: number
+  currency: Currency
+  /** Expense category or income category, by kind. */
+  categoryId: string
+  description: string | null
+  frequency: RecurringFrequency
+  /** Local calendar date, YYYY-MM-DD. */
+  startDate: string
+  end: RecurringEnd
+  mode: RecurringMode
+  paused: boolean
+  /** Last occurrence date that is fully handled (created, confirmed or skipped). */
+  handledThrough: string | null
+  /**
+   * Ask mode: occurrences after handledThrough already handled out of order;
+   * pruned as handledThrough advances.
+   */
+  handledAhead: Array<string>
+  /** Occurrences handled so far. */
+  occurrenceCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateRecurringInput {
+  kind: RecurringKind
+  amount: number
+  currency: Currency
+  categoryId: string
+  description?: string | null
+  frequency: RecurringFrequency
+  startDate: string
+  end: RecurringEnd
+  mode: RecurringMode
+}
+
+export type UpdateRecurringInput = Partial<CreateRecurringInput>
+
+export interface RecurringOccurrence {
+  item: RecurringItem
+  occurrenceDate: string
+}
+
+export type QuickRepeat = 'none' | 'week' | 'month' | 'year'
