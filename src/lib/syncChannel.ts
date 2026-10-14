@@ -94,6 +94,8 @@ function queryKeysFor(storageKey: string): Array<Array<string>> {
       return [['income'], ['analytics']]
     case 'budgets':
       return [['budgets'], ['analytics']]
+    case 'recurring':
+      return [['recurring'], ['expenses'], ['income'], ['analytics']]
     default:
       return []
   }
