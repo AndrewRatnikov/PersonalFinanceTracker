@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: vaultSession exports and test notes are fully specified in
-// the Interface Contract (module: vaultSession).
+// the Interface Contract (module: vaultSession). /recurring is now a data route
+// (DATA_ROUTES has five routes).
 
 import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
@@ -53,10 +54,11 @@ afterEach(() => {
 })
 
 describe('isDataRoute', () => {
-  it('lists the four data routes', () => {
+  it('lists the five data routes', () => {
     expect([...DATA_ROUTES].sort()).toEqual([
       '/analytics',
       '/income',
+      '/recurring',
       '/settings',
       '/transactions',
     ])
@@ -66,9 +68,11 @@ describe('isDataRoute', () => {
     '/analytics',
     '/transactions',
     '/income',
+    '/recurring',
     '/settings',
     '/settings/security',
     '/transactions/abc',
+    '/recurring/abc',
   ])('is true for %s', (path) => {
     expect(isDataRoute(path)).toBe(true)
   })
@@ -80,7 +84,9 @@ describe('isDataRoute', () => {
     '/profile',
     '/settingsfoo',
     '/incomes',
+    '/recurringfoo',
     '/foo/settings',
+    '/foo/recurring',
   ])('is false for %s', (path) => {
     expect(isDataRoute(path)).toBe(false)
   })
@@ -191,6 +197,19 @@ describe('computeGate', () => {
       showGate: true,
       showChildren: false,
     })
+  })
+
+  it('hides the recurring page under the gate while locked and with no vault', () => {
+    expect(
+      computeGate({ ...base, phase: 'locked', pathname: '/recurring' }),
+    ).toEqual({ showGate: true, showChildren: false })
+    expect(
+      computeGate({ ...base, phase: 'none', pathname: '/recurring' })
+        .showChildren,
+    ).toBe(false)
+    expect(
+      computeGate({ ...base, phase: 'unlocked', pathname: '/recurring' }),
+    ).toEqual({ showGate: false, showChildren: true })
   })
 
   it('keeps non-data routes rendering under the gate while locked', () => {

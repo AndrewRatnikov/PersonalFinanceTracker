@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { Loader2, Search, Trash2 } from 'lucide-react'
+import { Loader2, Repeat, Search, Trash2 } from 'lucide-react'
 
 import type { IncomeEntry } from '@/lib/domain'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
@@ -119,6 +119,15 @@ export function IncomeTable({
                   <span className="mr-1.5">{entry.category.icon}</span>
                 )}
                 <span>{incomeSourceLabel(entry)}</span>
+                {entry.recurringId && (
+                  <span
+                    title="From a recurring item"
+                    data-testid="income-recurring-icon"
+                    className="ml-1.5 inline-flex align-middle text-muted-foreground"
+                  >
+                    <Repeat size={12} />
+                  </span>
+                )}
               </TableCell>
               <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[240px]">
                 {entry.description || <span className="opacity-30">-</span>}

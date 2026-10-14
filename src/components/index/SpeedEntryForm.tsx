@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import type { SubmitEvent } from 'react'
-import type { Category, CreateExpenseInput, Currency } from '@/lib/domain'
+import type {
+  Category,
+  CreateExpenseInput,
+  Currency,
+  QuickRepeat,
+} from '@/lib/domain'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -17,7 +22,8 @@ import { createExpenseSchema } from '@/lib/schemas'
 
 interface SpeedEntryFormProps {
   categories: Array<Category>
-  onSubmit: (data: CreateExpenseInput) => Promise<void>
+  /** `repeat` other than 'none' also creates a recurring item starting today. */
+  onSubmit: (data: CreateExpenseInput, repeat: QuickRepeat) => Promise<void>
   isPending?: boolean
 }
 
@@ -30,6 +36,7 @@ export default function SpeedEntryForm({
   const [currency, setCurrency] = useState<Currency>('UAH')
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
   const [description, setDescription] = useState('')
+  const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -54,13 +61,14 @@ export default function SpeedEntryForm({
     }
 
     try {
-      await onSubmit(result.data)
+      await onSubmit(result.data, repeat)
     } catch {
       // The caller's mutation onError already shows a toast; keep what the user typed.
       return
     }
     setAmount('')
     setDescription('')
+    setRepeat('none')
     setErrors({})
   }
 
@@ -179,6 +187,29 @@ export default function SpeedEntryForm({
               disabled={isPending}
               className={errors.description ? 'border-destructive' : ''}
             />
+          </div>
+
+          {/* Repeat — creates a matching recurring item starting today */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="repeat"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
+              Repeat
+            </Label>
+            <select
+              id="repeat"
+              data-testid="speed-entry-repeat"
+              value={repeat}
+              onChange={(e) => setRepeat(e.target.value as QuickRepeat)}
+              disabled={isPending}
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <option value="none">Don't repeat</option>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+              <option value="year">Yearly</option>
+            </select>
           </div>
 
           {/* Submit */}

@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
+import type * as ReactRouter from '@tanstack/react-router'
 
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
@@ -10,6 +12,7 @@ import {
   getAllExpenses,
   getAllIncome,
   getAllIncomeCategories,
+  getAllRecurring,
   getExpensesForRange,
 } from '@/lib/localDb'
 import { setVaultPhase } from '@/lib/vaultSession'
@@ -19,6 +22,18 @@ import { Route as IndexRoute } from '@/routes/index'
 import { Route as SettingsRoute } from '@/routes/settings'
 import { Route as TransactionsRoute } from '@/routes/transactions'
 
+// The Dashboard's RecurringDashboardSection renders a router Link to
+// /recurring; no router is mounted here, so Link is a plain anchor.
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof ReactRouter>()
+  return {
+    ...actual,
+    Link: ({ to, children }: { to: string; children?: ReactNode }) => (
+      <a href={to}>{children}</a>
+    ),
+  }
+})
+
 vi.mock('@/lib/localDb', () => ({
   getAllCategories: vi.fn(),
   getAllIncomeCategories: vi.fn(),
@@ -26,11 +41,16 @@ vi.mock('@/lib/localDb', () => ({
   getAllExpenses: vi.fn(),
   getAllIncome: vi.fn(),
   getAllBudgets: vi.fn(),
+  getAllRecurring: vi.fn(),
   addExpense: vi.fn(),
+  addRepeatingExpense: vi.fn(),
   deleteExpense: vi.fn(),
   updateExpense: vi.fn(),
   deleteIncome: vi.fn(),
   addIncome: vi.fn(),
+  addRepeatingIncome: vi.fn(),
+  confirmRecurringOccurrence: vi.fn(),
+  skipRecurringOccurrence: vi.fn(),
   addCategory: vi.fn(),
   addIncomeCategory: vi.fn(),
   updateCategory: vi.fn(),
@@ -99,6 +119,7 @@ function mockHealthyData() {
   vi.mocked(getAllExpenses).mockResolvedValue([])
   vi.mocked(getAllIncome).mockResolvedValue([])
   vi.mocked(getAllBudgets).mockResolvedValue([])
+  vi.mocked(getAllRecurring).mockResolvedValue([])
 }
 
 beforeEach(() => {
@@ -249,6 +270,35 @@ describe('Dashboard query error', () => {
       expect(getAllIncome).toHaveBeenCalledTimes(2)
     })
     expect(vi.mocked(getAllBudgets).mock.calls.length).toBe(budgetCalls)
+  })
+
+  it('renders query-error when the recurring items fail, and Retry calls getAllRecurring again', async () => {
+    vi.mocked(getAllRecurring).mockRejectedValue(new Error('boom'))
+
+    renderPage(IndexRoute)
+
+    await screen.findByTestId('query-error')
+    expect(getAllRecurring).toHaveBeenCalledTimes(1)
+
+    vi.mocked(getAllRecurring).mockResolvedValue([])
+    fireEvent.click(screen.getByTestId('query-error-retry'))
+
+    await waitFor(() => {
+      expect(getAllRecurring).toHaveBeenCalledTimes(2)
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('query-error')).toBeNull()
+    })
+  })
+
+  it('shows no error block when every query, including recurring, succeeds', async () => {
+    renderPage(IndexRoute)
+
+    await screen.findByTestId('dashboard-summary')
+    await waitFor(() => {
+      expect(getAllRecurring).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('query-error')).toBeNull()
   })
 })
 

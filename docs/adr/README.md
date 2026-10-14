@@ -17,6 +17,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-08](2026-10-08-offline-navigations-fall-back-to-spa-shell.md) | Offline navigations fall back to a precached SPA shell; nothing in the service worker expires | Accepted |
 | [2026-10-08](2026-10-08-remove-data-clears-store-then-reloads.md) | "Remove data from this device" clears the store first, then deletes the database and reloads | Accepted |
 | [2026-10-10](2026-10-10-auto-lock-is-per-tab.md) | Auto-lock locks only its own tab; a manual lock locks every tab | Accepted |
+| [2026-10-14](2026-10-14-recurring-generation-per-item-idempotent.md) | Recurring transactions are generated client-side, one atomic write per item, keyed by recurringId + occurrenceDate | Accepted |
 
 ## Where else decisions live
 
