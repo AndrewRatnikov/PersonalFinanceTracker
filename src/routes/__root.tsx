@@ -41,6 +41,7 @@ import { PasswordUnlockDialog } from '../components/PasswordUnlockDialog'
 import NotFoundPage from '../components/NotFoundPage'
 import { DataProblemGate } from '../components/DataProblemGate'
 import { RecurringScheduler } from '../components/RecurringScheduler'
+import { ConversionRunner } from '../components/ConversionRunner'
 
 import appCss from '../styles.css?url'
 import type { VaultState } from '../lib/vault'
@@ -204,6 +205,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <OfflineBanner />
           <AutoLock unlocked={phase === 'unlocked'} />
           <RecurringScheduler unlocked={phase === 'unlocked'} />
+          <ConversionRunner />
           {showGate && (
             <PasswordUnlockDialog
               onUnlocked={(result) => void handleUnlocked(result)}
