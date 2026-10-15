@@ -1,8 +1,9 @@
 import dayjs from 'dayjs'
 import { Loader2, Repeat, Search, Trash2 } from 'lucide-react'
 
-import type { IncomeEntry } from '@/lib/domain'
+import type { Currency, IncomeEntry } from '@/lib/domain'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
+import EntryAmount from '@/components/EntryAmount'
 
 import {
   Table,
@@ -30,13 +31,9 @@ interface IncomeTableProps {
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
+  /** Amounts in other currencies show their main-currency value or "rate pending". */
+  mainCurrency: Currency
   onDelete: (id: string) => void
-}
-
-const CURRENCY_SYMBOL: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  UAH: '₴',
 }
 
 export function IncomeTable({
@@ -44,6 +41,7 @@ export function IncomeTable({
   isLoading,
   isError,
   isDeleting,
+  mainCurrency,
   onDelete,
 }: IncomeTableProps) {
   return (
@@ -132,9 +130,8 @@ export function IncomeTable({
               <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[240px]">
                 {entry.description || <span className="opacity-30">-</span>}
               </TableCell>
-              <TableCell className="text-sm font-bold text-right tabular-nums">
-                {CURRENCY_SYMBOL[entry.currency] ?? entry.currency}
-                {entry.amount.toFixed(2)}
+              <TableCell className="text-sm font-bold text-right tabular-nums whitespace-normal break-words">
+                <EntryAmount entry={entry} mainCurrency={mainCurrency} />
               </TableCell>
               <TableCell className="pr-6 text-right">
                 <div className="flex items-center justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
