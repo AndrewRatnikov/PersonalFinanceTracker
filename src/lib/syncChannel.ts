@@ -96,6 +96,16 @@ function queryKeysFor(storageKey: string): Array<Array<string>> {
       return [['budgets'], ['analytics']]
     case 'recurring':
       return [['recurring'], ['expenses'], ['income'], ['analytics']]
+    case 'meta:settings':
+      // The main currency and the exchange-rate switch change every total.
+      return [
+        ['settings'],
+        ['conversion-status'],
+        ['expenses'],
+        ['income'],
+        ['analytics'],
+        ['budgets'],
+      ]
     default:
       return []
   }
