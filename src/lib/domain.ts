@@ -6,6 +6,36 @@ export const CURRENCIES = [
   'EUR',
 ] as const satisfies ReadonlyArray<Currency>
 
+/** The main currency until the user picks another one in Settings → General. */
+export const DEFAULT_MAIN_CURRENCY: Currency = 'UAH'
+
+export function isCurrency(value: unknown): value is Currency {
+  return CURRENCIES.some((c) => c === value)
+}
+
+/**
+ * An entry's amount converted into the main currency, stored unrounded.
+ * The entry counts as converted only while `mainCurrency` equals the current
+ * main currency.
+ */
+export interface EntryConversion {
+  mainCurrency: Currency
+  /** 1 unit of the entry's currency in the main currency. */
+  rate: number
+  /** amount × rate, unrounded. */
+  mainAmount: number
+  /** YYYY-MM-DD of the rate actually used. */
+  rateDate: string
+  /** Provider id (e.g. 'nbu'), 'manual' or 'identity'. */
+  source: string
+}
+
+/** A user-entered rate for one main currency; ignored for any other. */
+export interface ManualRate {
+  mainCurrency: Currency
+  rate: number
+}
+
 export interface Category {
   id: string
   name: string
@@ -27,6 +57,9 @@ export interface Expense {
   recurringId?: string
   /** Local calendar date (YYYY-MM-DD) of the occurrence it was generated for. */
   occurrenceDate?: string
+  /** Stored conversion into the main currency; absent = pending. */
+  conversion?: EntryConversion
+  manualRate?: ManualRate
   category?: Category
 }
 
@@ -102,7 +135,7 @@ export interface AnalyticsRangeSummary {
   timeline: Array<AnalyticsTimelinePoint>
   totalIncome: number
   budgetVariance: Array<BudgetVarianceItem>
-  /** Income in the selected currency grouped by income category, total desc. */
+  /** Income in the main currency grouped by income category, total desc. */
   incomeBreakdown: Array<CategoryBreakdownItem>
 }
 
@@ -133,6 +166,9 @@ export interface IncomeEntry {
   recurringId?: string
   /** Local calendar date (YYYY-MM-DD) of the occurrence it was generated for. */
   occurrenceDate?: string
+  /** Stored conversion into the main currency; absent = pending. */
+  conversion?: EntryConversion
+  manualRate?: ManualRate
   /** Joined at read time by getAllIncome()/addIncome(); never stored. */
   category?: Category
 }
