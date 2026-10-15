@@ -9,6 +9,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import type * as ReactRouter from '@tanstack/react-router'
+import type * as AppSettings from '@/lib/appSettings'
 
 import type { CurrencySettings } from '@/lib/appSettings'
 import type { BudgetEntry, EntryConversion, Expense, IncomeEntry } from '@/lib/domain'
@@ -27,12 +29,12 @@ vi.mock('@/lib/localDb', () => ({
 }))
 
 vi.mock('@/lib/appSettings', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/appSettings')>()),
+  ...(await importOriginal<typeof AppSettings>()),
   getCurrencySettings: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  ...(await importOriginal<typeof ReactRouter>()),
   Link: ({
     to,
     search,

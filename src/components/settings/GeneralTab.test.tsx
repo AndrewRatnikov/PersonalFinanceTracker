@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChangeMainCurrencyResult, ConvertOptions } from '@/lib/conversion'
+import type * as AppSettings from '@/lib/appSettings'
 import type { CurrencySettings } from '@/lib/appSettings'
 import {
   MainCurrencyChangeError,
@@ -23,12 +24,12 @@ import { GeneralTab } from '@/components/settings/GeneralTab'
 
 vi.mock('@/lib/localDb', () => ({}))
 vi.mock('@/lib/appSettings', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/appSettings')>()),
+  ...(await importOriginal<typeof AppSettings>()),
   getCurrencySettings: vi.fn(),
   updateCurrencySettings: vi.fn(),
 }))
 vi.mock('@/lib/conversion', () => {
-  class MainCurrencyChangeError extends Error {
+  class FakeMainCurrencyChangeError extends Error {
     readonly code: string
     constructor(code: string, message: string) {
       super(message)
@@ -38,7 +39,7 @@ vi.mock('@/lib/conversion', () => {
   }
   return {
     CONVERSION_STATUS_QUERY_KEY: ['conversion-status'],
-    MainCurrencyChangeError,
+    MainCurrencyChangeError: FakeMainCurrencyChangeError,
     getConversionStatus: vi.fn(),
     changeMainCurrency: vi.fn(),
     requestConversion: vi.fn(),

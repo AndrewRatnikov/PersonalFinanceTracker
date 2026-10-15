@@ -20,6 +20,8 @@ import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type * as ReactRouter from '@tanstack/react-router'
+import type * as AppSettings from '@/lib/appSettings'
+import type * as Rates from '@/lib/rates'
 
 import type { CurrencySettings } from '@/lib/appSettings'
 import type { Category, RecurringItem } from '@/lib/domain'
@@ -59,11 +61,11 @@ vi.mock('@/lib/localDb', () => ({
   deleteRecurring: vi.fn(),
 }))
 vi.mock('@/lib/appSettings', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/appSettings')>()),
+  ...(await importOriginal<typeof AppSettings>()),
   getCurrencySettings: vi.fn(),
 }))
 vi.mock('@/lib/rates', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/rates')>()),
+  ...(await importOriginal<typeof Rates>()),
   rateProvider: { id: 'nbu', getRates: vi.fn() },
 }))
 vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))

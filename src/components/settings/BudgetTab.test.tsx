@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as AppSettings from '@/lib/appSettings'
 import type { CurrencySettings } from '@/lib/appSettings'
 import type { BudgetEntry, Category } from '@/lib/domain'
 import { BudgetTab } from '@/components/settings/BudgetTab'
@@ -22,7 +23,7 @@ vi.mock('@/lib/localDb', () => ({
   deleteBudget: vi.fn(),
 }))
 vi.mock('@/lib/appSettings', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/appSettings')>()),
+  ...(await importOriginal<typeof AppSettings>()),
   getCurrencySettings: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))

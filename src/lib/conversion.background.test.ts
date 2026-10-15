@@ -7,6 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Expense, IncomeEntry } from '@/lib/domain'
+import type * as LocalDb from '@/lib/localDb'
+import type * as Rates from '@/lib/rates'
 import type { RateTable } from '@/lib/rates/types'
 import { decryptValue, encryptValue } from '@/lib/crypto'
 import {
@@ -53,13 +55,13 @@ vi.mock('idb-keyval', () => ({
 }))
 
 vi.mock('@/lib/rates', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/rates')>()),
+  ...(await importOriginal<typeof Rates>()),
   rateProvider: fakeProvider,
 }))
 
 // Wraps the real reader so the tests can count and fail runs.
 vi.mock('@/lib/localDb', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/localDb')>()
+  const actual = await importOriginal<typeof LocalDb>()
   return {
     ...actual,
     readEntriesForConversion: vi.fn(actual.readEntriesForConversion),
