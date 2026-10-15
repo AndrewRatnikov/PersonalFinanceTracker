@@ -294,10 +294,17 @@ export async function convertPending(
 let active: Promise<void> | null = null
 let followUp: Promise<void> | null = null
 
-// Starts `task` as the active run. The returned promise settles with the
-// task; the queue marker itself never rejects.
+// Starts `task` as the active run. Subscribers are notified at the end of
+// every run, before the returned promise settles; the queue marker itself
+// never rejects.
 function startExclusive<T>(task: () => Promise<T>): Promise<T> {
-  const run = task()
+  const run = (async () => {
+    try {
+      return await task()
+    } finally {
+      notify()
+    }
+  })()
   const marker: Promise<void> = run
     .then(
       () => undefined,
@@ -305,7 +312,6 @@ function startExclusive<T>(task: () => Promise<T>): Promise<T> {
     )
     .finally(() => {
       if (active === marker) active = null
-      notify()
     })
   active = marker
   return run
