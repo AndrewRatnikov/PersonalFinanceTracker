@@ -7,14 +7,10 @@ import type {
   Expense,
   IncomeEntry,
 } from '@/lib/domain'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { mainAmountOf } from '@/lib/money'
 
 export type BudgetStatus = 'ok' | 'warning' | 'over'
-
-export interface ExcludedCurrencyTotal {
-  currency: Currency
-  expenses: number
-  income: number
-}
 
 export interface DashboardPace {
   spentSoFar: number
@@ -41,17 +37,22 @@ export interface DashboardSummaryInput {
   budgets: Array<BudgetEntry>
   categories: Array<Category>
   now: Date
-  /** Defaults to 'UAH'. */
-  baseCurrency?: Currency
+  /** Defaults to DEFAULT_MAIN_CURRENCY. */
+  mainCurrency?: Currency
 }
 
+// Every total sums mainAmountOf(): entries still waiting for a rate are left
+// out and counted in pendingCount; budgets in another currency are left out
+// and counted in budgetsExcluded. Currencies are never mixed.
 export interface DashboardSummary {
-  baseCurrency: Currency
+  mainCurrency: Currency
   monthIncome: number
   monthExpenses: number
   net: number
-  /** Sorted by currency ascending. */
-  excluded: Array<ExcludedCurrencyTotal>
+  /** This month's expenses and income without a main-currency amount. */
+  pendingCount: number
+  /** Budgets not in the main currency (skipped in left-to-spend and watch). */
+  budgetsExcluded: number
   leftToSpend: number | null
   dailyAllowance: number | null
   pace: DashboardPace
@@ -79,7 +80,7 @@ export function computeDashboardSummary(
     budgets,
     categories,
     now,
-    baseCurrency = 'UAH',
+    mainCurrency = DEFAULT_MAIN_CURRENCY,
   } = input
 
   const n = dayjs(now)
@@ -91,55 +92,43 @@ export function computeDashboardSummary(
   const monthExpenseEntries = expenses.filter((e) => isThisMonth(e.createdAt))
   const monthIncomeEntries = income.filter((i) => isThisMonth(i.createdAt))
 
-  const baseMonthExpenses = monthExpenseEntries.filter(
-    (e) => e.currency === baseCurrency,
-  )
-
-  const monthExpenses = baseMonthExpenses.reduce(
-    (sum, e) => sum + Number(e.amount),
-    0,
-  )
-  const monthIncome = monthIncomeEntries
-    .filter((i) => i.currency === baseCurrency)
-    .reduce((sum, i) => sum + Number(i.amount), 0)
-
-  // ---- excluded (non-base currency, this month) ----
-  const excludedMap = new Map<Currency, ExcludedCurrencyTotal>()
-  const getExcluded = (currency: Currency) => {
-    let entry = excludedMap.get(currency)
-    if (!entry) {
-      entry = { currency, expenses: 0, income: 0 }
-      excludedMap.set(currency, entry)
+  let pendingCount = 0
+  // Entries with their main-currency amount; pending ones are counted, not summed.
+  const withMain = <T extends Expense | IncomeEntry>(
+    entries: Array<T>,
+  ): Array<{ entry: T; main: number }> => {
+    const result: Array<{ entry: T; main: number }> = []
+    for (const entry of entries) {
+      const main = mainAmountOf(entry, mainCurrency)
+      if (main === null) pendingCount++
+      else result.push({ entry, main })
     }
-    return entry
+    return result
   }
-  for (const e of monthExpenseEntries) {
-    if (e.currency !== baseCurrency) {
-      getExcluded(e.currency).expenses += Number(e.amount)
-    }
-  }
-  for (const i of monthIncomeEntries) {
-    if (i.currency !== baseCurrency) {
-      getExcluded(i.currency).income += Number(i.amount)
-    }
-  }
-  const excluded = [...excludedMap.values()].sort((a, b) =>
-    a.currency.localeCompare(b.currency),
-  )
 
-  // ---- spend per category (base currency, this month) ----
+  const monthExpenseMain = withMain(monthExpenseEntries)
+  const monthIncomeMain = withMain(monthIncomeEntries)
+
+  const monthExpenses = monthExpenseMain.reduce((sum, e) => sum + e.main, 0)
+  const monthIncome = monthIncomeMain.reduce((sum, i) => sum + i.main, 0)
+
+  // ---- spend per category (main currency, this month) ----
   const spentByCategory = new Map<string, number>()
-  for (const e of baseMonthExpenses) {
+  for (const { entry, main } of monthExpenseMain) {
     spentByCategory.set(
-      e.categoryId,
-      (spentByCategory.get(e.categoryId) ?? 0) + Number(e.amount),
+      entry.categoryId,
+      (spentByCategory.get(entry.categoryId) ?? 0) + main,
     )
   }
 
-  // ---- budgets (base currency only; limits summed per category) ----
+  // ---- budgets (main currency only; limits summed per category) ----
   const limitByCategory = new Map<string, number>()
+  let budgetsExcluded = 0
   for (const b of budgets) {
-    if (b.currency !== baseCurrency) continue
+    if (b.currency !== mainCurrency) {
+      budgetsExcluded++
+      continue
+    }
     limitByCategory.set(
       b.categoryId,
       (limitByCategory.get(b.categoryId) ?? 0) + Number(b.monthlyLimit),
@@ -189,13 +178,12 @@ export function computeDashboardSummary(
   const cutoff = Math.min(n.date(), p.daysInMonth())
   const lastMonthSameDay = expenses
     .filter((e) => {
-      if (e.currency !== baseCurrency) return false
       const d = dayjs(e.createdAt)
       return (
         d.year() === p.year() && d.month() === p.month() && d.date() <= cutoff
       )
     })
-    .reduce((sum, e) => sum + Number(e.amount), 0)
+    .reduce((sum, e) => sum + (mainAmountOf(e, mainCurrency) ?? 0), 0)
   const changePct =
     lastMonthSameDay === 0
       ? null
@@ -210,11 +198,12 @@ export function computeDashboardSummary(
     .slice(0, RECENT_LIMIT)
 
   return {
-    baseCurrency,
+    mainCurrency,
     monthIncome,
     monthExpenses,
     net: monthIncome - monthExpenses,
-    excluded,
+    pendingCount,
+    budgetsExcluded,
     leftToSpend,
     dailyAllowance,
     pace: {
