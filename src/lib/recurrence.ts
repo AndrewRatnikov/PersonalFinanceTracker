@@ -12,6 +12,9 @@
 // Jan 31 monthly gives Feb 28, then Mar 31 again.
 
 import { CURRENCIES } from './domain'
+import { formatMoney } from './money'
+import { crossRate } from './rates/types'
+import type { RateTable } from './rates/types'
 import type {
   Currency,
   RecurringItem,
@@ -338,6 +341,48 @@ export function monthlyTotals(
   return result
 }
 
+// One monthly total per kind in the main currency (expenses first, only kinds
+// with active items). Items in another currency are converted at today's
+// `rates` and make their kind `approximate`. Null when an active item needs a
+// rate that `rates` doesn't have (the caller falls back to monthlyTotals).
+export function monthlyTotalsInMain(
+  items: Array<RecurringItem>,
+  today: string,
+  mainCurrency: Currency,
+  rates: RateTable | null,
+): Array<{ kind: RecurringKind; total: number; approximate: boolean }> | null {
+  const sums = new Map<RecurringKind, { total: number; approximate: boolean }>()
+  const yesterday = addDaysToDate(today, -1)
+  for (const item of items) {
+    if (item.paused) continue
+    if (nextOccurrence(item, yesterday) === null) continue
+    let rate = 1
+    const converted = item.currency !== mainCurrency
+    if (converted) {
+      if (!rates) return null
+      try {
+        rate = crossRate(rates, item.currency, mainCurrency)
+      } catch {
+        return null
+      }
+    }
+    const sum = sums.get(item.kind) ?? { total: 0, approximate: false }
+    sum.total += monthlyEquivalent(item) * rate
+    sum.approximate ||= converted
+    sums.set(item.kind, sum)
+  }
+  const result: Array<{
+    kind: RecurringKind
+    total: number
+    approximate: boolean
+  }> = []
+  for (const kind of KINDS) {
+    const sum = sums.get(kind)
+    if (sum) result.push({ kind, total: sum.total, approximate: sum.approximate })
+  }
+  return result
+}
+
 function ordinal(n: number): string {
   const lastTwo = n % 100
   if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`
@@ -377,7 +422,7 @@ export function formatRecurringAmount(
   amount: number,
   currency: Currency,
 ): string {
-  return `${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
+  return formatMoney(amount, currency)
 }
 
 export function recurringCreatedMessage(count: number): string {
