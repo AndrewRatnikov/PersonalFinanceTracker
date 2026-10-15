@@ -31,7 +31,7 @@
 import dayjs from 'dayjs'
 import { get, keys, setMany } from 'idb-keyval'
 
-import { getAppSettings } from './appSettings'
+import { getAppSettings, getCurrencySettings } from './appSettings'
 import { getBackupSettings, recordBackupCompleted } from './backupReminder'
 import {
   base64ToBytes,
@@ -40,6 +40,7 @@ import {
   encryptValue,
 } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
+import { isCurrency } from './domain'
 import { saveFile } from './fileDownload'
 import { convertIncomeSources } from './incomeCategories'
 import {
@@ -47,6 +48,7 @@ import {
   expenseChunkKey,
   getLocalDbKey,
   getLocalStore,
+  requestEntryConversion,
   unlockLocalDb,
 } from './localDb'
 import { postChanged } from './syncChannel'
@@ -64,6 +66,7 @@ import type { SaveResult } from './fileDownload'
 import type {
   BudgetEntry,
   Category,
+  Currency,
   Expense,
   IncomeEntry,
   RecurringItem,
@@ -87,7 +90,14 @@ export interface BackupPayload {
   incomeCategories?: Array<Category>
   // Optional so backups made before recurring items still validate.
   recurring?: Array<RecurringItem>
-  settings: { autoLockMinutes: number; backupReminderDays: number }
+  // Records keep their raw `conversion` / `manualRate`. The currency settings
+  // are optional so backups made before the main currency still validate.
+  settings: {
+    autoLockMinutes: number
+    backupReminderDays: number
+    mainCurrency?: Currency
+    fetchExchangeRates?: boolean
+  }
 }
 
 export interface MinimaBackupV1 {
@@ -249,6 +259,7 @@ export async function createBackup(
     settings: {
       autoLockMinutes: (await getAppSettings()).autoLockMinutes,
       backupReminderDays: (await getBackupSettings()).backupReminderDays,
+      ...(await getCurrencySettings()),
     },
   }
 
@@ -894,6 +905,15 @@ export async function restoreBackup(
       if (typeof backupReminderDays === 'number') {
         settings.backupReminderDays = backupReminderDays
       }
+      // Invalid or missing (an older backup): the local values stay.
+      const { mainCurrency, fetchExchangeRates } = payload.settings as Record<
+        string,
+        unknown
+      >
+      if (isCurrency(mainCurrency)) settings.mainCurrency = mainCurrency
+      if (typeof fetchExchangeRates === 'boolean') {
+        settings.fetchExchangeRates = fetchExchangeRates
+      }
     }
     entries.push([META_SETTINGS_KEY, settings])
 
@@ -909,6 +929,9 @@ export async function restoreBackup(
     // Safety net: a no-op whenever the restore wrote incomeCategories. Runs
     // after the restore lock is released (the lock isn't re-entrant).
     await ensureIncomeCategories()
+    // Records from the backup may be pending (an older backup, or another
+    // main currency): convert them in the background.
+    requestEntryConversion()
   }
   return result.summary
 }
