@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { CreateRecurringInput, RecurringItem } from '@/lib/domain'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   addRecurring,
   deleteRecurring,
@@ -14,12 +15,18 @@ import {
   setRecurringPaused,
   updateRecurring,
 } from '@/lib/localDb'
+import { formatMoney } from '@/lib/money'
+import { rateProvider } from '@/lib/rates'
 import {
+  addDaysToDate,
   formatRecurringAmount,
   monthlyTotals,
+  monthlyTotalsInMain,
+  nextOccurrence,
   nextUnhandledOccurrence,
   toLocalDateString,
 } from '@/lib/recurrence'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import RecurringForm from '@/components/recurring/RecurringForm'
@@ -63,7 +70,17 @@ function RecurringPage() {
     queryKey: ['incomeCategories'],
     queryFn: getAllIncomeCategories,
   })
-  const queries = [recurringQuery, categoriesQuery, incomeCategoriesQuery]
+  const currencySettingsQuery = useCurrencySettings()
+  const mainCurrency =
+    currencySettingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
+  const fetchExchangeRates =
+    currencySettingsQuery.data?.fetchExchangeRates ?? true
+  const queries = [
+    recurringQuery,
+    categoriesQuery,
+    incomeCategoriesQuery,
+    currencySettingsQuery,
+  ]
   const failedQueries = queries.filter((q) => q.isError)
   const isPending = queries.some((q) => q.isPending)
 
@@ -90,6 +107,41 @@ function RecurringPage() {
     () => monthlyTotals(items ?? [], today),
     [items, today],
   )
+
+  // Today's rates, only when an active item is in another currency. Kept in
+  // the in-memory query cache only; nothing is persisted.
+  const needsRates = useMemo(() => {
+    const yesterday = addDaysToDate(today, -1)
+    return (items ?? []).some(
+      (item) =>
+        !item.paused &&
+        item.currency !== mainCurrency &&
+        nextOccurrence(item, yesterday) !== null,
+    )
+  }, [items, today, mainCurrency])
+  const ratesQuery = useQuery({
+    queryKey: ['rates', today],
+    queryFn: () => rateProvider.getRates(today),
+    enabled:
+      currencySettingsQuery.data !== undefined &&
+      fetchExchangeRates &&
+      needsRates,
+    retry: false,
+    staleTime: Infinity,
+  })
+  const mainTotals = useMemo(
+    () =>
+      monthlyTotalsInMain(
+        items ?? [],
+        today,
+        mainCurrency,
+        ratesQuery.data ?? null,
+      ),
+    [items, today, mainCurrency, ratesQuery.data],
+  )
+  // Shown with the per-currency fallback once it's clear no rates will come.
+  const ratesUnavailable =
+    mainTotals === null && (ratesQuery.isError || !fetchExchangeRates)
 
   const invalidateAll = () => {
     for (const queryKey of RECURRING_QUERY_KEYS) {
@@ -182,6 +234,25 @@ function RecurringPage() {
               <p className="text-sm text-muted-foreground">
                 Nothing committed yet
               </p>
+            ) : mainTotals !== null ? (
+              <ul className="flex flex-col gap-1">
+                {mainTotals.map(({ kind, total, approximate }) => (
+                  <li
+                    key={kind}
+                    data-testid={`recurring-monthly-main-${kind}`}
+                    className="flex items-baseline justify-between gap-4 text-sm"
+                  >
+                    <span className="text-muted-foreground">
+                      {kind === 'expense' ? 'Expenses' : 'Income'}
+                    </span>
+                    <span
+                      className={`font-semibold ${kind === 'income' ? 'text-emerald-600' : 'text-foreground'}`}
+                    >
+                      {`${approximate ? '≈ ' : ''}${formatMoney(total, mainCurrency)}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <ul className="flex flex-col gap-1">
                 {totals.map(({ kind, currency, total }) => (
@@ -202,6 +273,14 @@ function RecurringPage() {
                 ))}
               </ul>
             )}
+            {totals.length > 0 && ratesUnavailable && (
+              <p
+                data-testid="recurring-rates-unavailable"
+                className="text-xs text-muted-foreground"
+              >
+                Exchange rates unavailable
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -212,6 +291,7 @@ function RecurringPage() {
             incomeCategories={incomeCategories}
             today={today}
             initial={form.mode === 'edit' ? form.item : undefined}
+            defaultCurrency={mainCurrency}
             isPending={saveMutation.isPending}
             onSubmit={handleSubmit}
             onCancel={() => setForm(null)}
