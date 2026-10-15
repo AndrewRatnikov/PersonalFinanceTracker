@@ -1,14 +1,30 @@
 // No CONTRACT_GAPs: the Interface Contract's "Component: RecentActivityList"
-// section fully specifies props and every testid this file uses.
+// section plus the EntryAmount contract specify props (mainCurrency is now
+// required) and every testid this file uses.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import type { Expense, IncomeEntry } from '@/lib/domain'
+import type { EntryConversion, Expense, IncomeEntry } from '@/lib/domain'
 import type { RecentItem } from '@/lib/dashboardSummary'
 import RecentActivityList from '@/components/index/RecentActivityList'
 
-const fmt = (n: number) => n.toLocaleString()
+const fmt2 = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+function conv(overrides: Partial<EntryConversion> = {}): EntryConversion {
+  return {
+    mainCurrency: 'UAH',
+    rate: 41.52,
+    mainAmount: 830.4,
+    rateDate: '2026-07-10',
+    source: 'nbu',
+    ...overrides,
+  }
+}
 
 function mkExpenseItem(overrides: Partial<Expense> = {}): RecentItem {
   const expense: Expense = {
@@ -36,20 +52,20 @@ function mkIncomeItem(overrides: Partial<IncomeEntry> = {}): RecentItem {
 }
 
 function rowText(item: RecentItem): string {
-  render(<RecentActivityList items={[item]} />)
+  render(<RecentActivityList items={[item]} mainCurrency="UAH" />)
   return screen.getAllByTestId('recent-activity-item')[0].textContent
 }
 
 describe('root wrapper and empty state', () => {
   it('renders the root wrapper testid and the empty-state card when items is empty', () => {
-    render(<RecentActivityList items={[]} />)
+    render(<RecentActivityList items={[]} mainCurrency="UAH" />)
     expect(screen.getByTestId('recent-activity')).toBeTruthy()
     expect(screen.getByTestId('recent-activity-empty')).toBeTruthy()
     expect(screen.queryAllByTestId('recent-activity-item')).toHaveLength(0)
   })
 
   it('hides the empty state when there is at least one item', () => {
-    render(<RecentActivityList items={[mkExpenseItem()]} />)
+    render(<RecentActivityList items={[mkExpenseItem()]} mainCurrency="UAH" />)
     expect(screen.queryByTestId('recent-activity-empty')).toBeNull()
   })
 })
@@ -61,7 +77,7 @@ describe('criterion 14: merged items, one row each, in order, tagged by kind', (
       mkIncomeItem({ id: 'i1' }),
       mkExpenseItem({ id: 'e2' }),
     ]
-    render(<RecentActivityList items={items} />)
+    render(<RecentActivityList items={items} mainCurrency="UAH" />)
 
     const rows = screen.getAllByTestId('recent-activity-item')
     expect(rows).toHaveLength(3)
@@ -74,32 +90,106 @@ describe('criterion 14: merged items, one row each, in order, tagged by kind', (
 })
 
 describe('criterion 14: expense rows', () => {
-  it('shows an amount with a leading "-", the currency, and no emerald color class', () => {
-    const items = [mkExpenseItem({ amount: 250, currency: 'USD' })]
-    render(<RecentActivityList items={items} />)
+  it('shows a main-currency amount with a leading "-", 2 decimals, the currency, and no emerald color class', () => {
+    const items = [mkExpenseItem({ amount: 250, currency: 'UAH' })]
+    render(<RecentActivityList items={items} mainCurrency="UAH" />)
 
     const row = screen.getAllByTestId('recent-activity-item')[0]
     const amountEl = within(row).getByTestId('recent-activity-amount')
 
     expect(amountEl.textContent.trim().startsWith('-')).toBe(true)
-    expect(amountEl.textContent).toContain(fmt(250))
-    expect(amountEl.textContent).toContain('USD')
+    expect(amountEl.textContent).toContain(fmt2(250))
+    expect(amountEl.textContent).toContain('UAH')
     expect(amountEl.className).not.toContain('text-emerald')
+    expect(within(amountEl).getByTestId('entry-amount').getAttribute('data-state')).toBe(
+      'main',
+    )
   })
 })
 
 describe('criterion 14: income rows', () => {
-  it('shows an amount with a leading "+", the currency, and the emerald color class', () => {
+  it('shows a main-currency amount with a leading "+", the currency, and the emerald color class', () => {
     const items = [mkIncomeItem({ amount: 500, currency: 'EUR' })]
-    render(<RecentActivityList items={items} />)
+    render(<RecentActivityList items={items} mainCurrency="EUR" />)
 
     const row = screen.getAllByTestId('recent-activity-item')[0]
     const amountEl = within(row).getByTestId('recent-activity-amount')
 
     expect(amountEl.textContent.trim().startsWith('+')).toBe(true)
-    expect(amountEl.textContent).toContain(fmt(500))
+    expect(amountEl.textContent).toContain(fmt2(500))
     expect(amountEl.textContent).toContain('EUR')
     expect(amountEl.className).toContain('text-emerald-600')
+  })
+})
+
+describe('converted and pending amounts', () => {
+  it('shows a USD expense as "20.00 USD ≈ 830.40 UAH" with the sign', () => {
+    render(
+      <RecentActivityList
+        items={[mkExpenseItem({ amount: 20, currency: 'USD', conversion: conv() })]}
+        mainCurrency="UAH"
+      />,
+    )
+
+    const amountEl = screen.getByTestId('recent-activity-amount')
+    expect(amountEl.textContent.trim().startsWith('-')).toBe(true)
+    expect(amountEl.textContent).toContain(`${fmt2(20)} USD ≈ ${fmt2(830.4)} UAH`)
+    expect(
+      within(amountEl).getByTestId('entry-amount').getAttribute('data-state'),
+    ).toBe('converted')
+  })
+
+  it('shows a converted income entry with the + sign and the emerald class', () => {
+    render(
+      <RecentActivityList
+        items={[
+          mkIncomeItem({
+            amount: 10,
+            currency: 'EUR',
+            conversion: conv({ rate: 45.1, mainAmount: 451 }),
+          }),
+        ]}
+        mainCurrency="UAH"
+      />,
+    )
+
+    const amountEl = screen.getByTestId('recent-activity-amount')
+    expect(amountEl.textContent.trim().startsWith('+')).toBe(true)
+    expect(amountEl.textContent).toContain(`${fmt2(10)} EUR ≈ ${fmt2(451)} UAH`)
+    expect(amountEl.className).toContain('text-emerald-600')
+  })
+
+  it('shows "rate pending" for an entry without a conversion', () => {
+    render(
+      <RecentActivityList
+        items={[mkExpenseItem({ amount: 20, currency: 'USD' })]}
+        mainCurrency="UAH"
+      />,
+    )
+
+    const amountEl = screen.getByTestId('recent-activity-amount')
+    expect(amountEl.textContent).toContain(`${fmt2(20)} USD · rate pending`)
+    expect(amountEl.textContent).not.toContain('≈')
+    expect(
+      within(amountEl).getByTestId('entry-amount').getAttribute('data-state'),
+    ).toBe('pending')
+  })
+
+  it('judges every row against the mainCurrency prop', () => {
+    const items = [
+      mkExpenseItem({ id: 'a', amount: 20, currency: 'USD', conversion: conv() }),
+    ]
+    const { rerender } = render(
+      <RecentActivityList items={items} mainCurrency="UAH" />,
+    )
+    expect(screen.getByTestId('entry-amount').getAttribute('data-state')).toBe(
+      'converted',
+    )
+
+    rerender(<RecentActivityList items={items} mainCurrency="EUR" />)
+    expect(screen.getByTestId('entry-amount').getAttribute('data-state')).toBe(
+      'pending',
+    )
   })
 })
 
@@ -170,7 +260,7 @@ describe('criterion 14: currency always shown, per row', () => {
       mkExpenseItem({ currency: 'UAH' }),
       mkIncomeItem({ currency: 'USD' }),
     ]
-    render(<RecentActivityList items={items} />)
+    render(<RecentActivityList items={items} mainCurrency="UAH" />)
 
     const rows = screen.getAllByTestId('recent-activity-item')
     expect(

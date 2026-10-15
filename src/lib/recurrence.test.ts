@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: every function of src/lib/recurrence.ts is specified in the
-// Interface Contract (module: recurrence). The TZ independence criterion is
+// Interface Contract (module: recurrence, plus monthlyTotalsInMain and the new
+// formatRecurringAmount in module: totals). The TZ independence criterion is
 // exercised by the plan's verify step, which runs this file under
 // TZ=Pacific/Auckland and TZ=America/Los_Angeles; the DST-crossing ranges below
 // are chosen so that a local-time implementation would shift a date in one of
@@ -9,6 +10,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { RecurringItem } from '@/lib/domain'
+import type { RateTable } from '@/lib/rates/types'
+import { formatMoney } from '@/lib/money'
 import {
   addDaysToDate,
   describeFrequency,
@@ -18,6 +21,7 @@ import {
   markOccurrenceHandled,
   monthlyEquivalent,
   monthlyTotals,
+  monthlyTotalsInMain,
   nextOccurrence,
   nextUnhandledOccurrence,
   occurrenceCreatedAt,
@@ -744,6 +748,129 @@ describe('monthlyTotals', () => {
   })
 })
 
+describe('monthlyTotalsInMain', () => {
+  const today = '2026-06-01'
+  const rates: RateTable = {
+    base: 'UAH',
+    effectiveDate: '2026-06-01',
+    perBase: { UAH: 1, USD: 41.52, EUR: 45.1 },
+  }
+
+  it('converts each item at the rate and sums one total per kind, marking converted kinds approximate', () => {
+    const items = [
+      item({ id: 'e1', amount: 100, frequency: { unit: 'week', interval: 1 } }), // 433.33 UAH
+      item({ id: 'e2', amount: 50 }), // 50 UAH
+      item({
+        id: 'e3',
+        amount: 1200,
+        currency: 'USD',
+        frequency: { unit: 'year', interval: 1 },
+      }), // 100 USD
+      item({ id: 'i1', kind: 'income', amount: 2000 }), // 2000 UAH
+    ]
+
+    const result = monthlyTotalsInMain(items, today, 'UAH', rates)
+
+    expect(result).not.toBeNull()
+    expect(result).toHaveLength(2)
+    expect(result?.[0].kind).toBe('expense')
+    expect(result?.[0].total).toBeCloseTo(433.33 + 50 + 100 * 41.52, 6)
+    expect(result?.[0].approximate).toBe(true)
+    expect(result?.[1].kind).toBe('income')
+    expect(result?.[1].total).toBe(2000)
+    expect(result?.[1].approximate).toBe(false)
+  })
+
+  it('converts between two foreign currencies through the table (main EUR)', () => {
+    const items = [
+      item({ id: 'u', amount: 451 }), // UAH
+      item({ id: 'd', amount: 90.2, currency: 'USD' }),
+      item({ id: 'e', amount: 10, currency: 'EUR' }),
+    ]
+
+    const result = monthlyTotalsInMain(items, today, 'EUR', rates)
+
+    expect(result).toHaveLength(1)
+    expect(result?.[0].total).toBeCloseTo(451 / 45.1 + (90.2 * 41.52) / 45.1 + 10, 6)
+    expect(result?.[0].approximate).toBe(true)
+  })
+
+  it('a different rate gives a different total', () => {
+    const items = [item({ amount: 100, currency: 'USD' })]
+    const other: RateTable = { ...rates, perBase: { ...rates.perBase, USD: 40 } }
+
+    const a = monthlyTotalsInMain(items, today, 'UAH', rates)
+    const b = monthlyTotalsInMain(items, today, 'UAH', other)
+
+    expect(a?.[0].total).toBeCloseTo(4152, 6)
+    expect(b?.[0].total).toBeCloseTo(4000, 6)
+  })
+
+  it('is exact and not approximate when every item is in the main currency, even without rates', () => {
+    const items = [
+      item({ id: 'a', amount: 100 }),
+      item({ id: 'b', amount: 50 }),
+      item({ id: 'c', kind: 'income', amount: 10 }),
+    ]
+
+    expect(monthlyTotalsInMain(items, today, 'UAH', null)).toEqual([
+      { kind: 'expense', total: 150, approximate: false },
+      { kind: 'income', total: 10, approximate: false },
+    ])
+  })
+
+  it('lists expenses first and only the kinds that have active items', () => {
+    expect(
+      monthlyTotalsInMain(
+        [item({ kind: 'income', amount: 10 }), item({ id: 'x', amount: 5 })],
+        today,
+        'UAH',
+        null,
+      )?.map((t) => t.kind),
+    ).toEqual(['expense', 'income'])
+    expect(
+      monthlyTotalsInMain([item({ kind: 'income', amount: 10 })], today, 'UAH', null)?.map(
+        (t) => t.kind,
+      ),
+    ).toEqual(['income'])
+  })
+
+  it('returns null when an active item needs a rate and there are none', () => {
+    const items = [item({ id: 'a' }), item({ id: 'b', currency: 'USD' })]
+
+    expect(monthlyTotalsInMain(items, today, 'UAH', null)).toBeNull()
+  })
+
+  it('returns null when the table lacks a needed currency', () => {
+    const noUsd: RateTable = { ...rates, perBase: { UAH: 1, EUR: 45.1 } }
+
+    expect(
+      monthlyTotalsInMain([item({ currency: 'USD' })], today, 'UAH', noUsd),
+    ).toBeNull()
+  })
+
+  it('ignores paused and ended items, also when they would need a rate', () => {
+    const paused = item({ id: 'p', currency: 'USD', paused: true })
+    const ended = item({
+      id: 'e',
+      currency: 'USD',
+      end: { type: 'onDate', date: '2026-05-31' },
+    })
+    const active = item({ id: 'a', amount: 70 })
+
+    expect(monthlyTotalsInMain([paused, ended, active], today, 'UAH', null)).toEqual([
+      { kind: 'expense', total: 70, approximate: false },
+    ])
+  })
+
+  it('returns an empty list for no active items', () => {
+    expect(monthlyTotalsInMain([], today, 'UAH', rates)).toEqual([])
+    expect(
+      monthlyTotalsInMain([item({ paused: true })], today, 'UAH', rates),
+    ).toEqual([])
+  })
+})
+
 describe('describeFrequency', () => {
   it('days', () => {
     expect(describeFrequency(item({ frequency: { unit: 'day', interval: 1 } }))).toBe(
@@ -812,12 +939,17 @@ describe('describeFrequency', () => {
 })
 
 describe('formatRecurringAmount', () => {
-  it('is the locale-formatted amount (max 2 decimals) and the currency code', () => {
-    const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  it('is the money format: always 2 decimals, then the currency code', () => {
+    const fmt2 = (n: number) =>
+      n.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
 
-    expect(formatRecurringAmount(1234.5, 'UAH')).toBe(`${fmt(1234.5)} UAH`)
-    expect(formatRecurringAmount(9.99, 'USD')).toBe(`${fmt(9.99)} USD`)
-    expect(formatRecurringAmount(1234.567, 'EUR')).toBe(`${fmt(1234.567)} EUR`)
+    expect(formatRecurringAmount(1234.5, 'UAH')).toBe(`${fmt2(1234.5)} UAH`)
+    expect(formatRecurringAmount(9.99, 'USD')).toBe(`${fmt2(9.99)} USD`)
+    expect(formatRecurringAmount(1234.567, 'EUR')).toBe(`${fmt2(1234.57)} EUR`)
+    expect(formatRecurringAmount(10, 'UAH')).toBe(formatMoney(10, 'UAH'))
   })
 
   it('different amounts and currencies give different strings', () => {

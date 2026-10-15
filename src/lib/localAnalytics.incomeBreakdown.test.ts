@@ -1,11 +1,12 @@
 // No CONTRACT_GAPs: incomeBreakdown (grouping by categoryId, joined name and
-// icon, sorted by total descending, selected currency only) is fully specified
-// in the Interface Contract (module: localAnalytics). Income fixtures carry
-// categoryId and the joined category, as the real getAllIncome returns them.
+// icon, sorted by total descending, summing mainAmountOf in the main currency)
+// is fully specified in the Interface Contract (module: localAnalytics).
+// Income fixtures carry categoryId and the joined category, as the real
+// getAllIncome returns them.
 
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { IncomeEntry } from '@/lib/domain'
+import type { EntryConversion, IncomeEntry } from '@/lib/domain'
 import { computeRangeAnalytics } from '@/lib/localAnalytics'
 import {
   getAllBudgets,
@@ -46,6 +47,20 @@ function income(
     currency,
     createdAt: '2024-01-12T12:00:00.000Z',
     ...overrides,
+  }
+}
+
+function conversion(
+  mainCurrency: EntryConversion['mainCurrency'],
+  rate: number,
+  amount: number,
+): EntryConversion {
+  return {
+    mainCurrency,
+    rate,
+    mainAmount: amount * rate,
+    rateDate: '2024-01-12',
+    source: 'nbu',
   }
 }
 
@@ -108,7 +123,7 @@ describe('incomeBreakdown grouping and sorting', () => {
     expect(result.incomeBreakdown.map((b) => b.categoryId)).toEqual(['b', 'a'])
   })
 
-  it('totals add up to totalIncome', async () => {
+  it('totals add up to totalIncome (a pending USD entry is in neither)', async () => {
     setup([
       income('i1', 3000, 'UAH', SALARY),
       income('i2', 1000.5, 'UAH', FREELANCE),
@@ -133,41 +148,38 @@ describe('incomeBreakdown grouping and sorting', () => {
   })
 })
 
-describe('incomeBreakdown currency and range', () => {
+describe('incomeBreakdown in the main currency and range', () => {
   const mixed = [
     income('i1', 3000, 'UAH', SALARY),
     income('i2', 50, 'USD', GIFTS),
-    income('i3', 70, 'USD', SALARY),
+    income('i3', 70, 'USD', SALARY, { conversion: conversion('UAH', 40, 70) }),
     income('i4', 10, 'EUR', FREELANCE),
   ]
 
-  it('defaults to UAH: other currencies are not charted and go to excluded', async () => {
+  it('defaults to UAH: pending USD/EUR income is not charted and is counted', async () => {
     setup(mixed)
 
     const result = await computeRangeAnalytics(RANGE)
 
+    // i2 and i4 are pending; i3 is converted into Salary.
     expect(result.incomeBreakdown).toEqual([
-      { categoryId: 'ic-sal', name: 'Salary', icon: '💼', total: 3000 },
+      { categoryId: 'ic-sal', name: 'Salary', icon: '💼', total: 3000 + 2800 },
     ])
-    expect(result.excluded).toEqual([
-      { currency: 'EUR', expenses: 0, income: 10 },
-      { currency: 'USD', expenses: 0, income: 120 },
-    ])
+    expect(result.totalIncome).toBe(5800)
+    expect(result.pendingCount).toBe(2)
   })
 
-  it('with USD selected, charts only USD income', async () => {
+  it('with main USD, charts only USD income at its amount; the converted-to-UAH entry is pending', async () => {
     setup(mixed)
 
     const result = await computeRangeAnalytics(RANGE, 'USD')
 
+    // i2 (50 USD, no conversion) counts at 50; i3's conversion is for UAH, so
+    // it is pending in USD.
     expect(result.incomeBreakdown).toEqual([
-      { categoryId: 'ic-sal', name: 'Salary', icon: '💼', total: 70 },
       { categoryId: 'ic-gift', name: 'Gifts', icon: null, total: 50 },
     ])
-    expect(result.excluded).toEqual([
-      { currency: 'EUR', expenses: 0, income: 10 },
-      { currency: 'UAH', expenses: 0, income: 3000 },
-    ])
+    expect(result.pendingCount).toBe(3) // UAH, converted-to-UAH USD, EUR
   })
 
   it('leaves out income outside the range', async () => {

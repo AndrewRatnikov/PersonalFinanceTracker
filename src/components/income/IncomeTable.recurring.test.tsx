@@ -1,6 +1,7 @@
 // No CONTRACT_GAPs: income-recurring-icon, its title and the optional
 // recurringId / occurrenceDate fields are specified in the Interface Contract
-// (component changes: IncomeTable).
+// (component changes: IncomeTable). The required mainCurrency prop comes from
+// the EntryAmount contract.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -28,6 +29,7 @@ function renderTable(income: Array<IncomeEntry>) {
       isLoading={false}
       isError={false}
       isDeleting={false}
+      mainCurrency="UAH"
       onDelete={vi.fn()}
     />,
   )
@@ -77,5 +79,15 @@ describe('IncomeTable recurring icon', () => {
     const cell = screen.getByTestId('income-row-category')
     expect(cell.textContent).toContain('💼')
     expect(cell.textContent).toContain('Salary')
+  })
+
+  it('a generated foreign-currency row shows its amount state next to the icon', () => {
+    renderTable([entry({ currency: 'EUR', recurringId: 'r1' })])
+
+    const row = screen.getByTestId('income-row')
+    expect(within(row).getByTestId('entry-amount').getAttribute('data-state')).toBe(
+      'pending',
+    )
+    expect(within(row).queryByTestId('income-recurring-icon')).not.toBeNull()
   })
 })

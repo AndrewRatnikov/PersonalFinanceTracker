@@ -1,11 +1,19 @@
 // No CONTRACT_GAPs: IncomeTable props and the income-row / income-row-category
-// testids are fully specified in the Interface Contract.
+// testids are fully specified in the Interface Contract; the required
+// mainCurrency prop and the EntryAmount cell (data-testid="entry-amount") come
+// from the EntryAmount contract.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { IncomeEntry } from '@/lib/domain'
+import type { EntryConversion, IncomeEntry } from '@/lib/domain'
 import { IncomeTable } from '@/components/income/IncomeTable'
+
+const fmt2 = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 
 function entry(overrides: Partial<IncomeEntry> = {}): IncomeEntry {
   return {
@@ -19,6 +27,17 @@ function entry(overrides: Partial<IncomeEntry> = {}): IncomeEntry {
   }
 }
 
+function conversion(overrides: Partial<EntryConversion> = {}): EntryConversion {
+  return {
+    mainCurrency: 'UAH',
+    rate: 45.1,
+    mainAmount: 22550,
+    rateDate: '2026-03-10',
+    source: 'nbu',
+    ...overrides,
+  }
+}
+
 function renderTable(income: Array<IncomeEntry>) {
   return render(
     <IncomeTable
@@ -26,6 +45,7 @@ function renderTable(income: Array<IncomeEntry>) {
       isLoading={false}
       isError={false}
       isDeleting={false}
+      mainCurrency="UAH"
       onDelete={vi.fn()}
     />,
   )
@@ -111,6 +131,40 @@ describe('IncomeTable category cell', () => {
   })
 })
 
+describe('IncomeTable amount cell', () => {
+  it('shows a main-currency entry as the plain amount with 2 decimals', () => {
+    renderTable([entry()])
+
+    const amount = within(screen.getByTestId('income-row')).getByTestId(
+      'entry-amount',
+    )
+    expect(amount.getAttribute('data-state')).toBe('main')
+    expect(amount.textContent).toBe(`${fmt2(1000)} UAH`)
+  })
+
+  it('shows a converted entry as "typed ≈ main"', () => {
+    renderTable([entry({ amount: 500, currency: 'EUR', conversion: conversion() })])
+
+    const amount = screen.getByTestId('entry-amount')
+    expect(amount.getAttribute('data-state')).toBe('converted')
+    expect(amount.textContent).toBe(`${fmt2(500)} EUR ≈ ${fmt2(22550)} UAH`)
+  })
+
+  it('shows an entry without a conversion as "rate pending"', () => {
+    renderTable([entry({ amount: 500, currency: 'EUR' })])
+
+    const amount = screen.getByTestId('entry-amount')
+    expect(amount.getAttribute('data-state')).toBe('pending')
+    expect(amount.textContent).toBe(`${fmt2(500)} EUR · rate pending`)
+  })
+
+  it('no longer prefixes a currency symbol', () => {
+    renderTable([entry({ currency: 'EUR', amount: 5 })])
+
+    expect(screen.getByTestId('income-row').textContent).not.toContain('€')
+  })
+})
+
 describe('IncomeTable rows', () => {
   it('renders one income-row per entry, in the given order', () => {
     renderTable([
@@ -131,8 +185,8 @@ describe('IncomeTable rows', () => {
     expect(label(0)).toContain('Salary')
     expect(label(1)).toContain('Gifts')
     expect(label(2)).toContain('Uncategorized')
-    expect(rows[0].textContent).toContain('10.00')
-    expect(rows[1].textContent).toContain('20.00')
+    expect(rows[0].textContent).toContain(fmt2(10))
+    expect(rows[1].textContent).toContain(fmt2(20))
   })
 
   it('renders no income-row while loading, on error or when empty', () => {
@@ -142,6 +196,7 @@ describe('IncomeTable rows', () => {
         isLoading
         isError={false}
         isDeleting={false}
+        mainCurrency="UAH"
         onDelete={vi.fn()}
       />,
     )
@@ -153,6 +208,7 @@ describe('IncomeTable rows', () => {
         isLoading={false}
         isError
         isDeleting={false}
+        mainCurrency="UAH"
         onDelete={vi.fn()}
       />,
     )
@@ -164,6 +220,7 @@ describe('IncomeTable rows', () => {
         isLoading={false}
         isError={false}
         isDeleting={false}
+        mainCurrency="UAH"
         onDelete={vi.fn()}
       />,
     )

@@ -1,6 +1,7 @@
 // No CONTRACT_GAPs: the Interface Contract for `computeDashboardSummary` /
 // `getBudgetStatus` (src/lib/dashboardSummary.ts) fully specifies exports,
-// field names and formulas.
+// field names and formulas. Totals sum `mainAmountOf` (stored conversion, else
+// the amount when the entry is already in the main currency, else pending).
 
 import { describe, expect, it } from 'vitest'
 
@@ -8,6 +9,7 @@ import type {
   BudgetEntry,
   Category,
   Currency,
+  EntryConversion,
   Expense,
   IncomeEntry,
 } from '@/lib/domain'
@@ -26,12 +28,27 @@ const id = (prefix: string) => `${prefix}-${++nextId}`
 const dateAt = (y: number, m: number, d: number, h = 12) =>
   new Date(y, m, d, h, 0, 0).toISOString()
 
+function conv(
+  mainCurrency: Currency,
+  rate: number,
+  amount: number,
+): EntryConversion {
+  return {
+    mainCurrency,
+    rate,
+    mainAmount: amount * rate,
+    rateDate: '2026-07-10',
+    source: 'nbu',
+  }
+}
+
 function mkExpense(
   amount: number,
   currency: Currency,
   categoryId: string,
   createdAt: string,
   overrideId?: string,
+  conversion?: EntryConversion,
 ): Expense {
   return {
     id: overrideId ?? id('exp'),
@@ -39,6 +56,7 @@ function mkExpense(
     currency,
     categoryId,
     createdAt,
+    ...(conversion ? { conversion } : {}),
   }
 }
 
@@ -47,6 +65,7 @@ function mkIncome(
   currency: Currency,
   createdAt: string,
   overrideId?: string,
+  conversion?: EntryConversion,
 ): IncomeEntry {
   return {
     id: overrideId ?? id('inc'),
@@ -54,6 +73,7 @@ function mkIncome(
     amount,
     currency,
     createdAt,
+    ...(conversion ? { conversion } : {}),
   }
 }
 
@@ -135,21 +155,29 @@ describe('criterion 2: this-month totals exclude the same month in an earlier ye
   })
 })
 
-// ---- criterion 3: excluded per-currency totals (bug 2 fix) --------------
+// ---- criterion 3: converted totals, pending counted ----------------------
 
-describe('criterion 3: non-base-currency this-month entries land in excluded, not totals (bug 2)', () => {
-  it('groups non-base entries by currency, sorted ascending, and keeps totals base-currency only', () => {
+describe('criterion 3: totals sum mainAmount of converted entries; pending ones are counted, not summed', () => {
+  it('adds a converted USD expense at its stored mainAmount and counts unconverted ones as pending', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const expenses = [
       mkExpense(100, 'UAH', catFood.id, dateAt(2026, 6, 10)),
-      mkExpense(120, 'USD', catFood.id, dateAt(2026, 6, 10)),
-      mkExpense(30, 'EUR', catFood.id, dateAt(2026, 6, 10)),
-      // Different month, non-base currency: must not appear in excluded at all.
+      mkExpense(
+        120,
+        'USD',
+        catFood.id,
+        dateAt(2026, 6, 10),
+        undefined,
+        conv('UAH', 41.5, 120),
+      ),
+      mkExpense(30, 'EUR', catFood.id, dateAt(2026, 6, 10)), // pending
+      // Different month, non-main currency, pending: must not be counted at all.
       mkExpense(999, 'USD', catFood.id, dateAt(2026, 5, 10)),
     ]
     const income = [
       mkIncome(500, 'UAH', dateAt(2026, 6, 5)),
-      mkIncome(50, 'EUR', dateAt(2026, 6, 5)),
+      mkIncome(50, 'EUR', dateAt(2026, 6, 5)), // pending
+      mkIncome(10, 'USD', dateAt(2026, 6, 5), undefined, conv('UAH', 40, 10)),
     ]
 
     const result = computeDashboardSummary({
@@ -160,15 +188,41 @@ describe('criterion 3: non-base-currency this-month entries land in excluded, no
       now,
     })
 
-    expect(result.monthExpenses).toBe(100)
-    expect(result.monthIncome).toBe(500)
-    expect(result.excluded).toEqual([
-      { currency: 'EUR', expenses: 30, income: 50 },
-      { currency: 'USD', expenses: 120, income: 0 },
-    ])
+    expect(result.monthExpenses).toBeCloseTo(100 + 120 * 41.5, 6)
+    expect(result.monthIncome).toBeCloseTo(500 + 10 * 40, 6)
+    expect(result.net).toBeCloseTo(result.monthIncome - result.monthExpenses, 6)
+    expect(result.pendingCount).toBe(2)
   })
 
-  it('returns an empty array when every this-month entry is base-currency', () => {
+  it('does not round: a stored mainAmount of 33.3333 is summed as is', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const expense = mkExpense(
+      1,
+      'USD',
+      catFood.id,
+      dateAt(2026, 6, 10),
+      undefined,
+      {
+        mainCurrency: 'UAH',
+        rate: 33.333333,
+        mainAmount: 33.333333,
+        rateDate: '2026-07-10',
+        source: 'nbu',
+      },
+    )
+
+    const result = computeDashboardSummary({
+      expenses: [expense],
+      income: [],
+      budgets: [],
+      categories: [],
+      now,
+    })
+
+    expect(result.monthExpenses).toBe(33.333333)
+  })
+
+  it('reports pendingCount 0 when every this-month entry is in the main currency', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const result = computeDashboardSummary({
       expenses: [mkExpense(10, 'UAH', catFood.id, dateAt(2026, 6, 10))],
@@ -177,14 +231,49 @@ describe('criterion 3: non-base-currency this-month entries land in excluded, no
       categories: [],
       now,
     })
-    expect(result.excluded).toEqual([])
+    expect(result.pendingCount).toBe(0)
+  })
+
+  it('no longer reports an excluded list', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const result = computeDashboardSummary({
+      expenses: [mkExpense(10, 'USD', catFood.id, dateAt(2026, 6, 10))],
+      income: [],
+      budgets: [],
+      categories: [],
+      now,
+    })
+    expect('excluded' in result).toBe(false)
+  })
+
+  it('treats a conversion stored for another main currency as pending', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const stale = mkExpense(
+      20,
+      'USD',
+      catFood.id,
+      dateAt(2026, 6, 10),
+      undefined,
+      conv('EUR', 0.92, 20),
+    )
+
+    const result = computeDashboardSummary({
+      expenses: [stale],
+      income: [],
+      budgets: [],
+      categories: [],
+      now,
+    })
+
+    expect(result.monthExpenses).toBe(0)
+    expect(result.pendingCount).toBe(1)
   })
 })
 
 // ---- criteria 4 & 5: leftToSpend / dailyAllowance ------------------------
 
 describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
-  it('is null (with null dailyAllowance and empty budgetWatch) when there are no base-currency budgets', () => {
+  it('is null (with null dailyAllowance and empty budgetWatch) when there are no main-currency budgets, and counts the excluded budget', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const result = computeDashboardSummary({
       expenses: [],
@@ -196,9 +285,22 @@ describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
     expect(result.leftToSpend).toBeNull()
     expect(result.dailyAllowance).toBeNull()
     expect(result.budgetWatch).toEqual([])
+    expect(result.budgetsExcluded).toBe(1)
   })
 
-  it('sums base budget limits minus budgeted-category spend, mid-month', () => {
+  it('reports budgetsExcluded 0 when every budget is in the main currency', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const result = computeDashboardSummary({
+      expenses: [],
+      income: [],
+      budgets: [mkBudget(catFood.id, 500, 'UAH')],
+      categories: [catFood],
+      now,
+    })
+    expect(result.budgetsExcluded).toBe(0)
+  })
+
+  it('sums main-currency budget limits minus budgeted-category spend, mid-month', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0) // July 15, 31-day month, 17 days left
     const budgets = [mkBudget(catFood.id, 1000), mkBudget(catTransport.id, 500)]
     const expenses = [
@@ -255,7 +357,7 @@ describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
     expect(result.dailyAllowance).toBe(0)
   })
 
-  it('does not reduce leftToSpend for a non-base-currency expense, even in a budgeted category', () => {
+  it('does not reduce leftToSpend for a pending USD expense, even in a budgeted category', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const budgets = [mkBudget(catFood.id, 500)]
     const expenses = [mkExpense(200, 'USD', catFood.id, dateAt(2026, 6, 10))]
@@ -269,12 +371,36 @@ describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
     })
 
     expect(result.leftToSpend).toBe(500)
-    expect(result.excluded).toEqual([
-      { currency: 'USD', expenses: 200, income: 0 },
-    ])
+    expect(result.pendingCount).toBe(1)
   })
 
-  it('ignores a non-base-currency budget while still honoring a base-currency budget in the same mix', () => {
+  it('reduces leftToSpend by the converted amount of a USD expense in a budgeted category', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const budgets = [mkBudget(catFood.id, 500)]
+    const expenses = [
+      mkExpense(
+        2,
+        'USD',
+        catFood.id,
+        dateAt(2026, 6, 10),
+        undefined,
+        conv('UAH', 41.5, 2),
+      ),
+    ]
+
+    const result = computeDashboardSummary({
+      expenses,
+      income: [],
+      budgets,
+      categories: [catFood],
+      now,
+    })
+
+    expect(result.leftToSpend).toBeCloseTo(500 - 83, 6)
+    expect(result.pendingCount).toBe(0)
+  })
+
+  it('ignores a non-main budget while still honoring a main-currency budget in the same mix', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const budgets = [
       mkBudget(catFood.id, 500, 'UAH'),
@@ -293,21 +419,22 @@ describe('criteria 4 & 5: leftToSpend and dailyAllowance', () => {
       now,
     })
 
-    expect(result.leftToSpend).toBe(400) // 500 - 100; the USD budget/expense is ignored
+    expect(result.leftToSpend).toBe(400) // 500 - 100; the USD budget and pending expense are ignored
     expect(result.budgetWatch.map((b) => b.categoryId)).toEqual([catFood.id])
+    expect(result.budgetsExcluded).toBe(1)
   })
 })
 
 // ---- criterion 6: pace ---------------------------------------------------
 
 describe('criterion 6: pace', () => {
-  it('sums last month through min(today, daysInLastMonth), excluding later days and non-base currency', () => {
+  it('sums last month through min(today, daysInLastMonth), excluding later days and pending entries', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0) // July 15 -> cutoff in June = 15
     const expenses = [
       mkExpense(175, 'UAH', catFood.id, dateAt(2026, 6, 10)), // this month
       mkExpense(100, 'UAH', catFood.id, dateAt(2026, 5, 10)), // June day 10 <= cutoff -> included
       mkExpense(999, 'UAH', catFood.id, dateAt(2026, 5, 20)), // June day 20 > cutoff -> excluded
-      mkExpense(9999, 'USD', catFood.id, dateAt(2026, 5, 5)), // non-base currency -> excluded
+      mkExpense(9999, 'USD', catFood.id, dateAt(2026, 5, 5)), // pending -> excluded
     ]
 
     const result = computeDashboardSummary({
@@ -321,6 +448,31 @@ describe('criterion 6: pace', () => {
     expect(result.pace.spentSoFar).toBe(175)
     expect(result.pace.lastMonthSameDay).toBe(100)
     expect(result.pace.changePct).toBeCloseTo(75, 5)
+  })
+
+  it('counts a converted USD expense of last month in lastMonthSameDay', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const expenses = [
+      mkExpense(175, 'UAH', catFood.id, dateAt(2026, 6, 10)),
+      mkExpense(
+        1,
+        'USD',
+        catFood.id,
+        dateAt(2026, 5, 5),
+        undefined,
+        conv('UAH', 40, 1),
+      ),
+    ]
+
+    const result = computeDashboardSummary({
+      expenses,
+      income: [],
+      budgets: [],
+      categories: [],
+      now,
+    })
+
+    expect(result.pace.lastMonthSameDay).toBe(40)
   })
 
   it("caps the cutoff at the previous month's own day count (31-day month vs 30-day last month)", () => {
@@ -510,7 +662,7 @@ describe('criterion 7: budgetWatch', () => {
     expect(result.budgetWatch[0].name).toBe('Uncategorized')
   })
 
-  it('sums monthlyLimit across multiple base budgets sharing the same categoryId into one entry', () => {
+  it('sums monthlyLimit across multiple main-currency budgets sharing the same categoryId into one entry', () => {
     const budgets = [mkBudget(catFood.id, 300), mkBudget(catFood.id, 200)]
     const expenses = [mkExpense(250, 'UAH', catFood.id, dateAt(2026, 6, 10))]
 
@@ -526,6 +678,31 @@ describe('criterion 7: budgetWatch', () => {
     expect(result.budgetWatch[0].limit).toBe(500)
     expect(result.budgetWatch[0].spent).toBe(250)
     expect(result.budgetWatch[0].ratio).toBeCloseTo(0.5, 5)
+  })
+
+  it('counts the converted amount of a USD expense as spend in the category', () => {
+    const budgets = [mkBudget(catFood.id, 1000)]
+    const expenses = [
+      mkExpense(
+        10,
+        'USD',
+        catFood.id,
+        dateAt(2026, 6, 10),
+        undefined,
+        conv('UAH', 41.5, 10),
+      ),
+    ]
+
+    const result = computeDashboardSummary({
+      expenses,
+      income: [],
+      budgets,
+      categories: [catFood],
+      now,
+    })
+
+    expect(result.budgetWatch[0].spent).toBeCloseTo(415, 6)
+    expect(result.budgetWatch[0].ratio).toBeCloseTo(0.415, 6)
   })
 
   it('gives an Infinity ratio (status over) for a zero-limit budget with spend, and 0 (status ok) with no spend', () => {
@@ -565,7 +742,7 @@ describe('criterion 8: recent', () => {
     const exp3 = mkExpense(5, 'UAH', catFood.id, dateAt(2026, 4, 1), 'exp3')
     const inc3 = mkIncome(6, 'UAH', dateAt(2026, 5, 1), 'inc3')
     const exp4 = mkExpense(7, 'UAH', catFood.id, dateAt(2026, 6, 1), 'exp4')
-    // Non-base currency, to prove recent isn't filtered by currency.
+    // Non-main currency, to prove recent isn't filtered by currency.
     const inc4 = mkIncome(8, 'USD', dateAt(2026, 6, 20), 'inc4')
 
     const result = computeDashboardSummary({
@@ -584,6 +761,28 @@ describe('criterion 8: recent', () => {
       { id: 'exp3', kind: 'expense' },
       { id: 'inc2', kind: 'income' },
     ])
+  })
+
+  it('keeps the stored conversion on recent items', () => {
+    const now = new Date(2026, 6, 31, 12, 0, 0)
+    const withConversion = mkExpense(
+      20,
+      'USD',
+      catFood.id,
+      dateAt(2026, 6, 20),
+      'conv1',
+      conv('UAH', 41.52, 20),
+    )
+
+    const result = computeDashboardSummary({
+      expenses: [withConversion],
+      income: [],
+      budgets: [],
+      categories: [],
+      now,
+    })
+
+    expect(result.recent[0].conversion?.mainAmount).toBeCloseTo(830.4, 6)
   })
 
   it('does not mutate the input expenses/income arrays', () => {
@@ -609,9 +808,9 @@ describe('criterion 8: recent', () => {
   })
 })
 
-// ---- baseCurrency default / override ---------------------------------------
+// ---- mainCurrency default / override ----------------------------------------
 
-describe('baseCurrency', () => {
+describe('mainCurrency', () => {
   it('defaults to UAH when omitted', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const result = computeDashboardSummary({
@@ -621,10 +820,10 @@ describe('baseCurrency', () => {
       categories: [],
       now,
     })
-    expect(result.baseCurrency).toBe('UAH')
+    expect(result.mainCurrency).toBe('UAH')
   })
 
-  it('respects an explicit baseCurrency other than UAH', () => {
+  it('respects an explicit mainCurrency other than UAH: its own entries count at their amount', () => {
     const now = new Date(2026, 6, 15, 12, 0, 0)
     const result = computeDashboardSummary({
       expenses: [mkExpense(100, 'USD', catFood.id, dateAt(2026, 6, 10))],
@@ -632,11 +831,51 @@ describe('baseCurrency', () => {
       budgets: [],
       categories: [],
       now,
-      baseCurrency: 'USD',
+      mainCurrency: 'USD',
     })
-    expect(result.baseCurrency).toBe('USD')
+    expect(result.mainCurrency).toBe('USD')
     expect(result.monthExpenses).toBe(100)
-    expect(result.excluded).toEqual([])
+    expect(result.pendingCount).toBe(0)
+  })
+
+  it('never mixes currencies: with main EUR, UAH records converted for UAH are pending and not summed', () => {
+    const now = new Date(2026, 6, 15, 12, 0, 0)
+    const uahConverted = mkExpense(
+      100,
+      'UAH',
+      catFood.id,
+      dateAt(2026, 6, 10),
+      undefined,
+      conv('UAH', 1, 100),
+    )
+    const eurOwn = mkExpense(7, 'EUR', catFood.id, dateAt(2026, 6, 10))
+    const eurIncomeFromUah = mkIncome(
+      4500,
+      'UAH',
+      dateAt(2026, 6, 5),
+      undefined,
+      conv('EUR', 0.02, 4500),
+    )
+    const uahIncomeStale = mkIncome(
+      900,
+      'UAH',
+      dateAt(2026, 6, 6),
+      undefined,
+      conv('UAH', 1, 900),
+    )
+
+    const result = computeDashboardSummary({
+      expenses: [uahConverted, eurOwn],
+      income: [eurIncomeFromUah, uahIncomeStale],
+      budgets: [],
+      categories: [],
+      now,
+      mainCurrency: 'EUR',
+    })
+
+    expect(result.monthExpenses).toBe(7)
+    expect(result.monthIncome).toBeCloseTo(90, 6)
+    expect(result.pendingCount).toBe(2)
   })
 })
 
@@ -656,7 +895,8 @@ describe('empty input', () => {
     expect(result.monthIncome).toBe(0)
     expect(result.monthExpenses).toBe(0)
     expect(result.net).toBe(0)
-    expect(result.excluded).toEqual([])
+    expect(result.pendingCount).toBe(0)
+    expect(result.budgetsExcluded).toBe(0)
     expect(result.leftToSpend).toBeNull()
     expect(result.dailyAllowance).toBeNull()
     expect(result.pace.changePct).toBeNull()

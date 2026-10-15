@@ -1,7 +1,8 @@
 // No CONTRACT_GAPs: settings tab structure, selectors and test notes are fully
 // specified in the Interface Contract (route: settings). The tab bodies are
-// replaced by light markers; fake-account-tab and fake-storage-status stand in
-// for AccountTab and the Data tab content.
+// replaced by light markers; fake-general-tab, fake-account-tab and
+// fake-storage-status stand in for GeneralTab, AccountTab and the Data tab
+// content.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
@@ -20,6 +21,9 @@ vi.mock('@/lib/accountSession', () => ({
   useAccountSession: vi.fn(),
 }))
 vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: false }))
+vi.mock('@/components/settings/GeneralTab', () => ({
+  GeneralTab: () => <div data-testid="fake-general-tab" />,
+}))
 vi.mock('@/components/settings/CategoriesTab', () => ({
   CategoriesTab: () => <div data-testid="categories-tab" />,
 }))
@@ -66,14 +70,38 @@ afterEach(() => {
 })
 
 describe('Settings tabs without accounts', () => {
-  it('shows Categories, Budget, Security and Data only', () => {
+  it('shows General first, then Categories, Budget, Security and Data', () => {
     renderSettings()
 
-    expect(tabLabels()).toEqual(['Categories', 'Budget', 'Security', 'Data'])
+    expect(tabLabels()).toEqual([
+      'General',
+      'Categories',
+      'Budget',
+      'Security',
+      'Data',
+    ])
     expect(screen.queryByTestId('settings-tab-account')).toBeNull()
     expect(
-      screen.getAllByRole('tablist')[0].className.includes('grid-cols-4'),
+      screen.getAllByRole('tablist')[0].className.includes('grid-cols-5'),
     ).toBe(true)
+  })
+
+  it('marks the General trigger with settings-tab-general', () => {
+    renderSettings()
+
+    const trigger = screen.getByTestId('settings-tab-general')
+    expect(trigger.textContent.trim()).toBe('General')
+    expect(screen.getAllByRole('tab')[0]).toBe(trigger)
+  })
+
+  it('opens on General by default', () => {
+    renderSettings()
+
+    expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
+    expect(screen.queryByTestId('categories-tab')).toBeNull()
+    expect(
+      screen.getByTestId('settings-tab-general').getAttribute('data-state'),
+    ).toBe('active')
   })
 
   it('renames Data Tools to Data', () => {
@@ -82,12 +110,13 @@ describe('Settings tabs without accounts', () => {
     expect(document.body.textContent).not.toContain('Data Tools')
   })
 
-  it('falls back to Categories when the search asks for the hidden Account tab', () => {
+  it('falls back to General when the search asks for the hidden Account tab', () => {
     vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'account' })
     renderSettings()
 
-    expect(screen.getByTestId('categories-tab')).toBeTruthy()
+    expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
     expect(screen.queryByTestId('fake-account-tab')).toBeNull()
+    expect(screen.queryByTestId('categories-tab')).toBeNull()
   })
 })
 
@@ -100,6 +129,7 @@ describe('Settings tabs with accounts visible', () => {
     renderSettings()
 
     expect(tabLabels()).toEqual([
+      'General',
       'Categories',
       'Budget',
       'Security',
@@ -108,7 +138,7 @@ describe('Settings tabs with accounts visible', () => {
     ])
     expect(screen.getByTestId('settings-tab-account')).toBeTruthy()
     expect(
-      screen.getAllByRole('tablist')[0].className.includes('grid-cols-5'),
+      screen.getAllByRole('tablist')[0].className.includes('grid-cols-6'),
     ).toBe(true)
   })
 
@@ -118,10 +148,27 @@ describe('Settings tabs with accounts visible', () => {
 
     expect(screen.getByTestId('fake-account-tab')).toBeTruthy()
     expect(screen.queryByTestId('categories-tab')).toBeNull()
+    expect(screen.queryByTestId('fake-general-tab')).toBeNull()
   })
 })
 
 describe('Settings tab selection', () => {
+  it('renders General for ?tab=general', () => {
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'general' })
+    renderSettings()
+
+    expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
+    expect(screen.queryByTestId('security-tab')).toBeNull()
+  })
+
+  it('renders Categories for ?tab=categories (no longer the default)', () => {
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'categories' })
+    renderSettings()
+
+    expect(screen.getByTestId('categories-tab')).toBeTruthy()
+    expect(screen.queryByTestId('fake-general-tab')).toBeNull()
+  })
+
   it('renders Security for ?tab=security', () => {
     vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'security' })
     renderSettings()
@@ -144,7 +191,7 @@ describe('Settings validateSearch', () => {
     search: Record<string, unknown>,
   ) => { tab?: string }
 
-  it.each(['categories', 'budget', 'security', 'data', 'account'])(
+  it.each(['general', 'categories', 'budget', 'security', 'data', 'account'])(
     'accepts tab=%s',
     (tab) => {
       expect(validate({ tab })).toEqual({ tab })

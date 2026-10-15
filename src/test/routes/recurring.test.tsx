@@ -1,8 +1,11 @@
 // No CONTRACT_GAPs: the /recurring route, RecurringRow, RecurringForm testids
 // and the localDb dependencies are specified in the Interface Contract
-// (route: /recurring). The real RecurringRow and RecurringForm are rendered;
-// only @/lib/localDb, sonner and the vault/wipe modules are mocked. "Today" is
-// pinned with fake Date to local 2026-05-15 so totals and next dates are exact.
+// (route: /recurring), plus recurring-monthly-main-{kind} and
+// recurring-rates-unavailable. The real RecurringRow and RecurringForm are
+// rendered; only @/lib/localDb, sonner, the vault/wipe modules, the currency
+// settings and the rate provider ('@/lib/rates', as the contract requires) are
+// mocked. "Today" is pinned with fake Date to local 2026-05-15 so totals and
+// next dates are exact.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -18,7 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type * as ReactRouter from '@tanstack/react-router'
 
+import type { CurrencySettings } from '@/lib/appSettings'
 import type { Category, RecurringItem } from '@/lib/domain'
+import type { RateTable } from '@/lib/rates/types'
+import { getCurrencySettings } from '@/lib/appSettings'
 import {
   addRecurring,
   deleteRecurring,
@@ -28,6 +34,7 @@ import {
   setRecurringPaused,
   updateRecurring,
 } from '@/lib/localDb'
+import { rateProvider } from '@/lib/rates'
 import { formatRecurringAmount } from '@/lib/recurrence'
 import { DATA_ROUTES, isDataRoute } from '@/lib/vaultSession'
 import { Route } from '@/routes/recurring'
@@ -51,9 +58,23 @@ vi.mock('@/lib/localDb', () => ({
   setRecurringPaused: vi.fn(),
   deleteRecurring: vi.fn(),
 }))
+vi.mock('@/lib/appSettings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/appSettings')>()),
+  getCurrencySettings: vi.fn(),
+}))
+vi.mock('@/lib/rates', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/rates')>()),
+  rateProvider: { id: 'nbu', getRates: vi.fn() },
+}))
 vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))
 vi.mock('@/lib/localWipe', () => ({ reloadToHome: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+const fmt2 = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 
 const EXPENSE_CATEGORIES: Array<Category> = [
   { id: 'c1', name: 'Food', icon: '🍔' },
@@ -61,6 +82,13 @@ const EXPENSE_CATEGORIES: Array<Category> = [
 const INCOME_CATEGORIES: Array<Category> = [
   { id: 'ic1', name: 'Salary', icon: '💼' },
 ]
+
+const TODAY = '2026-05-15'
+const RATES: RateTable = {
+  base: 'UAH',
+  effectiveDate: TODAY,
+  perBase: { UAH: 1, USD: 41.52, EUR: 45.1 },
+}
 
 function make(overrides: Partial<RecurringItem> & { id: string }): RecurringItem {
   return {
@@ -141,6 +169,14 @@ const ITEMS: Array<RecurringItem> = [
   }),
 ]
 
+function setSettings(settings: Partial<CurrencySettings> = {}) {
+  vi.mocked(getCurrencySettings).mockResolvedValue({
+    mainCurrency: 'UAH',
+    fetchExchangeRates: true,
+    ...settings,
+  })
+}
+
 function renderPage() {
   const Page = Route.options.component as React.ComponentType | undefined
   if (!Page) throw new Error('recurring route has no component')
@@ -179,6 +215,12 @@ beforeEach(() => {
   vi.mocked(updateRecurring).mockResolvedValue(make({ id: 'e1' }))
   vi.mocked(setRecurringPaused).mockResolvedValue(make({ id: 'e1' }))
   vi.mocked(deleteRecurring).mockResolvedValue(undefined)
+  setSettings()
+  // The rates never arrive unless a test says so, so the per-currency
+  // fallback list is what the older tests below see.
+  vi.mocked(rateProvider.getRates).mockReturnValue(
+    new Promise<RateTable>(() => {}),
+  )
 })
 
 afterEach(() => {
@@ -195,7 +237,7 @@ describe('recurring route is a data route', () => {
   })
 })
 
-describe('recurring page: summary', () => {
+describe('recurring page: summary while there are no rates (per-currency fallback)', () => {
   it('shows "Committed per month" and one line per kind and currency, never mixed', async () => {
     renderPage()
 
@@ -269,6 +311,145 @@ describe('recurring page: summary', () => {
     expect(screen.queryByTestId('recurring-row')).toBeNull()
     expect(screen.getByTestId('recurring-page')).toBeTruthy()
     expect(screen.getByTestId('recurring-add-btn')).toBeTruthy()
+  })
+
+  it('shows the per-currency lines without any note while the rates are still loading', async () => {
+    renderPage()
+
+    await screen.findByTestId('recurring-monthly-total-expense-UAH')
+    expect(screen.queryByTestId('recurring-rates-unavailable')).toBeNull()
+    expect(screen.queryByTestId('recurring-monthly-main-expense')).toBeNull()
+  })
+})
+
+describe('recurring page: one ≈ total per kind in the main currency', () => {
+  it("converts every active item at today's rate and shows one line per kind", async () => {
+    vi.mocked(rateProvider.getRates).mockResolvedValue(RATES)
+    renderPage()
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+    // 100 + 433.33 (weekly) UAH + 100 USD * 41.52
+    expect(expense.textContent).toContain('Expenses')
+    expect(expense.textContent).toContain(`≈ ${fmt2(100 + 433.33 + 100 * 41.52)} UAH`)
+    const income = screen.getByTestId('recurring-monthly-main-income')
+    expect(income.textContent).toContain('Income')
+    expect(income.textContent).toContain(`≈ ${fmt2(2000 * 45.1)} UAH`)
+    expect(rateProvider.getRates).toHaveBeenCalledWith(TODAY)
+  })
+
+  it('replaces the per-currency lines', async () => {
+    vi.mocked(rateProvider.getRates).mockResolvedValue(RATES)
+    renderPage()
+
+    await screen.findByTestId('recurring-monthly-main-expense')
+    expect(screen.queryByTestId('recurring-monthly-total-expense-UAH')).toBeNull()
+    expect(screen.queryByTestId('recurring-monthly-total-expense-USD')).toBeNull()
+    expect(screen.queryByTestId('recurring-monthly-total-income-EUR')).toBeNull()
+    expect(screen.queryByTestId('recurring-rates-unavailable')).toBeNull()
+  })
+
+  it('a different rate gives a different total', async () => {
+    vi.mocked(rateProvider.getRates).mockResolvedValue({
+      ...RATES,
+      perBase: { UAH: 1, USD: 40, EUR: 45.1 },
+    })
+    renderPage()
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+
+    expect(expense.textContent).toContain(`≈ ${fmt2(100 + 433.33 + 100 * 40)} UAH`)
+  })
+
+  it('shows a kind that is entirely in the main currency exactly, without ≈', async () => {
+    vi.mocked(rateProvider.getRates).mockResolvedValue(RATES)
+    vi.mocked(getAllRecurring).mockResolvedValue([
+      ITEMS[0],
+      ITEMS[1],
+      ITEMS[3],
+    ])
+    renderPage()
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+    expect(expense.textContent).toContain(`${fmt2(533.33)} UAH`)
+    expect(expense.textContent).not.toContain('≈')
+    await screen.findByTestId('recurring-monthly-main-income')
+    expect(
+      screen.getByTestId('recurring-monthly-main-income').textContent,
+    ).toContain('≈')
+  })
+
+  it('does not ask for rates when every active item is in the main currency', async () => {
+    vi.mocked(getAllRecurring).mockResolvedValue([ITEMS[0], ITEMS[1]])
+    renderPage()
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+
+    expect(expense.textContent).toContain(`${fmt2(533.33)} UAH`)
+    expect(expense.textContent).not.toContain('≈')
+    expect(rateProvider.getRates).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('recurring-rates-unavailable')).toBeNull()
+  })
+
+  it('totals in the main currency from the settings (EUR)', async () => {
+    setSettings({ mainCurrency: 'EUR' })
+    vi.mocked(rateProvider.getRates).mockResolvedValue(RATES)
+    renderPage()
+
+    const income = await screen.findByTestId('recurring-monthly-main-income')
+
+    // The only income item is already in EUR.
+    expect(income.textContent).toContain(`${fmt2(2000)} EUR`)
+    const expense = screen.getByTestId('recurring-monthly-main-expense')
+    expect(expense.textContent).toContain('EUR')
+    expect(expense.textContent).toContain(
+      `≈ ${fmt2((100 + 433.33) / 45.1 + (100 * 41.52) / 45.1)} EUR`,
+    )
+  })
+})
+
+describe('recurring page: rates unavailable', () => {
+  it('falls back to the per-currency lines and says so when the rates fail', async () => {
+    vi.mocked(rateProvider.getRates).mockRejectedValue(new Error('NBU down'))
+    renderPage()
+
+    const note = await screen.findByTestId('recurring-rates-unavailable')
+    expect(note.textContent).toContain('Exchange rates unavailable')
+    expect(
+      screen.getByTestId('recurring-monthly-total-expense-UAH').textContent,
+    ).toContain(formatRecurringAmount(533.33, 'UAH'))
+    expect(
+      screen.getByTestId('recurring-monthly-total-expense-USD').textContent,
+    ).toContain(formatRecurringAmount(100, 'USD'))
+    expect(
+      screen.getByTestId('recurring-monthly-total-income-EUR').textContent,
+    ).toContain(formatRecurringAmount(2000, 'EUR'))
+    expect(screen.queryByTestId('recurring-monthly-main-expense')).toBeNull()
+    expect(screen.queryByTestId('recurring-monthly-main-income')).toBeNull()
+  })
+
+  it('does not fetch rates when exchange rates are off, and says rates are unavailable', async () => {
+    setSettings({ fetchExchangeRates: false })
+    renderPage()
+
+    const note = await screen.findByTestId('recurring-rates-unavailable')
+
+    expect(note.textContent).toContain('Exchange rates unavailable')
+    expect(rateProvider.getRates).not.toHaveBeenCalled()
+    expect(
+      screen.getByTestId('recurring-monthly-total-expense-UAH'),
+    ).toBeTruthy()
+  })
+
+  it('with rates off but only main-currency items, still shows the exact main total and no note', async () => {
+    setSettings({ fetchExchangeRates: false })
+    vi.mocked(getAllRecurring).mockResolvedValue([ITEMS[0], ITEMS[1]])
+    renderPage()
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+
+    expect(expense.textContent).toContain(`${fmt2(533.33)} UAH`)
+    expect(screen.queryByTestId('recurring-rates-unavailable')).toBeNull()
+    expect(rateProvider.getRates).not.toHaveBeenCalled()
   })
 })
 
@@ -467,6 +648,24 @@ describe('recurring page: add', () => {
       expect(vi.mocked(getAllRecurring).mock.calls.length).toBeGreaterThan(callsBefore)
     })
     expect(updateRecurring).not.toHaveBeenCalled()
+  })
+
+  it('a new item defaults to the main currency from the settings', async () => {
+    setSettings({ mainCurrency: 'EUR' })
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+    fireEvent.click(screen.getByTestId('recurring-add-btn'))
+    const form = await screen.findByTestId('recurring-form')
+    fireEvent.change(within(form).getByTestId('recurring-form-amount'), {
+      target: { value: '40' },
+    })
+
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(addRecurring).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(addRecurring).mock.calls[0][0]).toMatchObject({
+      currency: 'EUR',
+    })
   })
 
   it('a failed save toasts the error message and keeps the form open', async () => {
