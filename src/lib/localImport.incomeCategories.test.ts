@@ -1,7 +1,8 @@
 // No CONTRACT_GAPs: the income.csv export/import behaviour with categories
 // (source column = category name, auto-created categories, createdCategories,
 // duplicate fingerprint by name) is fully specified in the Interface Contract
-// (module: CSV).
+// (module: CSV). income.csv now ends with "main_amount","main_currency"; the
+// main currency is UAH here (no stored settings, so the default applies).
 //
 // Real round trip: real localDb over the Map-backed idb-keyval mock, real
 // localImport and localExport.
@@ -49,6 +50,8 @@ vi.mock('idb-keyval', () => ({
 }))
 
 const HEADER = 'date,source,amount,currency,description'
+const EXPORT_HEADER =
+  '"date","source","amount","currency","description","main_amount","main_currency"'
 
 let dek: CryptoKey
 
@@ -102,9 +105,9 @@ describe('export: income.csv source column holds the category name', () => {
     const { 'income.csv': csv } = await buildCsvFiles()
 
     expect(csv.split('\n')).toEqual([
-      '"date","source","amount","currency","description"',
-      '"2024-03-10","Salary","1000","UAH",""',
-      '"2024-03-11","Gifts","20","USD","birthday"',
+      EXPORT_HEADER,
+      '"2024-03-10","Salary","1000","UAH","","1000","UAH"',
+      '"2024-03-11","Gifts","20","USD","birthday","",""',
     ])
   })
 
@@ -133,8 +136,8 @@ describe('export: income.csv source column holds the category name', () => {
     const { 'income.csv': csv } = await buildCsvFiles()
 
     const lines = csv.split('\n')
-    expect(lines[1]).toBe('"2024-03-12","Old gig","5","UAH",""')
-    expect(lines[2]).toBe('"2024-03-13","Kept text","6","UAH",""')
+    expect(lines[1]).toBe('"2024-03-12","Old gig","5","UAH","","5","UAH"')
+    expect(lines[2]).toBe('"2024-03-13","Kept text","6","UAH","","6","UAH"')
   })
 
   it('categories.csv stays expense-only', async () => {
@@ -390,6 +393,9 @@ describe('export then import round trip', () => {
     expect(again.duplicates).toBe(2)
     expect(again.createdCategories).toBeUndefined()
     const reexported = (await buildCsvFiles())['income.csv']
+    // Same rows and amounts; the freshly imported UAH row is identity (UAH 1000)
+    // and the USD row is still pending, exactly like the original export.
+    expect(reexported.split('\n')[0]).toBe(EXPORT_HEADER)
     expect(reexported).toBe(csv)
   })
 })

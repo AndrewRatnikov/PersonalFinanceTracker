@@ -148,13 +148,14 @@ afterEach(() => {
 })
 
 describe('GeneralTab: layout', () => {
-  it('renders the root, the main currency select and the rates switch', () => {
+  it('renders the root, the main currency select and the rates switch', async () => {
     renderTab()
 
-    expect(screen.getByTestId('general-tab')).toBeTruthy()
-    expect(select()).toBeTruthy()
-    expect(toggle().getAttribute('role')).toBe('switch')
-    expect(toggle().type).toBe('checkbox')
+    expect(await screen.findByTestId('general-tab')).toBeTruthy()
+    expect(await screen.findByTestId('settings-main-currency')).toBeTruthy()
+    const rates = await screen.findByTestId<HTMLInputElement>('settings-fetch-rates')
+    expect(rates.getAttribute('role')).toBe('switch')
+    expect(rates.type).toBe('checkbox')
   })
 
   it('offers every currency in the select and shows the stored main currency', async () => {
@@ -171,13 +172,13 @@ describe('GeneralTab: layout', () => {
     ])
   })
 
-  it('explains what is sent, and labels the switch', () => {
+  it('explains what is sent, and labels the switch', async () => {
     renderTab()
 
-    expect(screen.getByTestId('settings-fetch-rates-help').textContent).toBe(
+    expect((await screen.findByTestId('settings-fetch-rates-help')).textContent).toBe(
       "Only dates are sent, never amounts. When off, entries in other currencies aren't included in totals.",
     )
-    expect(screen.getByTestId('general-tab').textContent).toContain(
+    expect((await screen.findByTestId('general-tab')).textContent).toContain(
       'Fetch exchange rates from the National Bank of Ukraine',
     )
   })
