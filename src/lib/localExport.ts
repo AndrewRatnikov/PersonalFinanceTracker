@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import { strToU8, zipSync } from 'fflate'
 
+import { getCurrencySettings } from './appSettings'
 import { saveFile } from './fileDownload'
 import {
   getAllBudgets,
@@ -8,6 +9,8 @@ import {
   getAllExpenses,
   getAllIncome,
 } from './localDb'
+import { mainAmountOf } from './money'
+import type { Currency, EntryConversion } from './domain'
 
 // CSV is for spreadsheets, not a backup (spec §8): not encrypted, and it
 // drops IDs and the time of day. Every field is quoted, so commas, quotes and
@@ -18,20 +21,32 @@ function csvEscape(value: string | number | null | undefined): string {
   return `"${str.replace(/"/g, '""')}"`
 }
 
+// main_amount (unrounded) and main_currency; both empty for a pending entry.
+function mainColumns(
+  entry: { amount: number; currency: Currency; conversion?: EntryConversion },
+  main: Currency,
+): [string, string] {
+  const amount = mainAmountOf(entry, main)
+  return amount === null ? ['', ''] : [String(amount), main]
+}
+
 function csvRow(values: Array<string | number | null | undefined>): string {
   return values.map(csvEscape).join(',')
 }
 
 // The four CSV files, keyed by file name. Dates are the local calendar date.
 export async function buildCsvFiles(): Promise<Record<string, string>> {
-  const [expenses, categories, income, budgets] = await Promise.all([
+  const [expenses, categories, income, budgets, settings] = await Promise.all([
     getAllExpenses(),
     getAllCategories(),
     getAllIncome(),
     getAllBudgets(),
+    getCurrencySettings(),
   ])
+  const main = settings.mainCurrency
 
-  // expenses.csv — date, amount, currency, category, description
+  // expenses.csv — date, amount, currency, category, description,
+  // main_amount, main_currency
   const expenseRows = expenses.map((e) =>
     csvRow([
       dayjs(e.createdAt).format('YYYY-MM-DD'),
@@ -39,12 +54,14 @@ export async function buildCsvFiles(): Promise<Record<string, string>> {
       e.currency,
       e.category?.name ?? '',
       e.description ?? '',
+      ...mainColumns(e, main),
     ]),
   )
 
-  // income.csv — date, source, amount, currency, description. The `source`
-  // column holds the income category name (legacy free text as a fallback),
-  // so old exports stay importable.
+  // income.csv — date, source, amount, currency, description, main_amount,
+  // main_currency. The `source` column holds the income category name
+  // (legacy free text as a fallback), so old exports stay importable; import
+  // ignores the main_* columns.
   const incomeRows = income.map((i) =>
     csvRow([
       dayjs(i.createdAt).format('YYYY-MM-DD'),
@@ -52,6 +69,7 @@ export async function buildCsvFiles(): Promise<Record<string, string>> {
       i.amount,
       i.currency,
       i.description ?? '',
+      ...mainColumns(i, main),
     ]),
   )
 
@@ -65,11 +83,11 @@ export async function buildCsvFiles(): Promise<Record<string, string>> {
 
   return {
     'expenses.csv': [
-      '"date","amount","currency","category","description"',
+      '"date","amount","currency","category","description","main_amount","main_currency"',
       ...expenseRows,
     ].join('\n'),
     'income.csv': [
-      '"date","source","amount","currency","description"',
+      '"date","source","amount","currency","description","main_amount","main_currency"',
       ...incomeRows,
     ].join('\n'),
     'categories.csv': ['"name","icon"', ...categoryRows].join('\n'),
