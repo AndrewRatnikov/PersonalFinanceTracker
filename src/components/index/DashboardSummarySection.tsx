@@ -1,16 +1,16 @@
 import { Link } from '@tanstack/react-router'
 
-import type {
-  BudgetStatus,
-  DashboardSummary,
-  ExcludedCurrencyTotal,
-} from '@/lib/dashboardSummary'
+import type { BudgetStatus, DashboardSummary } from '@/lib/dashboardSummary'
 import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
+import ConversionPendingNote from '@/components/ConversionPendingNote'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatAmount, formatMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 interface DashboardSummarySectionProps {
   summary: DashboardSummary
+  /** Whether NBU rates are fetched; off adds a link to Settings → General. */
+  fetchExchangeRates?: boolean
 }
 
 const BAR_COLOR: Record<BudgetStatus, string> = {
@@ -19,26 +19,14 @@ const BAR_COLOR: Record<BudgetStatus, string> = {
   over: 'bg-destructive',
 }
 
-function formatExcluded(excluded: Array<ExcludedCurrencyTotal>): string {
-  const parts: Array<string> = []
-  for (const item of excluded) {
-    if (item.expenses !== 0) {
-      parts.push(`${item.expenses.toLocaleString()} ${item.currency}`)
-    }
-    if (item.income !== 0) {
-      parts.push(`+${item.income.toLocaleString()} ${item.currency}`)
-    }
-  }
-  return parts.join(', ')
-}
-
+// Every amount is in the main currency; entries still waiting for a rate are
+// left out of the totals and counted by the note under the hero.
 export default function DashboardSummarySection({
   summary,
+  fetchExchangeRates = true,
 }: DashboardSummarySectionProps) {
-  const cur = summary.baseCurrency
+  const cur = summary.mainCurrency
   const { leftToSpend, dailyAllowance, pace, budgetWatch } = summary
-  // Zero amounts are omitted, so an all-zero excluded list renders nothing.
-  const excludedText = formatExcluded(summary.excluded)
 
   return (
     <div className="flex flex-col gap-8" data-testid="dashboard-summary">
@@ -59,14 +47,13 @@ export default function DashboardSummarySection({
                   )}
                   data-testid="dashboard-left-to-spend"
                 >
-                  {leftToSpend.toLocaleString()} {cur}
+                  {formatMoney(leftToSpend, cur)}
                 </p>
                 <p
                   className="text-sm text-muted-foreground"
                   data-testid="dashboard-daily-allowance"
                 >
-                  {Math.round(dailyAllowance ?? 0).toLocaleString()} {cur} per
-                  day
+                  {`${formatMoney(dailyAllowance ?? 0, cur)} per day`}
                 </p>
               </CardContent>
             </>
@@ -82,7 +69,7 @@ export default function DashboardSummarySection({
                     className="font-semibold tabular-nums break-words"
                     data-testid="dashboard-month-income"
                   >
-                    {summary.monthIncome.toLocaleString()} {cur}
+                    {formatMoney(summary.monthIncome, cur)}
                   </span>
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -93,7 +80,7 @@ export default function DashboardSummarySection({
                     className="font-semibold tabular-nums break-words"
                     data-testid="dashboard-month-expenses"
                   >
-                    {summary.monthExpenses.toLocaleString()} {cur}
+                    {formatMoney(summary.monthExpenses, cur)}
                   </span>
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -105,7 +92,7 @@ export default function DashboardSummarySection({
                     )}
                     data-testid="dashboard-month-net"
                   >
-                    {summary.net.toLocaleString()} {cur}
+                    {formatMoney(summary.net, cur)}
                   </span>
                 </div>
               </div>
@@ -126,30 +113,26 @@ export default function DashboardSummarySection({
             className="text-sm text-muted-foreground"
             data-testid="dashboard-pace"
           >
-            {`${pace.spentSoFar.toLocaleString()} ${cur} spent, ${Math.abs(
+            {`${formatMoney(pace.spentSoFar, cur)} spent, ${Math.abs(
               Math.round(pace.changePct),
             )}% ${pace.changePct < 0 ? 'less' : 'more'} than this time last month`}
           </p>
         )}
       </section>
 
-      {(leftToSpend !== null || excludedText !== '') && (
+      <ConversionPendingNote
+        count={summary.pendingCount}
+        budgetsExcluded={summary.budgetsExcluded}
+        fetchExchangeRates={fetchExchangeRates}
+      />
+
+      {leftToSpend !== null && (
         <section className="flex flex-col gap-2">
-          {leftToSpend !== null && (
-            <BudgetSummaryCard
-              income={summary.monthIncome}
-              expenses={summary.monthExpenses}
-              currency={cur}
-            />
-          )}
-          {excludedText !== '' && (
-            <p
-              className="text-xs text-muted-foreground"
-              data-testid="dashboard-excluded"
-            >
-              Not included: {excludedText}
-            </p>
-          )}
+          <BudgetSummaryCard
+            income={summary.monthIncome}
+            expenses={summary.monthExpenses}
+            currency={cur}
+          />
         </section>
       )}
 
@@ -173,8 +156,7 @@ export default function DashboardSummarySection({
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="font-medium truncate">{item.name}</span>
                     <span className="text-muted-foreground tabular-nums shrink-0">
-                      {item.spent.toLocaleString()} /{' '}
-                      {item.limit.toLocaleString()} {cur}
+                      {`${formatAmount(item.spent)} / ${formatMoney(item.limit, cur)}`}
                     </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
