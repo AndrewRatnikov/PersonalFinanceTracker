@@ -10,7 +10,7 @@ import type {
   RecurringKind,
   RecurringMode,
 } from '@/lib/domain'
-import { CURRENCIES } from '@/lib/domain'
+import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { recurringInputSchemaFor } from '@/lib/schemas'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,6 +24,8 @@ interface RecurringFormProps {
   today: string
   /** Edit mode when set. */
   initial?: RecurringItem
+  /** The preselected currency of a new item (the main currency). */
+  defaultCurrency?: Currency
   isPending?: boolean
   onSubmit: (
     input: CreateRecurringInput,
@@ -101,6 +103,7 @@ export default function RecurringForm({
   incomeCategories,
   today,
   initial,
+  defaultCurrency = DEFAULT_MAIN_CURRENCY,
   isPending,
   onSubmit,
   onCancel,
@@ -110,9 +113,11 @@ export default function RecurringForm({
   const [amount, setAmount] = useState(
     initial ? String(initial.amount) : '',
   )
-  const [currency, setCurrency] = useState<Currency>(
-    initial?.currency ?? 'UAH',
+  // A new item follows defaultCurrency until the user picks a currency.
+  const [chosenCurrency, setCurrency] = useState<Currency | null>(
+    initial?.currency ?? null,
   )
+  const currency = chosenCurrency ?? defaultCurrency
   const [categoryId, setCategoryId] = useState(
     initial ? initial.categoryId : (expenseCategories[0]?.id ?? ''),
   )

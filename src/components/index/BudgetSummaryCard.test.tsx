@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest'
 
 import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
 
-// The component formats with Number.prototype.toLocaleString(), whose separators
-// follow the host locale (this repo's dev machine resolves to uk-UA -> "1 234 567";
-// CI usually en-US -> "1,234,567"). Assert against the same formatter so the case
-// still checks "the value is locale-formatted with thousands separators" on both.
-const fmt = (n: number) => n.toLocaleString()
+// The card formats amounts with the shared money format (always 2 decimals).
+// Separators follow the host locale (this machine resolves to uk-UA), so the
+// expectations are built with the same toLocaleString options, never literals.
+const fmt2 = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 
 describe('BudgetSummaryCard', () => {
   describe('rendering', () => {
@@ -27,44 +30,48 @@ describe('BudgetSummaryCard', () => {
   })
 
   describe('criterion 2 & 4: displays income and expenses, formatted with currency', () => {
-    it('displays the formatted total income with default currency UAH', () => {
+    it('displays the total income with 2 decimals and the default currency UAH', () => {
       render(<BudgetSummaryCard income={1000} expenses={400} />)
-      expect(screen.getByTestId('budget-summary-income').textContent).toContain(
-        fmt(1000),
-      )
-      expect(screen.getByTestId('budget-summary-income').textContent).toContain(
-        'UAH',
+      expect(screen.getByTestId('budget-summary-income').textContent).toBe(
+        `${fmt2(1000)} UAH`,
       )
     })
 
-    it('displays the formatted total expenses with default currency UAH', () => {
+    it('displays the total expenses with 2 decimals and the default currency UAH', () => {
       render(<BudgetSummaryCard income={1000} expenses={400} />)
-      expect(
-        screen.getByTestId('budget-summary-expenses').textContent,
-      ).toContain('400')
-      expect(
-        screen.getByTestId('budget-summary-expenses').textContent,
-      ).toContain('UAH')
+      expect(screen.getByTestId('budget-summary-expenses').textContent).toBe(
+        `${fmt2(400)} UAH`,
+      )
     })
 
-    it('uses thousands separators via toLocaleString for large values', () => {
+    it('uses thousands separators for large values', () => {
       render(<BudgetSummaryCard income={1234567} expenses={89} />)
       expect(screen.getByTestId('budget-summary-income').textContent).toContain(
-        fmt(1234567),
+        fmt2(1234567),
+      )
+    })
+
+    it('rounds unrounded sums only for display (33.333333 shows as 33.33)', () => {
+      render(<BudgetSummaryCard income={100} expenses={33.333333} />)
+      expect(screen.getByTestId('budget-summary-expenses').textContent).toContain(
+        fmt2(33.33),
+      )
+      expect(screen.getByTestId('budget-summary-net-balance').textContent).toContain(
+        fmt2(66.67),
       )
     })
 
     it('respects an explicit currency prop other than the default', () => {
       render(<BudgetSummaryCard income={500} expenses={200} currency="USD" />)
-      expect(screen.getByTestId('budget-summary-income').textContent).toContain(
-        'USD',
+      expect(screen.getByTestId('budget-summary-income').textContent).toBe(
+        `${fmt2(500)} USD`,
       )
-      expect(
-        screen.getByTestId('budget-summary-expenses').textContent,
-      ).toContain('USD')
-      expect(
-        screen.getByTestId('budget-summary-net-balance').textContent,
-      ).toContain('USD')
+      expect(screen.getByTestId('budget-summary-expenses').textContent).toBe(
+        `${fmt2(200)} USD`,
+      )
+      expect(screen.getByTestId('budget-summary-net-balance').textContent).toBe(
+        `${fmt2(300)} USD`,
+      )
     })
   })
 
@@ -73,14 +80,14 @@ describe('BudgetSummaryCard', () => {
       render(<BudgetSummaryCard income={1000} expenses={400} />)
       expect(
         screen.getByTestId('budget-summary-net-balance').textContent,
-      ).toContain('600')
+      ).toContain(fmt2(600))
     })
 
     it('computes a negative net balance correctly', () => {
       render(<BudgetSummaryCard income={300} expenses={500} />)
       expect(
         screen.getByTestId('budget-summary-net-balance').textContent,
-      ).toContain('200')
+      ).toContain(fmt2(-200))
     })
   })
 
@@ -127,17 +134,17 @@ describe('BudgetSummaryCard', () => {
   })
 
   describe('criterion 6: zero-value edge case renders without errors', () => {
-    it('renders 0 for all three fields when income and expenses are both zero', () => {
+    it('renders 0.00 for all three fields when income and expenses are both zero', () => {
       render(<BudgetSummaryCard income={0} expenses={0} />)
       expect(screen.getByTestId('budget-summary-income').textContent).toContain(
-        '0',
+        fmt2(0),
       )
       expect(
         screen.getByTestId('budget-summary-expenses').textContent,
-      ).toContain('0')
+      ).toContain(fmt2(0))
       expect(
         screen.getByTestId('budget-summary-net-balance').textContent,
-      ).toContain('0')
+      ).toContain(fmt2(0))
     })
 
     it('does not throw when rendering with zero values', () => {

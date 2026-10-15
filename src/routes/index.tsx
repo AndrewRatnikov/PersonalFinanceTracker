@@ -18,6 +18,7 @@ import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   addExpense,
   addRepeatingExpense,
@@ -26,6 +27,7 @@ import {
   getAllIncome,
   getExpensesForRange,
 } from '@/lib/localDb'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { useVaultSession } from '@/lib/vaultSession'
 
 export const Route = createFileRoute('/')({
@@ -78,6 +80,12 @@ function Dashboard() {
   })
   const budgets = budgetsQuery.data ?? []
 
+  const currencySettingsQuery = useCurrencySettings()
+  const mainCurrency =
+    currencySettingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
+  const fetchExchangeRates =
+    currencySettingsQuery.data?.fetchExchangeRates ?? true
+
   // Never show default zeros for data that failed to load.
   const failedQueries = [
     categoriesQuery,
@@ -94,9 +102,10 @@ function Dashboard() {
         budgets,
         categories,
         now: new Date(),
+        mainCurrency,
       }),
     // todayStr recomputes the summary when the day changes.
-    [expenses, income, budgets, categories, todayStr],
+    [expenses, income, budgets, categories, mainCurrency, todayStr],
   )
 
   const addMutation = useMutation({
@@ -154,6 +163,7 @@ function Dashboard() {
     expensesQuery,
     incomeQuery,
     budgetsQuery,
+    currencySettingsQuery,
   ].some((q) => q.isPending)
 
   if (isLoading) {
@@ -173,7 +183,10 @@ function Dashboard() {
         <InstallHintCard />
         <RecoveryKeyBanner />
         <BackupReminderBanner />
-        <DashboardSummarySection summary={summary} />
+        <DashboardSummarySection
+          summary={summary}
+          fetchExchangeRates={fetchExchangeRates}
+        />
         <RecurringDashboardSection today={todayStr} />
 
         <section>
@@ -183,6 +196,7 @@ function Dashboard() {
               categories={categories}
               onSubmit={handleCreateExpense}
               isPending={isPending}
+              defaultCurrency={mainCurrency}
             />
           ) : (
             <Card className="border-dashed bg-transparent">
@@ -194,7 +208,10 @@ function Dashboard() {
         </section>
 
         <section>
-          <RecentActivityList items={summary.recent} />
+          <RecentActivityList
+            items={summary.recent}
+            mainCurrency={mainCurrency}
+          />
         </section>
       </div>
     </PageShell>

@@ -1,5 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import type { CategoryBreakdownItem, Currency } from '@/lib/domain'
+import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
 const COLORS = [
@@ -126,7 +127,7 @@ export default function CategoryDonutChart({
                 const pct =
                   grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
                 return [
-                  `${n.toLocaleString()} ${currency} (${pct}%)`,
+                  `${formatMoney(n, currency)} (${pct}%)`,
                   name ?? '',
                 ]
               }}

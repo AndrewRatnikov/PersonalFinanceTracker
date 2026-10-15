@@ -1,12 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Database, Shield, Tag, UserRound, Wallet } from 'lucide-react'
+import { Coins, Database, Shield, Tag, UserRound, Wallet } from 'lucide-react'
 
 import { useAccountsVisible } from '@/lib/accountSession'
 import { getAllCategories } from '@/lib/localDb'
 import { AccountTab } from '@/components/settings/AccountTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
+import { GeneralTab } from '@/components/settings/GeneralTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import { SecurityTab } from '@/components/settings/SecurityTab'
 import PageShell from '@/components/PageShell'
@@ -14,13 +15,14 @@ import { QueryErrorState } from '@/components/QueryErrorState'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export type SettingsTab =
-  'categories' | 'budget' | 'security' | 'data' | 'account'
+  'general' | 'categories' | 'budget' | 'security' | 'data' | 'account'
 
 export type SettingsSearch = {
   tab?: SettingsTab
 }
 
 const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
+  'general',
   'categories',
   'budget',
   'security',
@@ -41,9 +43,9 @@ export const Route = createFileRoute('/settings')({
 function SettingsPage() {
   const search = Route.useSearch()
   const accountsVisible = useAccountsVisible()
-  const requestedTab = search.tab ?? 'categories'
+  const requestedTab = search.tab ?? 'general'
   const initialTab =
-    requestedTab === 'account' && !accountsVisible ? 'categories' : requestedTab
+    requestedTab === 'account' && !accountsVisible ? 'general' : requestedTab
   const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
@@ -64,8 +66,12 @@ function SettingsPage() {
           className="w-full"
         >
           <TabsList
-            className={`grid w-full ${accountsVisible ? 'grid-cols-5' : 'grid-cols-4'}`}
+            className={`grid w-full ${accountsVisible ? 'grid-cols-6' : 'grid-cols-5'}`}
           >
+            <TabsTrigger value="general" data-testid="settings-tab-general">
+              <Coins size={16} className="mr-2 hidden sm:block" />
+              General
+            </TabsTrigger>
             <TabsTrigger value="categories">
               <Tag size={16} className="mr-2 hidden sm:block" />
               Categories
@@ -90,6 +96,9 @@ function SettingsPage() {
             )}
           </TabsList>
 
+          <TabsContent value="general" className="mt-6">
+            <GeneralTab />
+          </TabsContent>
           <TabsContent value="categories" className="mt-6">
             <CategoriesTab />
           </TabsContent>

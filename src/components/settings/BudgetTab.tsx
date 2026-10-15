@@ -4,17 +4,12 @@ import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { BudgetEntry, Category, Currency } from '@/lib/domain'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { deleteBudget, getAllBudgets, upsertBudget } from '@/lib/localDb'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,15 +29,20 @@ interface BudgetRowProps {
   existingBudget:
     | (BudgetEntry & { categoryName: string; categoryIcon: string | null })
     | undefined
+  // Budgets are always saved in the main currency.
+  mainCurrency: Currency
+  settingsReady: boolean
 }
 
-function BudgetRow({ category, existingBudget }: BudgetRowProps) {
+function BudgetRow({
+  category,
+  existingBudget,
+  mainCurrency,
+  settingsReady,
+}: BudgetRowProps) {
   const queryClient = useQueryClient()
   const [limit, setLimit] = useState(
     existingBudget ? String(existingBudget.monthlyLimit) : '',
-  )
-  const [currency, setCurrency] = useState<Currency>(
-    existingBudget?.currency ?? 'UAH',
   )
 
   const saveMutation = useMutation({
@@ -50,7 +50,7 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
       upsertBudget({
         categoryId: category.id,
         monthlyLimit: Number(limit),
-        currency,
+        currency: mainCurrency,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
@@ -65,7 +65,6 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
     mutationFn: () => deleteBudget(existingBudget!.id),
     onSuccess: () => {
       setLimit('')
-      setCurrency('UAH')
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
       toast.success('Budget removed')
     },
@@ -75,7 +74,11 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
   })
 
   const isPending = saveMutation.isPending || deleteMutation.isPending
-  const canSave = limit.trim() !== '' && Number(limit) > 0 && !isPending
+  const canSave =
+    settingsReady && limit.trim() !== '' && Number(limit) > 0 && !isPending
+  // A budget saved in another currency waits for the one-time conversion.
+  const storedElsewhere =
+    existingBudget !== undefined && existingBudget.currency !== mainCurrency
 
   return (
     <Card className="border-border bg-card/40">
@@ -85,9 +88,16 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
             {category.icon}
           </div>
         )}
-        <span className="flex-1 text-sm font-medium text-foreground truncate">
-          {category.name}
-        </span>
+        <div className="flex-1 min-w-0 flex flex-col">
+          <span className="text-sm font-medium text-foreground truncate">
+            {category.name}
+          </span>
+          {storedElsewhere && (
+            <span className="text-xs text-muted-foreground">
+              {`Saved in ${existingBudget.currency}; converted to ${mainCurrency} when today's rate is available`}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2">
           <Input
@@ -100,20 +110,12 @@ function BudgetRow({ category, existingBudget }: BudgetRowProps) {
             disabled={isPending}
             className="w-28 h-8 text-sm"
           />
-          <Select
-            value={currency}
-            onValueChange={(v) => setCurrency(v as Currency)}
-            disabled={isPending}
+          <span
+            data-testid="budget-row-currency"
+            className="w-10 text-xs font-medium text-muted-foreground"
           >
-            <SelectTrigger className="w-[76px] h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UAH">UAH</SelectItem>
-              <SelectItem value="USD">USD</SelectItem>
-              <SelectItem value="EUR">EUR</SelectItem>
-            </SelectContent>
-          </Select>
+            {mainCurrency}
+          </span>
 
           <Button
             size="sm"
@@ -174,6 +176,9 @@ export function BudgetTab({ categories }: BudgetTabProps) {
     queryFn: () => getAllBudgets(),
   })
   const budgets = budgetsQuery.data ?? []
+  const settingsQuery = useCurrencySettings()
+  const mainCurrency = settingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
+  const settingsReady = settingsQuery.data !== undefined
 
   const budgetMap = new Map(budgets.map((b) => [b.categoryId, b]))
 
@@ -208,6 +213,8 @@ export function BudgetTab({ categories }: BudgetTabProps) {
           key={`${cat.id}-${budgetMap.get(cat.id)?.id ?? 'new'}`}
           category={cat}
           existingBudget={budgetMap.get(cat.id)}
+          mainCurrency={mainCurrency}
+          settingsReady={settingsReady}
         />
       ))}
     </div>

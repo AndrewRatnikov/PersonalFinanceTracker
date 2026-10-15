@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { BudgetVarianceItem, Currency } from '@/lib/domain'
+import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
@@ -100,7 +101,7 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
               marginBottom: '4px',
             }}
             formatter={(value, name) => [
-              `${Number(value ?? 0).toLocaleString()} ${currency}`,
+              formatMoney(Number(value ?? 0), currency),
               name ?? '',
             ]}
           />

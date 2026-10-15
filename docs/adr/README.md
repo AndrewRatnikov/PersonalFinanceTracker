@@ -9,7 +9,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | Date | Decision | Status |
 |---|---|---|
 | [2026-09-29](2026-09-29-cross-month-expense-move-order.md) | Moving an expense to another month writes the new chunk before removing it from the old one | Accepted |
-| [2026-09-30](2026-09-30-one-currency-at-a-time-no-conversion.md) | Totals are computed in one currency at a time; other currencies are listed, not converted | Accepted |
+| [2026-09-30](2026-09-30-one-currency-at-a-time-no-conversion.md) | Totals are computed in one currency at a time; other currencies are listed, not converted | Superseded by [2026-10-15](2026-10-15-main-currency-stored-nbu-conversion.md) |
 | [2026-10-05](2026-10-05-no-budget-dashboard-layout.md) | Without a budget, the month figures live in the dashboard hero, and `BudgetSummaryCard` only appears once a budget is set | Accepted |
 | [2026-10-07](2026-10-07-decrypt-errors-from-queries-and-mutations.md) | A decrypt error from any query *or* mutation opens the Data problem screen and is never retried | Accepted |
 | [2026-10-07](2026-10-07-recovery-key-confirmation.md) | The vault is usable before the recovery key is saved; an unconfirmed key is tracked and confirmed with a full random group | Accepted |
@@ -18,6 +18,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-08](2026-10-08-remove-data-clears-store-then-reloads.md) | "Remove data from this device" clears the store first, then deletes the database and reloads | Accepted |
 | [2026-10-10](2026-10-10-auto-lock-is-per-tab.md) | Auto-lock locks only its own tab; a manual lock locks every tab | Accepted |
 | [2026-10-14](2026-10-14-recurring-generation-per-item-idempotent.md) | Recurring transactions are generated client-side, one atomic write per item, keyed by recurringId + occurrenceDate | Accepted |
+| [2026-10-15](2026-10-15-main-currency-stored-nbu-conversion.md) | Main currency with stored per-entry conversion (NBU) | Accepted |
 
 ## Where else decisions live
 

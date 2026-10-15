@@ -429,10 +429,17 @@ export default function LandingPage() {
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-6">
               Your data, encrypted, on your device
             </h2>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-muted-foreground mb-4">
               There is no account to create. Your financial data never touches
               any server: it lives in your browser's IndexedDB, encrypted before
               it's written.
+            </p>
+            <p
+              data-testid="landing-exchange-rates-note"
+              className="text-sm text-muted-foreground mb-8"
+            >
+              Exchange rates come from the National Bank of Ukraine; only dates
+              are sent, never amounts.
             </p>
 
             <div className="flex flex-col gap-3">

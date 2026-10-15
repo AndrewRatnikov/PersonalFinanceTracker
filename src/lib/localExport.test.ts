@@ -1,6 +1,8 @@
 // No CONTRACT_GAPs: buildCsvFiles, buildCsvZip, csvZipFileName and
 // exportAllLocalData (zip, local dates, multi-line round trip) are fully
-// specified in the Interface Contract (module: localExport).
+// specified in the Interface Contract (module: localExport). expenses.csv and
+// income.csv now carry the trailing "main_amount","main_currency" columns; the
+// main currency is read through getCurrencySettings (mocked here, UAH).
 
 import dayjs from 'dayjs'
 import { strFromU8, unzipSync } from 'fflate'
@@ -12,6 +14,7 @@ import {
   csvZipFileName,
   exportAllLocalData,
 } from '@/lib/localExport'
+import { getCurrencySettings } from '@/lib/appSettings'
 import { saveFile } from '@/lib/fileDownload'
 import { importExpensesFromCSV, importIncomeFromCSV } from '@/lib/localImport'
 import {
@@ -36,6 +39,7 @@ vi.mock('@/lib/localDb', () => ({
   addIncomeCategory: vi.fn(),
   upsertBudget: vi.fn(),
 }))
+vi.mock('@/lib/appSettings', () => ({ getCurrencySettings: vi.fn() }))
 vi.mock('@/lib/fileDownload', () => ({ saveFile: vi.fn() }))
 
 const originalTZ = process.env.TZ
@@ -47,6 +51,10 @@ afterAll(() => {
 
 const FOOD = { id: 'c1', name: 'Food', icon: null }
 const JOB = { id: 'ic1', name: 'Job', icon: null }
+const EXPENSE_HEADER =
+  '"date","amount","currency","category","description","main_amount","main_currency"'
+const INCOME_HEADER =
+  '"date","source","amount","currency","description","main_amount","main_currency"'
 
 function readBlob(blob: Blob): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -100,6 +108,10 @@ function emptyTargetDevice() {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(saveFile).mockResolvedValue('saved')
+  vi.mocked(getCurrencySettings).mockResolvedValue({
+    mainCurrency: 'UAH',
+    fetchExchangeRates: true,
+  })
 })
 
 describe('buildCsvFiles', () => {
@@ -132,12 +144,12 @@ describe('buildCsvFiles', () => {
     const files = await buildCsvFiles()
 
     expect(files['expenses.csv'].split('\n')).toEqual([
-      '"date","amount","currency","category","description"',
-      '"2024-03-10","10","UAH","Food",""',
+      EXPENSE_HEADER,
+      '"2024-03-10","10","UAH","Food","","10","UAH"',
     ])
     expect(files['income.csv'].split('\n')).toEqual([
-      '"date","source","amount","currency","description"',
-      '"2024-03-11","Job","500","UAH",""',
+      INCOME_HEADER,
+      '"2024-03-11","Job","500","UAH","","500","UAH"',
     ])
     expect(files['categories.csv'].split('\n')).toEqual([
       '"name","icon"',
@@ -175,9 +187,9 @@ describe('buildCsvFiles', () => {
     const files = await buildCsvFiles()
 
     const lines = files['income.csv'].split('\n')
-    expect(lines[0]).toBe('"date","source","amount","currency","description"')
-    expect(lines[1]).toBe('"2024-03-11","Salary","1000","UAH",""')
-    expect(lines[2]).toBe('"2024-03-12","Gifts","20","UAH",""')
+    expect(lines[0]).toBe(INCOME_HEADER)
+    expect(lines[1]).toBe('"2024-03-11","Salary","1000","UAH","","1000","UAH"')
+    expect(lines[2]).toBe('"2024-03-12","Gifts","20","UAH","","20","UAH"')
   })
 
   it('falls back to the legacy source when the category is missing', async () => {
@@ -197,7 +209,7 @@ describe('buildCsvFiles', () => {
     const files = await buildCsvFiles()
 
     expect(files['income.csv'].split('\n')[1]).toBe(
-      '"2024-03-11","Legacy gig","5","UAH",""',
+      '"2024-03-11","Legacy gig","5","UAH","","5","UAH"',
     )
   })
 
@@ -217,9 +229,8 @@ describe('buildCsvFiles', () => {
 
     const files = await buildCsvFiles()
 
-    expect(files['expenses.csv']).toBe(
-      '"date","amount","currency","category","description"',
-    )
+    expect(files['expenses.csv']).toBe(EXPENSE_HEADER)
+    expect(files['income.csv']).toBe(INCOME_HEADER)
     expect(files['budgets.csv']).toBe('"category","monthly_limit","currency"')
   })
 

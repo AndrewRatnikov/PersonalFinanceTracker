@@ -2,7 +2,9 @@ import { clear, createStore, del, get, keys, set, setMany } from 'idb-keyval'
 
 import { decryptValue, encryptValue } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
+import { DEFAULT_MAIN_CURRENCY, isCurrency } from './domain'
 import { convertIncomeSources } from './incomeCategories'
+import { identityConversion, isConverted } from './money'
 import {
   addDaysToDate,
   dueOccurrences,
@@ -24,6 +26,8 @@ import type {
   CreateExpenseInput,
   CreateIncomeInput,
   CreateRecurringInput,
+  Currency,
+  EntryConversion,
   Expense,
   IncomeEntry,
   RecurringItem,
@@ -56,6 +60,13 @@ export const ENABLE_SUPABASE_SYNC = false
 // never overwritten. Quarantined copies live under `quarantine:<key>:<ISO>`
 // and are ignored by every reader. After each committed mutation (but not a
 // quarantine) `meta:settings.lastDataChangeAt` is set for the backup reminder.
+//
+// Main currency: an entry saved in the main currency gets its identity
+// `conversion` right away; any other entry is stored without one (pending).
+// Every committed write to an entry key (an expense chunk or `income`) calls
+// requestEntryConversion(), which conversion.ts listens to (this module never
+// imports conversion.ts). The converter writes back through
+// applyEntryConversions / convertBudgets, which don't trigger it again.
 interface LocalDbMap {
   categories: Array<Category>
   incomeCategories: Array<Category>
@@ -233,10 +244,72 @@ async function markDataChanged(): Promise<void> {
   }
 }
 
+// ── Conversion trigger (in-tab) ───────────────────────────────────────────────
+
+const conversionListeners = new Set<() => void>()
+
+// Registers a listener for "entries may need converting". Returns the
+// unsubscribe function.
+export function onConversionNeeded(listener: () => void): () => void {
+  conversionListeners.add(listener)
+  return () => {
+    conversionListeners.delete(listener)
+  }
+}
+
+// Calls every listener; a throwing listener is logged and never stops the
+// others (or the write that triggered it).
+export function requestEntryConversion(): void {
+  for (const listener of Array.from(conversionListeners)) {
+    try {
+      listener()
+    } catch (err) {
+      console.error('Conversion listener failed:', err)
+    }
+  }
+}
+
+function isEntryKey(key: string): boolean {
+  return key === 'income' || EXPENSE_CHUNK_KEY_RE.test(key)
+}
+
 // Runs after every committed user-data mutation (not after quarantine).
-async function afterCommit(changedKeys: Array<string>): Promise<void> {
+// Writes to entry keys request a conversion, except the converter's own.
+async function afterCommit(
+  changedKeys: Array<string>,
+  opts: { fromConversion?: boolean } = {},
+): Promise<void> {
   postChanged(changedKeys)
   await markDataChanged()
+  if (!opts.fromConversion && changedKeys.some(isEntryKey)) {
+    requestEntryConversion()
+  }
+}
+
+// The stored main currency, read straight from the plaintext settings (no
+// lock: a read). An unknown value falls back to the default.
+async function readMainCurrency(): Promise<Currency> {
+  const s = store
+  if (!s) return DEFAULT_MAIN_CURRENCY
+  try {
+    const raw = await get<unknown>(META_SETTINGS_KEY, s)
+    if (raw && typeof raw === 'object') {
+      const main = (raw as Record<string, unknown>).mainCurrency
+      if (isCurrency(main)) return main
+    }
+  } catch (err) {
+    console.error('Could not read the main currency:', err)
+  }
+  return DEFAULT_MAIN_CURRENCY
+}
+
+// The identity conversion when the record is in `main`; otherwise undefined
+// (the record stays pending until the converter runs).
+function conversionOnSave(
+  record: { amount: number; currency: Currency; createdAt: string },
+  main: Currency,
+): EntryConversion | undefined {
+  return record.currency === main ? identityConversion(record, main) : undefined
 }
 
 // ── Quarantine and orphan detection ───────────────────────────────────────────
@@ -325,6 +398,8 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     createdAt: input.createdAt ?? now,
     updatedAt: now,
   }
+  const conversion = conversionOnSave(entry, await readMainCurrency())
+  if (conversion) entry.conversion = conversion
   const chunkKey = expenseChunkKey(entry.createdAt)
   await withWriteLock(chunkKey, async () => {
     const existing = await readChunk(chunkKey)
@@ -360,6 +435,7 @@ export async function updateExpense(
   patch: UpdateExpenseInput,
 ): Promise<Expense> {
   const oldKey = expenseChunkKey(originalCreatedAt)
+  const main = await readMainCurrency()
   const lockKeys = [oldKey]
   if (
     patch.createdAt !== undefined &&
@@ -412,6 +488,23 @@ export async function updateExpense(
     }
     if (existing.occurrenceDate !== undefined) {
       updated.occurrenceDate = existing.occurrenceDate
+    }
+    // The conversion stays only while amount, currency and date are
+    // unchanged; otherwise it is the identity (in the main currency) or
+    // dropped (pending). A manual rate stays unless the currency changed.
+    const sameMoney =
+      updated.amount === existing.amount &&
+      updated.currency === existing.currency &&
+      updated.createdAt === existing.createdAt
+    const conversion = sameMoney
+      ? existing.conversion
+      : conversionOnSave(updated, main)
+    if (conversion !== undefined) updated.conversion = conversion
+    if (
+      existing.manualRate !== undefined &&
+      updated.currency === existing.currency
+    ) {
+      updated.manualRate = existing.manualRate
     }
 
     const newKey = expenseChunkKey(createdAt)
@@ -677,6 +770,9 @@ export async function prepareUnlockedVault({
   if (isNewVault) await provisionDefaultCategories()
   await ensureIncomeCategories()
   const { created } = await processDueRecurring()
+  // Convert whatever is pending (old records, the records just generated).
+  // Not awaited: the conversion runs in the background.
+  requestEntryConversion()
   return { recurringCreated: created }
 }
 
@@ -702,6 +798,7 @@ export async function getAllIncome(): Promise<Array<IncomeEntry>> {
 export async function addIncome(
   input: CreateIncomeInput,
 ): Promise<IncomeEntry> {
+  const main = await readMainCurrency()
   const entry = await withWriteLock('income', async () => {
     const income = (await readStore('income')) ?? []
     const now = new Date().toISOString()
@@ -714,6 +811,8 @@ export async function addIncome(
       createdAt: input.createdAt ?? now,
       updatedAt: now,
     }
+    const conversion = conversionOnSave(created, main)
+    if (conversion) created.conversion = conversion
     await writeStore('income', [...income, created])
     return created
   })
@@ -797,6 +896,149 @@ export async function deleteBudget(id: string): Promise<void> {
   await afterCommit(['budgets'])
 }
 
+// ── Main-currency conversion (used by conversion.ts) ─────────────────────────
+
+export interface ConversionStorageGroup {
+  storageKey: string
+  records: Array<Expense | IncomeEntry>
+}
+
+export interface EntryConversionUpdate {
+  id: string
+  amount: number
+  currency: Currency
+  createdAt: string
+  conversion: EntryConversion
+}
+
+// The raw stored entries (no joined category): one group per expense chunk in
+// ascending key order, then `income`. A DecryptError propagates.
+export async function readEntriesForConversion(): Promise<
+  Array<ConversionStorageGroup>
+> {
+  const groups: Array<ConversionStorageGroup> = []
+  for (const storageKey of await allExpenseChunkKeys()) {
+    const records = await readChunk(storageKey)
+    if (records.length > 0) groups.push({ storageKey, records })
+  }
+  const income = (await readStore('income')) ?? []
+  if (income.length > 0) groups.push({ storageKey: 'income', records: income })
+  return groups
+}
+
+async function readEntryKey(
+  storageKey: string,
+): Promise<Array<Expense | IncomeEntry>> {
+  if (storageKey === 'income') return (await readStore('income')) ?? []
+  return readChunk(storageKey)
+}
+
+// Writes the computed conversions under the lock of `storageKey`. A record is
+// updated only when it still exists, is not converted for `mainCurrency` yet
+// and still has the amount, currency and createdAt the rate was computed for
+// (an edit in between leaves it pending). Only `conversion` changes; updatedAt
+// stays (derived data). Returns the number of records written.
+export async function applyEntryConversions(
+  storageKey: string,
+  mainCurrency: Currency,
+  updates: Array<EntryConversionUpdate>,
+): Promise<number> {
+  if (updates.length === 0) return 0
+  if (storageKey !== 'income' && !EXPENSE_CHUNK_KEY_RE.test(storageKey)) {
+    throw new Error(`applyEntryConversions: not an entry key "${storageKey}"`)
+  }
+  const byId = new Map(updates.map((u) => [u.id, u]))
+  const written = await withWriteLock(storageKey, async () => {
+    if (!_key) throw new Error('LocalDb not initialized')
+    const records = await readEntryKey(storageKey)
+    let count = 0
+    const next = records.map((record) => {
+      const update = byId.get(record.id)
+      if (
+        !update ||
+        isConverted(record, mainCurrency) ||
+        record.amount !== update.amount ||
+        record.currency !== update.currency ||
+        record.createdAt !== update.createdAt
+      ) {
+        return record
+      }
+      count++
+      return { ...record, conversion: update.conversion }
+    })
+    if (count === 0) return 0
+    await writeKeysMany({ [storageKey]: next })
+    return count
+  })
+  if (written > 0) {
+    await afterCommit([storageKey], { fromConversion: true })
+  }
+  return written
+}
+
+// Converts every budget not in `target` with `rateFor(budget.currency)`
+// (unrounded) and, with setMainCurrency, stores `target` as the main
+// currency in the SAME transaction. Without setMainCurrency (the one-time
+// fix of budgets in another currency) it does nothing unless `target` is the
+// stored main currency. A throwing rateFor writes nothing. Returns the
+// number of budgets converted.
+export async function convertBudgets(
+  target: Currency,
+  rateFor: (from: Currency) => number,
+  options: { setMainCurrency: boolean },
+): Promise<number> {
+  const s = store
+  if (!s) return 0
+  const result = await withWriteLock(
+    ['budgets', META_SETTINGS_KEY],
+    async () => {
+      const raw = await get<unknown>(META_SETTINGS_KEY, s)
+      const settings =
+        raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+      const storedMain = isCurrency(settings.mainCurrency)
+        ? settings.mainCurrency
+        : DEFAULT_MAIN_CURRENCY
+      if (!options.setMainCurrency && storedMain !== target) {
+        return { converted: 0, keys: [] as Array<string> }
+      }
+      const key = _key
+      if (!key) throw new Error('LocalDb not initialized')
+
+      const budgets = (await readStore('budgets')) ?? []
+      const updatedAt = new Date().toISOString()
+      let converted = 0
+      const nextBudgets = budgets.map((b) => {
+        if (b.currency === target) return b
+        const rate = rateFor(b.currency)
+        converted++
+        return {
+          ...b,
+          monthlyLimit: b.monthlyLimit * rate,
+          currency: target,
+          updatedAt,
+        }
+      })
+
+      const entries: Array<[IDBValidKey, unknown]> = []
+      const writtenKeys: Array<string> = []
+      if (converted > 0) {
+        entries.push(['budgets', await encryptValue(key, nextBudgets)])
+        writtenKeys.push('budgets')
+      }
+      if (options.setMainCurrency) {
+        entries.push([META_SETTINGS_KEY, { ...settings, mainCurrency: target }])
+        writtenKeys.push(META_SETTINGS_KEY)
+      }
+      if (entries.length > 0) await setMany(entries, s)
+      return { converted, keys: writtenKeys }
+    },
+  )
+  if (result.keys.length > 0) {
+    await afterCommit(result.keys, { fromConversion: true })
+  }
+  return result.converted
+}
+
 // ── Recurring items ───────────────────────────────────────────────────────────
 //
 // Items live in the single key `recurring`. A generated record carries
@@ -870,6 +1112,7 @@ async function planOccurrenceWrites(
 ): Promise<{ values: Record<string, Array<GeneratedRecord>>; created: number }> {
   const lists = new Map<string, Array<GeneratedRecord>>()
   const values: Record<string, Array<GeneratedRecord>> = {}
+  const main = await readMainCurrency()
   let created = 0
   const now = new Date().toISOString()
   const amount = overrides?.amount ?? item.amount
@@ -899,6 +1142,8 @@ async function planOccurrenceWrites(
       recurringId: item.id,
       occurrenceDate: date,
     }
+    const conversion = conversionOnSave(record, main)
+    if (conversion) record.conversion = conversion
     const next = [...list, record]
     lists.set(key, next)
     values[key] = next
@@ -1328,6 +1573,8 @@ export async function addRepeatingExpense(
     recurringId,
     occurrenceDate: today,
   }
+  const expenseConversion = conversionOnSave(entry, await readMainCurrency())
+  if (expenseConversion) entry.conversion = expenseConversion
   const item = quickRepeatItem('expense', input, unit, today, now, recurringId)
   const chunkKey = expenseChunkKey(entry.createdAt)
   await withWriteLock([chunkKey, 'recurring'], async () => {
@@ -1364,6 +1611,8 @@ export async function addRepeatingIncome(
     recurringId,
     occurrenceDate: today,
   }
+  const incomeConversion = conversionOnSave(entry, await readMainCurrency())
+  if (incomeConversion) entry.conversion = incomeConversion
   const item = quickRepeatItem('income', input, unit, today, now, recurringId)
   await withWriteLock(['income', 'recurring'], async () => {
     const income = (await readStore('income')) ?? []

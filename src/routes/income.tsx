@@ -3,11 +3,13 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   deleteIncome,
   getAllIncome,
   getAllIncomeCategories,
 } from '@/lib/localDb'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Card } from '@/components/ui/card'
@@ -23,6 +25,9 @@ function IncomePage() {
   const [pageIndex, setPageIndex] = useState(0)
   const pageSize = 15
   const queryClient = useQueryClient()
+  // No loading gate: amounts fall back to the default main currency.
+  const mainCurrency =
+    useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
 
   const incomeQuery = useQuery({
     queryKey: ['income'],
@@ -94,6 +99,7 @@ function IncomePage() {
               <AddIncomeForm
                 categories={incomeCategoriesQuery.data}
                 onSuccess={handleAdded}
+                defaultCurrency={mainCurrency}
               />
             ) : null}
           </div>
@@ -109,6 +115,7 @@ function IncomePage() {
                   isLoading={isLoading}
                   isError={isError}
                   isDeleting={deleteMutation.isPending}
+                  mainCurrency={mainCurrency}
                   onDelete={(id) => deleteMutation.mutate(id)}
                 />
 

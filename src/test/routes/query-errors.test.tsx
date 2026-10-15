@@ -1,3 +1,8 @@
+// The analytics route also reads the currency settings (useCurrencySettings).
+// Under the mocked '@/lib/localDb' above (getLocalStore returns undefined),
+// getCurrencySettings never throws and falls back to its defaults, so the page
+// settles on analytics-total-spent (the currency select no longer exists).
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -188,14 +193,14 @@ describe('Analytics page query error', () => {
     await waitFor(() => {
       expect(getAllIncome).toHaveBeenCalledTimes(2)
     })
-    await screen.findByTestId('analytics-currency-select')
+    await screen.findByTestId('analytics-total-spent')
     expect(screen.queryByTestId('query-error')).toBeNull()
   })
 
   it('shows no error block when every query succeeds', async () => {
     renderPage(AnalyticsRoute)
 
-    await screen.findByTestId('analytics-currency-select')
+    await screen.findByTestId('analytics-total-spent')
     expect(screen.queryByTestId('query-error')).toBeNull()
     expect(screen.queryByTestId('analytics-loading')).toBeNull()
   })

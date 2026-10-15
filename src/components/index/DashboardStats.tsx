@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 
 import type { Currency, MonthlyExpenseSummary } from '@/lib/domain'
+import { formatAmount, formatMoney } from '@/lib/money'
 import {
   Card,
   CardContent,
@@ -42,7 +43,7 @@ export default function DashboardStats({
           data-testid="dashboard-stats-total"
           className="mt-2 text-6xl font-black tracking-tighter text-foreground"
         >
-          {currentTotal.toLocaleString()}{' '}
+          {formatAmount(currentTotal)}{' '}
           <span className="text-2xl text-primary font-bold">{currency}</span>
         </CardTitle>
       </CardHeader>
@@ -85,7 +86,7 @@ export default function DashboardStats({
                 marginBottom: '4px',
               }}
               formatter={(value: any) => [
-                `${value.toLocaleString()} ${currency}`,
+                formatMoney(Number(value), currency),
                 'Spent',
               ]}
             />

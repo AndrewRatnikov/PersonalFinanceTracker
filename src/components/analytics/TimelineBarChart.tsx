@@ -8,6 +8,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { AnalyticsTimelinePoint, Currency } from '@/lib/domain'
+import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
 interface Props {
@@ -105,7 +106,7 @@ export default function TimelineBarChart({ data, currency }: Props) {
               marginBottom: '4px',
             }}
             formatter={(value) => [
-              `${Number(value ?? 0).toLocaleString()} ${currency}`,
+              formatMoney(Number(value ?? 0), currency),
               'Spent',
             ]}
           />

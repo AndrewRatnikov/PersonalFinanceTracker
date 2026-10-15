@@ -5,12 +5,14 @@ import { toast } from 'sonner'
 
 import type { UpdateExpenseInput } from '@/lib/domain'
 import type { UpdateExpenseFormValues } from '@/lib/schemas'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   deleteExpense,
   getAllCategories,
   getAllExpenses,
   updateExpense,
 } from '@/lib/localDb'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
@@ -27,6 +29,9 @@ function Transactions() {
   const pageSize = 15
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  // No loading gate: amounts fall back to the default main currency.
+  const mainCurrency =
+    useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
 
   const categoriesQuery = useQuery({
     queryKey: ['categories'],
@@ -158,6 +163,7 @@ function Transactions() {
               isLoading={isLoading}
               isError={isError}
               isDeleting={deleteMutation.isPending}
+              mainCurrency={mainCurrency}
               onSave={handleSave}
               onDelete={handleDelete}
             />

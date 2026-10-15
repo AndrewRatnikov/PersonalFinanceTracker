@@ -18,6 +18,12 @@
 // records carry categoryId, snapshots include incomeCategories and the summary
 // objects carry the new incomeCategories count. The legacy-payload and
 // round-trip cases live in backup.incomeCategories.test.ts.
+//
+// Main currency run: the payload settings now also carry mainCurrency and
+// fetchExchangeRates (the conversion fields, replace/merge rules and legacy
+// payloads are tested in backup.conversion.test.ts). Seeded UAH records now
+// carry their identity conversion, which every round-trip case below keeps
+// comparing unchanged.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -557,11 +563,13 @@ describe('createBackup', () => {
     expect(payload.expenses).toHaveLength(3)
   })
 
-  it('the payload carries the auto-lock and reminder settings', async () => {
+  it('the payload carries the auto-lock, reminder and currency settings', async () => {
     await setupDevice()
     expect((await readPayload(await createBackup())).settings).toEqual({
       autoLockMinutes: 15,
       backupReminderDays: 14,
+      mainCurrency: 'UAH',
+      fetchExchangeRates: true,
     })
 
     await updateAppSettings({ autoLockMinutes: 5 })
@@ -570,6 +578,8 @@ describe('createBackup', () => {
     expect((await readPayload(await createBackup())).settings).toEqual({
       autoLockMinutes: 5,
       backupReminderDays: 30,
+      mainCurrency: 'UAH',
+      fetchExchangeRates: true,
     })
   })
 

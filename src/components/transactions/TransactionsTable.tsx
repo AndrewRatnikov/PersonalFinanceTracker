@@ -8,7 +8,7 @@ import {
   Trash2,
   WifiOff,
 } from 'lucide-react'
-import type { Category, Expense } from '@/lib/domain'
+import type { Category, Currency, Expense } from '@/lib/domain'
 import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
@@ -33,6 +33,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { ExpenseRowEditor } from '@/components/transactions/ExpenseRowEditor'
+import EntryAmount from '@/components/EntryAmount'
 
 interface TransactionsTableProps {
   transactions: Array<Expense>
@@ -40,6 +41,8 @@ interface TransactionsTableProps {
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
+  /** Amounts in other currencies show their main-currency value or "rate pending". */
+  mainCurrency: Currency
   onSave: (
     id: string,
     originalCreatedAt: string,
@@ -48,18 +51,13 @@ interface TransactionsTableProps {
   onDelete: (id: string, createdAt: string) => void
 }
 
-const CURRENCY_SYMBOL: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  UAH: '₴',
-}
-
 export function TransactionsTable({
   transactions,
   categories,
   isLoading,
   isError,
   isDeleting,
+  mainCurrency,
   onSave,
   onDelete,
 }: TransactionsTableProps) {
@@ -184,9 +182,8 @@ export function TransactionsTable({
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[240px]">
                   {tx.description || <span className="opacity-30">-</span>}
                 </TableCell>
-                <TableCell className="text-sm font-bold text-right tabular-nums">
-                  {CURRENCY_SYMBOL[tx.currency] ?? tx.currency}
-                  {tx.amount.toFixed(2)}
+                <TableCell className="text-sm font-bold text-right tabular-nums whitespace-normal break-words">
+                  <EntryAmount entry={tx} mainCurrency={mainCurrency} />
                 </TableCell>
                 <TableCell className="pr-6 text-right">
                   <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">

@@ -1,4 +1,6 @@
 import type { Currency } from '@/lib/domain'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { formatMoney } from '@/lib/money'
 import {
   Card,
   CardContent,
@@ -17,7 +19,7 @@ interface BudgetSummaryCardProps {
 export default function BudgetSummaryCard({
   income,
   expenses,
-  currency = 'UAH',
+  currency = DEFAULT_MAIN_CURRENCY,
 }: BudgetSummaryCardProps) {
   const netBalance = income - expenses
 
@@ -37,7 +39,7 @@ export default function BudgetSummaryCard({
             className="text-2xl font-semibold text-black dark:text-white"
             data-testid="budget-summary-income"
           >
-            {income.toLocaleString()} {currency}
+            {formatMoney(income, currency)}
           </CardDescription>
         </CardContent>
       </Card>
@@ -52,7 +54,7 @@ export default function BudgetSummaryCard({
             className="text-2xl font-semibold text-black dark:text-white"
             data-testid="budget-summary-expenses"
           >
-            {expenses.toLocaleString()} {currency}
+            {formatMoney(expenses, currency)}
           </CardDescription>
         </CardContent>
       </Card>
@@ -72,7 +74,7 @@ export default function BudgetSummaryCard({
             )}
             data-testid="budget-summary-net-balance"
           >
-            {netBalance.toLocaleString()} {currency}
+            {formatMoney(netBalance, currency)}
           </CardDescription>
         </CardContent>
       </Card>

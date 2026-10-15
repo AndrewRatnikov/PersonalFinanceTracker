@@ -1,6 +1,6 @@
 # Totals are computed in one currency at a time; other currencies are listed, not converted
 
-- **Status:** Accepted
+- **Status:** Superseded by [2026-10-15-main-currency-stored-nbu-conversion](2026-10-15-main-currency-stored-nbu-conversion.md)
 - **Date:** 2026-09-30 (dashboard), extended to Analytics on 2026-10-05
 - **Source:** orchestrator runs `run_20260930_210012` (dashboard redesign) and `run_20261005_215952` (code review 2026-10-05, finding #2)
 - **Code:** `src/lib/dashboardSummary.ts` (`computeDashboardSummary`), `src/lib/localAnalytics.ts` (`computeRangeAnalytics(input, currency)`), `src/components/index/DashboardSummarySection.tsx`, `src/routes/analytics.tsx`

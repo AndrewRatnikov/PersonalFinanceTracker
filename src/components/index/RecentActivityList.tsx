@@ -1,15 +1,21 @@
 import dayjs from 'dayjs'
 
 import type { RecentItem } from '@/lib/dashboardSummary'
+import type { Currency } from '@/lib/domain'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
+import EntryAmount from '@/components/EntryAmount'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 interface RecentActivityListProps {
   items: Array<RecentItem>
+  mainCurrency: Currency
 }
 
-export default function RecentActivityList({ items }: RecentActivityListProps) {
+export default function RecentActivityList({
+  items,
+  mainCurrency,
+}: RecentActivityListProps) {
   return (
     <div className="flex flex-col gap-4" data-testid="recent-activity">
       <h3 className="text-lg font-semibold tracking-tight">Recent activity</h3>
@@ -59,16 +65,16 @@ export default function RecentActivityList({ items }: RecentActivityListProps) {
                   </div>
                   <div
                     className={cn(
-                      'font-bold text-lg shrink-0 tabular-nums',
+                      'font-bold text-sm sm:text-base shrink min-w-0 text-right tabular-nums break-words',
                       isIncome && 'text-emerald-600 dark:text-emerald-400',
                     )}
                     data-testid="recent-activity-amount"
                   >
-                    {isIncome ? '+' : '-'}
-                    {item.amount.toLocaleString()}{' '}
-                    <span className="text-xs text-muted-foreground font-normal ml-1">
-                      {item.currency}
-                    </span>
+                    <EntryAmount
+                      entry={item}
+                      mainCurrency={mainCurrency}
+                      sign={isIncome ? '+' : '-'}
+                    />
                   </div>
                 </CardContent>
               </Card>

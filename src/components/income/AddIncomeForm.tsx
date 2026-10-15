@@ -9,6 +9,7 @@ import type {
   Currency,
   QuickRepeat,
 } from '@/lib/domain'
+import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { addIncome, addRepeatingIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
 
@@ -28,11 +29,18 @@ interface AddIncomeFormProps {
   /** Income categories; the first one is selected by default. */
   categories: Array<Category>
   onSuccess: () => void
+  /** The preselected currency (the main currency) until the user picks one. */
+  defaultCurrency?: Currency
 }
 
-export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
+export function AddIncomeForm({
+  categories,
+  onSuccess,
+  defaultCurrency = DEFAULT_MAIN_CURRENCY,
+}: AddIncomeFormProps) {
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<Currency>('UAH')
+  const [chosenCurrency, setCurrency] = useState<Currency | null>(null)
+  const currency = chosenCurrency ?? defaultCurrency
   const [selected, setSelected] = useState('')
   const [description, setDescription] = useState('')
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
@@ -129,9 +137,11 @@ export function AddIncomeForm({ categories, onSuccess }: AddIncomeFormProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="UAH">UAH</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

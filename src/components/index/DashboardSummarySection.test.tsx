@@ -1,5 +1,6 @@
 // No CONTRACT_GAPs: the Interface Contract's "Component: DashboardSummarySection"
-// section fully specifies props and every testid this file uses.
+// section plus the ConversionPendingNote contract specify props (summary,
+// optional fetchExchangeRates) and every testid this file uses.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -32,8 +33,12 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }))
 
-// Locale-independent thousands-separator assertions, per the repo's testing rule.
-const fmt = (n: number) => n.toLocaleString()
+// Locale-independent assertions: every amount is shown with 2 decimals.
+const fmt = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 
 // Counts non-overlapping occurrences of `needle` in `haystack` (no RegExp, so
 // no escaping concerns with non-ASCII separators).
@@ -41,11 +46,12 @@ const countOccurrences = (haystack: string, needle: string) =>
   haystack.split(needle).length - 1
 
 const baseSummary: DashboardSummary = {
-  baseCurrency: 'UAH',
+  mainCurrency: 'UAH',
   monthIncome: 1000,
   monthExpenses: 400,
   net: 600,
-  excluded: [],
+  pendingCount: 0,
+  budgetsExcluded: 0,
   leftToSpend: null,
   dailyAllowance: null,
   pace: { spentSoFar: 400, lastMonthSameDay: 0, changePct: null },
@@ -62,7 +68,7 @@ describe('root wrapper and hero', () => {
 })
 
 describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
-  it('shows left-to-spend and daily allowance when leftToSpend is not null, and hides the fallback', () => {
+  it('shows left-to-spend and daily allowance (2 decimals, not rounded to whole) when leftToSpend is not null, and hides the fallback', () => {
     const dailyAllowance = 1100 / 17
     const summary: DashboardSummary = {
       ...baseSummary,
@@ -76,13 +82,14 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(leftEl.textContent).toContain('UAH')
 
     const allowanceEl = screen.getByTestId('dashboard-daily-allowance')
-    expect(allowanceEl.textContent).toContain(fmt(Math.round(dailyAllowance)))
+    expect(allowanceEl.textContent).toContain(fmt(dailyAllowance))
+    expect(allowanceEl.textContent).not.toContain(fmt(Math.round(dailyAllowance)))
     expect(allowanceEl.textContent).toContain('UAH')
 
     expect(screen.queryByTestId('dashboard-no-budget-fallback')).toBeNull()
   })
 
-  it('no budget: each month figure appears exactly once, inside the hero, with currency', () => {
+  it('no budget: each month figure appears exactly once, inside the hero, with 2 decimals and currency', () => {
     const summary: DashboardSummary = {
       ...baseSummary,
       leftToSpend: null,
@@ -146,6 +153,19 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     expect(countOccurrences(all, fmt(1234))).toBe(0)
   })
 
+  it('no budget: the figures are in the summary main currency', () => {
+    render(
+      <DashboardSummarySection summary={{ ...baseSummary, mainCurrency: 'EUR' }} />,
+    )
+
+    expect(screen.getByTestId('dashboard-month-income').textContent).toContain(
+      'EUR',
+    )
+    expect(screen.getByTestId('dashboard-month-income').textContent).not.toContain(
+      'UAH',
+    )
+  })
+
   it('no budget: the setup link is in the hero alongside the figures and points to /settings', () => {
     render(<DashboardSummarySection summary={baseSummary} />)
 
@@ -207,16 +227,13 @@ describe('criterion 9: hero left-to-spend vs no-budget fallback', () => {
     )
   })
 
-  it('no budget with excluded currencies: the note still renders and BudgetSummaryCard stays absent', () => {
-    const summary: DashboardSummary = {
-      ...baseSummary,
-      excluded: [{ currency: 'USD', expenses: 120, income: 0 }],
-    }
+  it('no budget with pending entries: the note renders and BudgetSummaryCard stays absent', () => {
+    const summary: DashboardSummary = { ...baseSummary, pendingCount: 2 }
     render(<DashboardSummarySection summary={summary} />)
 
-    const el = screen.getByTestId('dashboard-excluded')
-    expect(el.textContent).toContain(fmt(120))
-    expect(el.textContent).toContain('USD')
+    expect(screen.getByTestId('conversion-pending-note').textContent).toBe(
+      '2 entries waiting for exchange rates',
+    )
     expect(screen.queryByTestId('budget-summary-card')).toBeNull()
     expect(screen.getByTestId('dashboard-month-income')).toBeTruthy()
   })
@@ -293,27 +310,27 @@ describe('criterion 10: pace line', () => {
   })
 })
 
-describe('criterion 11: excluded-currency line', () => {
-  it('lists excluded amounts and currencies with a + prefix for income parts', () => {
-    const summary: DashboardSummary = {
-      ...baseSummary,
-      excluded: [
-        { currency: 'EUR', expenses: 0, income: 50 },
-        { currency: 'USD', expenses: 120, income: 0 },
-      ],
-    }
-    render(<DashboardSummarySection summary={summary} />)
-    const el = screen.getByTestId('dashboard-excluded')
-    expect(el.textContent).toContain(fmt(120))
-    expect(el.textContent).toContain('USD')
-    expect(el.textContent).toContain(fmt(50))
-    expect(el.textContent).toContain('EUR')
-    expect(el.textContent).toContain('+50')
+describe('criterion 11: pending-entries note replaces the "Not included" line', () => {
+  it('shows the note with the count when entries are pending', () => {
+    render(<DashboardSummarySection summary={{ ...baseSummary, pendingCount: 3 }} />)
+
+    expect(screen.getByTestId('conversion-pending-note').textContent).toBe(
+      '3 entries waiting for exchange rates',
+    )
   })
 
-  it('is absent when excluded is empty', () => {
+  it('uses the singular for one pending entry', () => {
+    render(<DashboardSummarySection summary={{ ...baseSummary, pendingCount: 1 }} />)
+
+    expect(screen.getByTestId('conversion-pending-note').textContent).toBe(
+      '1 entry waiting for exchange rates',
+    )
+  })
+
+  it('is absent when nothing is pending', () => {
     render(<DashboardSummarySection summary={baseSummary} />)
-    expect(screen.queryByTestId('dashboard-excluded')).toBeNull()
+
+    expect(screen.queryByTestId('conversion-pending-note')).toBeNull()
   })
 
   it('also renders with a budget set', () => {
@@ -321,11 +338,81 @@ describe('criterion 11: excluded-currency line', () => {
       ...baseSummary,
       leftToSpend: 1100,
       dailyAllowance: 1100 / 17,
-      excluded: [{ currency: 'USD', expenses: 120, income: 0 }],
+      pendingCount: 1,
     }
     render(<DashboardSummarySection summary={summary} />)
-    expect(screen.getByTestId('dashboard-excluded').textContent).toContain(
-      'USD',
+
+    expect(screen.getByTestId('conversion-pending-note')).toBeTruthy()
+    expect(screen.getByTestId('budget-summary-card')).toBeTruthy()
+  })
+
+  it('comes right after the hero, before the budget summary and the budget watch', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      leftToSpend: 1100,
+      dailyAllowance: 1100 / 17,
+      pendingCount: 1,
+      budgetWatch: [
+        {
+          categoryId: 'cat-a',
+          name: 'Food',
+          spent: 10,
+          limit: 100,
+          ratio: 0.1,
+          status: 'ok',
+        },
+      ],
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    const hero = screen.getByTestId('dashboard-hero')
+    const note = screen.getByTestId('conversion-pending-note')
+    const card = screen.getByTestId('budget-summary-card')
+    const watch = screen.getByTestId('budget-watch')
+    expect(hero.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(note.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(note.compareDocumentPosition(watch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('has no settings link while rates are on (the default)', () => {
+    render(<DashboardSummarySection summary={{ ...baseSummary, pendingCount: 2 }} />)
+
+    expect(screen.queryByTestId('conversion-pending-settings-link')).toBeNull()
+  })
+
+  it('links to Settings when exchange rates are off', () => {
+    render(
+      <DashboardSummarySection
+        summary={{ ...baseSummary, pendingCount: 2 }}
+        fetchExchangeRates={false}
+      />,
+    )
+
+    const link = screen.getByTestId('conversion-pending-settings-link')
+    expect(link.getAttribute('href')).toBe('/settings')
+  })
+
+  it('shows the budget note for budgets in another currency', () => {
+    render(
+      <DashboardSummarySection summary={{ ...baseSummary, budgetsExcluded: 1 }} />,
+    )
+
+    expect(screen.getByTestId('budget-conversion-pending-note')).toBeTruthy()
+    expect(screen.queryByTestId('conversion-pending-note')).toBeNull()
+    // Without a comparable budget there is still no BudgetSummaryCard.
+    expect(screen.queryByTestId('budget-summary-card')).toBeNull()
+  })
+
+  it('no longer renders the excluded-currency line or "Not included"', () => {
+    render(
+      <DashboardSummarySection
+        summary={{ ...baseSummary, pendingCount: 2, budgetsExcluded: 1 }}
+      />,
+    )
+
+    expect(screen.queryByTestId('dashboard-excluded')).toBeNull()
+    expect(screen.getByTestId('dashboard-summary').textContent).not.toContain(
+      'Not included',
     )
   })
 })
@@ -397,6 +484,20 @@ describe('criterion 12: budget watch', () => {
     const okBar = within(items[2]).getByTestId('budget-watch-bar')
     expect(okBar.className).toContain('bg-primary')
   })
+
+  it('shows spent and limit with 2 decimals in the main currency', () => {
+    const summary: DashboardSummary = {
+      ...baseSummary,
+      mainCurrency: 'EUR',
+      budgetWatch: [{ ...budgetWatchItems[0], spent: 33.333333, limit: 100 }],
+    }
+    render(<DashboardSummarySection summary={summary} />)
+
+    const item = screen.getByTestId('budget-watch-item')
+    expect(item.textContent).toContain(fmt(33.33))
+    expect(item.textContent).toContain(fmt(100))
+    expect(item.textContent).toContain('EUR')
+  })
 })
 
 describe('criterion 20: empty-data render', () => {
@@ -419,7 +520,7 @@ describe('criterion 20: empty-data render', () => {
     expect(screen.getByTestId('dashboard-month-expenses')).toBeTruthy()
     expect(screen.getByTestId('dashboard-month-net')).toBeTruthy()
     expect(screen.queryByTestId('dashboard-pace')).toBeNull()
-    expect(screen.queryByTestId('dashboard-excluded')).toBeNull()
+    expect(screen.queryByTestId('conversion-pending-note')).toBeNull()
     expect(screen.queryByTestId('budget-watch')).toBeNull()
   })
 })

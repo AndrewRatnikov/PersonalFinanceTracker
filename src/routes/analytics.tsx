@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { Loader2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { computeRangeAnalytics } from '../lib/localAnalytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
@@ -11,12 +11,14 @@ import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarCha
 import PageShell from '../components/PageShell'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
 import { QueryErrorState } from '../components/QueryErrorState'
-import type { ExcludedCurrencyTotal } from '@/lib/dashboardSummary'
 import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
+import ConversionPendingNote from '@/components/ConversionPendingNote'
 import DashboardStats from '@/components/index/DashboardStats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { CURRENCIES } from '@/lib/domain'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { getExpensesForRange } from '@/lib/localDb'
+import { formatMoney, mainAmountOf } from '@/lib/money'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 export type AnalyticsSearch = {
   from?: string
@@ -36,7 +38,7 @@ export const Route = createFileRoute('/analytics')({
 function computeMonthlyStats(
   expenses: Array<Expense>,
   now: dayjs.Dayjs,
-  currency: Currency,
+  mainCurrency: Currency,
 ): Array<MonthlyExpenseSummary> {
   const monthlyMap: Record<string, number> = {}
   for (let i = 11; i >= 0; i--) {
@@ -45,30 +47,17 @@ function computeMonthlyStats(
     monthlyMap[key] = 0
   }
   for (const e of expenses) {
-    if (e.currency !== currency) continue
+    // Pending entries (no rate yet) are left out, never mixed in.
+    const main = mainAmountOf(e, mainCurrency)
+    if (main === null) continue
     const d = dayjs(e.createdAt)
     const key = `${d.year()}-${d.format('MMM')}`
-    if (key in monthlyMap) monthlyMap[key] += Number(e.amount)
+    if (key in monthlyMap) monthlyMap[key] += main
   }
   return Object.entries(monthlyMap).map(([key, total]) => {
     const [year, month] = key.split('-')
     return { month, year, name: month, total }
   })
-}
-
-const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
-
-function formatExcluded(excluded: Array<ExcludedCurrencyTotal>): string {
-  const parts: Array<string> = []
-  for (const item of excluded) {
-    if (item.expenses !== 0) {
-      parts.push(`${item.expenses.toLocaleString()} ${item.currency}`)
-    }
-    if (item.income !== 0) {
-      parts.push(`+${item.income.toLocaleString()} ${item.currency}`)
-    }
-  }
-  return parts.join(', ')
 }
 
 function StatCard({ title, value }: { title: string; value: string }) {
@@ -88,12 +77,17 @@ function StatCard({ title, value }: { title: string; value: string }) {
 
 function AnalyticsPage() {
   const search = Route.useSearch()
-  const [currency, setCurrency] = useState<Currency>('UAH')
+  const settingsQuery = useCurrencySettings()
+  // getCurrencySettings never throws, so this only waits for the first read.
+  const settingsReady = !settingsQuery.isLoading
+  const mainCurrency = settingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
+  const fetchExchangeRates = settingsQuery.data?.fetchExchangeRates ?? true
 
   const analyticsQuery = useQuery({
-    queryKey: ['analytics', search.from, search.to, currency],
+    queryKey: ['analytics', search.from, search.to, mainCurrency],
     queryFn: () =>
-      computeRangeAnalytics({ from: search.from, to: search.to }, currency),
+      computeRangeAnalytics({ from: search.from, to: search.to }, mainCurrency),
+    enabled: settingsReady,
   })
 
   const todayStr = dayjs().format('YYYY-MM-DD')
@@ -119,8 +113,8 @@ function AnalyticsPage() {
   const analytics = analyticsQuery.data
 
   const monthlyStats = useMemo(
-    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), currency),
-    [monthlyExpenses, todayStr, currency],
+    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), mainCurrency),
+    [monthlyExpenses, todayStr, mainCurrency],
   )
 
   // Check for errors before the spinner: a failed query must never spin forever.
@@ -139,7 +133,7 @@ function AnalyticsPage() {
     )
   }
 
-  if (analyticsQuery.isLoading || !analytics) {
+  if (!settingsReady || analyticsQuery.isLoading || !analytics) {
     return (
       <PageShell>
         <div
@@ -163,52 +157,31 @@ function AnalyticsPage() {
     0,
   )
 
-  const excludedText = formatExcluded(analytics.excluded)
-
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <AnalyticsFilters analytics={analytics} search={search} />
 
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Currency</span>
-          <select
-            data-testid="analytics-currency-select"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value as Currency)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-
         <div className="grid grid-cols-2 gap-4">
           <div data-testid="analytics-total-spent">
             <StatCard
               title="Total Spent"
-              value={`${CURRENCY_SYMBOL[currency]}${totalSpent.toFixed(2)}`}
+              value={formatMoney(totalSpent, mainCurrency)}
             />
           </div>
           <div data-testid="analytics-total-income">
             <StatCard
               title="Total Income"
-              value={`${CURRENCY_SYMBOL[currency]}${analytics.totalIncome.toFixed(2)}`}
+              value={formatMoney(analytics.totalIncome, mainCurrency)}
             />
           </div>
         </div>
 
-        {excludedText !== '' && (
-          <p
-            data-testid="analytics-excluded"
-            className="text-xs text-muted-foreground"
-          >
-            Not included: {excludedText}
-          </p>
-        )}
+        <ConversionPendingNote
+          count={analytics.pendingCount}
+          budgetsExcluded={analytics.budgetsExcluded}
+          fetchExchangeRates={fetchExchangeRates}
+        />
 
         {hasData ? (
           <>
@@ -216,7 +189,7 @@ function AnalyticsPage() {
               <h2 className="text-sm font-semibold mb-2">By Category</h2>
               <CategoryDonutChart
                 data={analytics.categoryBreakdown}
-                currency={currency}
+                currency={mainCurrency}
                 ariaLabel="Spending by category"
               />
             </section>
@@ -227,7 +200,7 @@ function AnalyticsPage() {
               </h2>
               <CategoryDonutChart
                 data={analytics.incomeBreakdown}
-                currency={currency}
+                currency={mainCurrency}
                 emptyText="No income in this period."
                 ariaLabel="Income by category"
               />
@@ -235,7 +208,7 @@ function AnalyticsPage() {
 
             <section>
               <h2 className="text-sm font-semibold mb-2">Over Time</h2>
-              <TimelineBarChart data={analytics.timeline} currency={currency} />
+              <TimelineBarChart data={analytics.timeline} currency={mainCurrency} />
             </section>
 
             {analytics.budgetVariance.length > 0 && (
@@ -245,7 +218,7 @@ function AnalyticsPage() {
                 </h2>
                 <BudgetVarianceBarChart
                   data={analytics.budgetVariance}
-                  currency={currency}
+                  currency={mainCurrency}
                 />
               </section>
             )}
@@ -261,7 +234,7 @@ function AnalyticsPage() {
         )}
 
         <section>
-          <DashboardStats data={monthlyStats} currency={currency} />
+          <DashboardStats data={monthlyStats} currency={mainCurrency} />
         </section>
       </div>
     </PageShell>
