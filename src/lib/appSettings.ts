@@ -6,13 +6,21 @@
 // key the user hasn't confirmed saving yet (vault.ts writes it), and true once
 // RecoveryKeySaveStep is confirmed. A missing field means confirmed, so vaults
 // created before the field existed don't nag. Never store the key itself.
+//
+// The currency settings (`mainCurrency`, `fetchExchangeRates`) live in the
+// same object but have their own getter/updater. `mainCurrency` is written
+// only by localDb.convertBudgets, together with the converted budgets, so the
+// budgets and the main currency can never disagree.
 
 import { get, set } from 'idb-keyval'
 
+import { DEFAULT_MAIN_CURRENCY, isCurrency } from './domain'
 import { getLocalStore } from './localDb'
+import { postChanged } from './syncChannel'
 import { META_SETTINGS_KEY } from './vault'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
+import type { Currency } from './domain'
 
 export type AutoLockMinutes = 0 | 1 | 5 | 15 | 60 // 0 = Off
 
@@ -88,4 +96,60 @@ export async function updateAppSettings(
     const stored = await readRaw(store)
     await set(META_SETTINGS_KEY, { ...stored, ...patch }, store)
   })
+}
+
+// ── Currency settings ─────────────────────────────────────────────────────────
+
+export const DEFAULT_FETCH_EXCHANGE_RATES = true
+
+// Under the ['settings'] prefix, so every invalidation of ['settings'] covers it.
+export const CURRENCY_SETTINGS_QUERY_KEY = ['settings', 'currency'] as const
+
+export interface CurrencySettings {
+  mainCurrency: Currency
+  fetchExchangeRates: boolean
+}
+
+function currencyDefaults(): CurrencySettings {
+  return {
+    mainCurrency: DEFAULT_MAIN_CURRENCY,
+    fetchExchangeRates: DEFAULT_FETCH_EXCHANGE_RATES,
+  }
+}
+
+// Never throws: a missing or invalid field reads as its default (also when a
+// test mocks localDb without getLocalStore).
+export async function getCurrencySettings(): Promise<CurrencySettings> {
+  try {
+    const result = currencyDefaults()
+    const store = getLocalStore()
+    if (!store) return result
+    const raw = await readRaw(store)
+    if (!raw) return result
+    if (isCurrency(raw.mainCurrency)) result.mainCurrency = raw.mainCurrency
+    if (typeof raw.fetchExchangeRates === 'boolean') {
+      result.fetchExchangeRates = raw.fetchExchangeRates
+    }
+    return result
+  } catch {
+    return currencyDefaults()
+  }
+}
+
+// Only `fetchExchangeRates` is patchable here; the main currency changes
+// through conversion.changeMainCurrency.
+export async function updateCurrencySettings(patch: {
+  fetchExchangeRates?: boolean
+}): Promise<void> {
+  const store = getLocalStore()
+  if (!store) return
+  const next: Record<string, unknown> = {}
+  if (typeof patch.fetchExchangeRates === 'boolean') {
+    next.fetchExchangeRates = patch.fetchExchangeRates
+  }
+  await withWriteLock(META_SETTINGS_KEY, async () => {
+    const stored = await readRaw(store)
+    await set(META_SETTINGS_KEY, { ...stored, ...next }, store)
+  })
+  postChanged([META_SETTINGS_KEY])
 }
