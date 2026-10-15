@@ -6,6 +6,7 @@ import type {
   Currency,
   QuickRepeat,
 } from '@/lib/domain'
+import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -25,15 +26,19 @@ interface SpeedEntryFormProps {
   /** `repeat` other than 'none' also creates a recurring item starting today. */
   onSubmit: (data: CreateExpenseInput, repeat: QuickRepeat) => Promise<void>
   isPending?: boolean
+  /** The preselected currency (the main currency) until the user picks one. */
+  defaultCurrency?: Currency
 }
 
 export default function SpeedEntryForm({
   categories,
   onSubmit,
   isPending,
+  defaultCurrency = DEFAULT_MAIN_CURRENCY,
 }: SpeedEntryFormProps) {
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<Currency>('UAH')
+  const [chosenCurrency, setCurrency] = useState<Currency | null>(null)
+  const currency = chosenCurrency ?? defaultCurrency
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
   const [description, setDescription] = useState('')
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
@@ -117,9 +122,11 @@ export default function SpeedEntryForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="UAH">UAH</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
