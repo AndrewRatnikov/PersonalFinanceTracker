@@ -169,17 +169,19 @@ describe('incomeBreakdown in the main currency and range', () => {
     expect(result.pendingCount).toBe(2)
   })
 
-  it('with main USD, charts only USD income at its amount; the converted-to-UAH entry is pending', async () => {
+  it('with main USD, charts USD income at its own amount (even with a conversion for another main); UAH and EUR are pending', async () => {
     setup(mixed)
 
     const result = await computeRangeAnalytics(RANGE, 'USD')
 
-    // i2 (50 USD, no conversion) counts at 50; i3's conversion is for UAH, so
-    // it is pending in USD.
+    // i2 (50 USD) and i3 (70 USD, currency === main, so its UAH conversion is
+    // ignored) count at their amounts; i1 (UAH) and i4 (EUR) are pending.
     expect(result.incomeBreakdown).toEqual([
+      { categoryId: 'ic-sal', name: 'Salary', icon: '💼', total: 70 },
       { categoryId: 'ic-gift', name: 'Gifts', icon: null, total: 50 },
     ])
-    expect(result.pendingCount).toBe(3) // UAH, converted-to-UAH USD, EUR
+    expect(result.totalIncome).toBe(120)
+    expect(result.pendingCount).toBe(2)
   })
 
   it('leaves out income outside the range', async () => {

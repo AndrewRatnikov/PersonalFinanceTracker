@@ -292,9 +292,11 @@ describe('recurring page: summary while there are no rates (per-currency fallbac
     ])
     renderPage()
 
-    const line = await screen.findByTestId('recurring-monthly-total-expense-UAH')
+    const line = await screen.findByTestId('recurring-monthly-main-expense')
 
     expect(line.textContent).toContain(formatRecurringAmount(150, 'UAH'))
+    expect(line.textContent).not.toContain(formatRecurringAmount(300, 'UAH'))
+    expect(screen.queryByTestId('recurring-monthly-total-expense-UAH')).toBeNull()
     expect(screen.queryByTestId('recurring-monthly-total-expense-USD')).toBeNull()
   })
 

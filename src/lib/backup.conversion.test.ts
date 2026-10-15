@@ -150,7 +150,7 @@ async function rewritePayload(
 }
 
 function withoutConversionFields<T extends object>(record: T): T {
-  const copy: Record<string, unknown> = { ...record }
+  const copy: Record<string, unknown> = { ...(record as Record<string, unknown>) }
   delete copy.conversion
   delete copy.manualRate
   return copy as T
