@@ -16,14 +16,16 @@ interface Floor {
   advisories: string
 }
 
+const serovalFloor: Floor = {
+  name: 'seroval',
+  min: '1.6.3',
+  advisories: 'GHSA-p6vx-979v-rg4c, GHSA-jp82-f5mq-hwhp',
+}
+
 const floors: Array<Floor> = [
   { name: 'proxy-addr', min: '2.0.8', advisories: 'GHSA-jqcg-44mw-7w3h' },
   { name: 'shell-quote', min: '1.11.0', advisories: 'GHSA-pqg4-j6r4-53mv' },
-  {
-    name: 'seroval',
-    min: '1.6.3',
-    advisories: 'GHSA-p6vx-979v-rg4c, GHSA-jp82-f5mq-hwhp',
-  },
+  serovalFloor,
   {
     name: 'seroval-plugins',
     min: '1.6.3',
@@ -69,6 +71,9 @@ const lock = JSON.parse(
   readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'),
 ) as { lockfileVersion: number; packages: Packages }
 
+const serovalSuffix =
+  'is below 1.6.3 (GHSA-p6vx-979v-rg4c, GHSA-jp82-f5mq-hwhp)'
+
 describe('compareVersions', () => {
   it('returns 0 for equal versions', () => {
     expect(compareVersions('1.2.3', '1.2.3')).toBe(0)
@@ -93,26 +98,25 @@ describe('compareVersions', () => {
 })
 
 describe('findBelowFloor', () => {
-  const seroval = floors.find((f) => f.name === 'seroval')!
-
   it('flags a version below the floor, naming key, version, floor and advisories', () => {
     const result = findBelowFloor(
       { 'node_modules/seroval': { version: '1.5.6' } },
-      seroval,
+      serovalFloor,
     )
-    expect(result).toEqual([
-      'node_modules/seroval@1.5.6 is below 1.6.3 (GHSA-p6vx-979v-rg4c, GHSA-jp82-f5mq-hwhp)',
-    ])
+    expect(result).toEqual([`node_modules/seroval@1.5.6 ${serovalSuffix}`])
   })
 
   it('accepts a version at or above the floor', () => {
     expect(
-      findBelowFloor({ 'node_modules/seroval': { version: '1.6.3' } }, seroval),
+      findBelowFloor(
+        { 'node_modules/seroval': { version: '1.6.3' } },
+        serovalFloor,
+      ),
     ).toEqual([])
     expect(
       findBelowFloor(
         { 'node_modules/seroval': { version: '1.10.0' } },
-        seroval,
+        serovalFloor,
       ),
     ).toEqual([])
   })
@@ -123,26 +127,28 @@ describe('findBelowFloor', () => {
         'node_modules/seroval': { version: '1.6.9' },
         'node_modules/solid-js/node_modules/seroval': { version: '1.5.6' },
       },
-      seroval,
+      serovalFloor,
     )
     expect(result).toHaveLength(1)
-    expect(result[0]).toContain('node_modules/solid-js/node_modules/seroval@1.5.6')
+    expect(result[0]).toContain(
+      'node_modules/solid-js/node_modules/seroval@1.5.6',
+    )
   })
 
   it('does not match seroval-plugins or scoped lookalikes for seroval', () => {
-    expect(
-      findBelowFloor(
-        {
-          'node_modules/seroval-plugins': { version: '0.0.1' },
-          'node_modules/@x/seroval': { version: '0.0.1' },
-        },
-        seroval,
-      ),
-    ).toEqual(['node_modules/@x/seroval@0.0.1 is below 1.6.3 (GHSA-p6vx-979v-rg4c, GHSA-jp82-f5mq-hwhp)'])
+    const result = findBelowFloor(
+      {
+        'node_modules/seroval': { version: '1.5.6' },
+        'node_modules/seroval-plugins': { version: '0.0.1' },
+        'node_modules/@x/seroval': { version: '0.0.1' },
+      },
+      serovalFloor,
+    )
+    expect(result).toEqual([`node_modules/seroval@1.5.6 ${serovalSuffix}`])
   })
 
   it('fails an entry without a version', () => {
-    const result = findBelowFloor({ 'node_modules/seroval': {} }, seroval)
+    const result = findBelowFloor({ 'node_modules/seroval': {} }, serovalFloor)
     expect(result).toHaveLength(1)
     expect(result[0]).toContain('node_modules/seroval')
     expect(result[0]).toContain('GHSA-p6vx-979v-rg4c')
@@ -150,7 +156,10 @@ describe('findBelowFloor', () => {
 
   it('passes when the package is absent', () => {
     expect(
-      findBelowFloor({ 'node_modules/other': { version: '0.0.1' } }, seroval),
+      findBelowFloor(
+        { 'node_modules/other': { version: '0.0.1' } },
+        serovalFloor,
+      ),
     ).toEqual([])
   })
 })
