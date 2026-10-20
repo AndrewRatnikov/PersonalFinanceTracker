@@ -2,6 +2,10 @@
 // Under the mocked '@/lib/localDb' above (getLocalStore returns undefined),
 // getCurrencySettings never throws and falls back to its defaults, so the page
 // settles on analytics-total-spent (the currency select no longer exists).
+//
+// The Transactions page reads Route.useSearch() and Route.useNavigate(); no
+// router is mounted, so both are spied in beforeEach (an empty search = no
+// drawer).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -131,6 +135,9 @@ beforeEach(() => {
   vi.resetAllMocks()
   mockHealthyData()
   vi.spyOn(AnalyticsRoute, 'useSearch').mockReturnValue({})
+  // The Transactions page calls both hooks; no router is mounted.
+  vi.spyOn(TransactionsRoute, 'useSearch').mockReturnValue({})
+  vi.spyOn(TransactionsRoute, 'useNavigate').mockReturnValue(vi.fn() as never)
   // The Dashboard renders only once the vault session is unlocked.
   setVaultPhase('unlocked')
 })
@@ -329,6 +336,19 @@ describe('Transactions page query error', () => {
       await screen.findByTestId('query-error')
       expect(screen.getByTestId('transactions-page')).toBeTruthy()
       expect(screen.getByTestId('query-error-retry')).toBeTruthy()
+    },
+  )
+
+  it.each(failures)(
+    'keeps the Add transaction button when %s fails',
+    async (_name, fail) => {
+      fail()
+
+      renderPage(TransactionsRoute)
+
+      await screen.findByTestId('query-error')
+      expect(screen.getByTestId('transactions-add-btn')).toBeTruthy()
+      expect(screen.queryByTestId('expense-drawer')).toBeNull()
     },
   )
 

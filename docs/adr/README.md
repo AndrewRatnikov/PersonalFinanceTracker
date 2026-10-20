@@ -19,6 +19,8 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-10](2026-10-10-auto-lock-is-per-tab.md) | Auto-lock locks only its own tab; a manual lock locks every tab | Accepted |
 | [2026-10-14](2026-10-14-recurring-generation-per-item-idempotent.md) | Recurring transactions are generated client-side, one atomic write per item, keyed by recurringId + occurrenceDate | Accepted |
 | [2026-10-15](2026-10-15-main-currency-stored-nbu-conversion.md) | Main currency with stored per-entry conversion (NBU) | Accepted |
+| [2026-10-20](2026-10-20-expense-drawer-driven-by-url-params.md) | Expense add/edit in one drawer driven by URL params | Accepted |
+| [2026-10-20](2026-10-20-category-default-currency-stored-on-category.md) | A category's default currency is an optional field on the category record | Accepted |
 
 ## Where else decisions live
 

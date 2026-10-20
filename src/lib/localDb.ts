@@ -592,12 +592,24 @@ async function updateCategoryIn(
     ) {
       throw new Error(`Category "${name}" already exists`)
     }
+    // defaultCurrency: undefined keeps the stored value (a rename keeps it),
+    // null removes the key (never stored as null), a currency sets it.
+    const nextCurrency = input.defaultCurrency
+    if (
+      nextCurrency !== undefined &&
+      nextCurrency !== null &&
+      !isCurrency(nextCurrency)
+    ) {
+      throw new Error('Invalid currency')
+    }
     const updatedAt = new Date().toISOString()
-    const updated = categories.map((c) =>
-      c.id === input.id
-        ? { ...c, name, icon: input.icon ?? null, updatedAt }
-        : c,
-    )
+    const updated = categories.map((c) => {
+      if (c.id !== input.id) return c
+      const next: Category = { ...c, name, icon: input.icon ?? null, updatedAt }
+      if (nextCurrency === null) delete next.defaultCurrency
+      else if (nextCurrency !== undefined) next.defaultCurrency = nextCurrency
+      return next
+    })
     await writeStore(key, updated)
     const found = updated.find((c) => c.id === input.id)
     if (!found) throw new Error(`Category not found: ${input.id}`)

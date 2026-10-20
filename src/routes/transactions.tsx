@@ -1,30 +1,38 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { UpdateExpenseInput } from '@/lib/domain'
-import type { UpdateExpenseFormValues } from '@/lib/schemas'
+import type { TransactionsSearch } from '@/lib/expenseDraft'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
-  deleteExpense,
-  getAllCategories,
-  getAllExpenses,
-  updateExpense,
-} from '@/lib/localDb'
+  drawerInitialFromSearch,
+  validateTransactionsSearch,
+} from '@/lib/expenseDraft'
+import { deleteExpense, getAllCategories, getAllExpenses } from '@/lib/localDb'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
+import { ExpenseDrawer } from '@/components/transactions/ExpenseDrawer'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 import { TransactionsPagination } from '@/components/transactions/TransactionsPagination'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
+// The expense drawer lives in the URL: `?add=expense` (optional `category`,
+// `amount`, `currency`, `description` prefill it) and `?edit=<id>`. The back
+// button closes it, links and the PWA shortcut open it, and because data
+// routes stay unmounted while the vault is locked, it opens after unlock.
 export const Route = createFileRoute('/transactions')({
+  validateSearch: validateTransactionsSearch,
   component: Transactions,
 })
 
 function Transactions() {
+  const search: TransactionsSearch = Route.useSearch()
+  const navigate = Route.useNavigate()
   const [pageIndex, setPageIndex] = useState(0)
   const pageSize = 15
   const [categoryId, setCategoryId] = useState<string | null>(null)
@@ -90,35 +98,48 @@ function Transactions() {
     deleteMutation.mutate({ id, createdAt })
   }
 
-  const updateMutation = useMutation({
-    mutationFn: ({
-      id,
-      originalCreatedAt,
-      patch,
-    }: {
-      id: string
-      originalCreatedAt: string
-      patch: UpdateExpenseInput
-    }) => updateExpense(id, originalCreatedAt, patch),
-    onSuccess: () => {
-      // Prefix match: also refreshes ['expenses', from, to] on the dashboard.
-      queryClient.invalidateQueries({ queryKey: ['expenses'] })
-      // Analytics caches under its own key.
-      queryClient.invalidateQueries({ queryKey: ['analytics'] })
-      toast.success('Transaction updated')
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to update: ${error.message}`)
-    },
-  })
+  // ── Drawer state from the URL ─────────────────────────────────────────────
+  // Every navigate call passes a plain search object (no updater function).
+  const drawerMode: 'add' | 'edit' | null =
+    search.edit !== undefined
+      ? 'edit'
+      : search.add === 'expense'
+        ? 'add'
+        : null
+  const editExpense =
+    drawerMode === 'edit'
+      ? allExpenses.find((e) => e.id === search.edit)
+      : undefined
+  const drawerInitial = drawerInitialFromSearch(search)
+  const drawerOpen = drawerMode === 'add' || editExpense !== undefined
 
-  // mutateAsync rejects on failure, so the table keeps the row editable.
-  const handleSave = async (
-    id: string,
-    originalCreatedAt: string,
-    values: UpdateExpenseFormValues,
-  ) => {
-    await updateMutation.mutateAsync({ id, originalCreatedAt, patch: values })
+  // An unknown ?edit id: judged only once the list has loaded (so the param
+  // survives an unlock), toasted once per id, then dropped.
+  const judgedEditRef = useRef<string | null>(null)
+  const editId = search.edit
+  const editFound = editExpense !== undefined
+  const expensesLoaded = expensesQuery.isSuccess
+  useEffect(() => {
+    if (editId === undefined || !expensesLoaded || editFound) return
+    if (judgedEditRef.current === editId) return
+    judgedEditRef.current = editId
+    toast.error('Transaction not found')
+    void navigate({ search: {}, replace: true })
+  }, [editId, editFound, expensesLoaded, navigate])
+
+  const openAdd = () => {
+    void navigate({ search: { add: 'expense' } })
+  }
+
+  const openEdit = (id: string) => {
+    void navigate({ search: { edit: id } })
+  }
+
+  const handleDrawerOpenChange = (open: boolean) => {
+    if (open) return
+    // A record deleted from its own drawer must not toast "not found".
+    if (search.edit !== undefined) judgedEditRef.current = search.edit
+    void navigate({ search: {}, replace: true })
   }
 
   const handleCategoryFilterChange = (value: string) => {
@@ -142,13 +163,24 @@ function Transactions() {
             </p>
           </div>
 
-          {failedQueries.length === 0 && (
-            <CategoryFilter
-              categories={categories}
-              value={categoryId}
-              onChange={handleCategoryFilterChange}
-            />
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {failedQueries.length === 0 && (
+              <CategoryFilter
+                categories={categories}
+                value={categoryId}
+                onChange={handleCategoryFilterChange}
+              />
+            )}
+            <Button
+              type="button"
+              data-testid="transactions-add-btn"
+              onClick={openAdd}
+              className="min-h-11 sm:min-h-9"
+            >
+              <Plus />
+              Add transaction
+            </Button>
+          </div>
         </div>
 
         {failedQueries.length > 0 ? (
@@ -164,7 +196,7 @@ function Transactions() {
               isError={isError}
               isDeleting={deleteMutation.isPending}
               mainCurrency={mainCurrency}
-              onSave={handleSave}
+              onEdit={(tx) => openEdit(tx.id)}
               onDelete={handleDelete}
             />
 
@@ -180,6 +212,35 @@ function Transactions() {
           </Card>
         )}
       </div>
+
+      <Button
+        type="button"
+        size="icon"
+        data-testid="transactions-add-fab"
+        aria-label="Add transaction"
+        onClick={openAdd}
+        className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 h-14 w-14 rounded-full shadow-lg sm:hidden"
+      >
+        <Plus className="size-6" />
+      </Button>
+
+      {drawerMode !== null && (
+        <ExpenseDrawer
+          key={
+            drawerMode === 'edit'
+              ? `edit-${search.edit ?? ''}`
+              : `add-${JSON.stringify(drawerInitial)}`
+          }
+          mode={drawerMode}
+          expense={editExpense}
+          open={drawerOpen}
+          onOpenChange={handleDrawerOpenChange}
+          initial={drawerMode === 'add' ? drawerInitial : undefined}
+          categories={categories}
+          mainCurrency={mainCurrency}
+          entries={allExpenses}
+        />
+      )}
     </PageShell>
   )
 }

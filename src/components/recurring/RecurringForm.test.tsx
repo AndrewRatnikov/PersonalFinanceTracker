@@ -582,3 +582,109 @@ describe('RecurringForm edit mode (initial)', () => {
     expect(onSubmit.mock.calls[0][0].amount).toBe(1500)
   })
 })
+
+describe('RecurringForm category default currency', () => {
+  const FOOD: Category = { id: 'cat-food', name: 'Food', icon: '🍔' }
+  const SERVER: Category = {
+    id: 'cat-server',
+    name: 'Server Costs',
+    icon: '🖥️',
+    defaultCurrency: 'USD',
+  }
+  const BONUS: Category = {
+    id: 'ic-bonus',
+    name: 'Bonus',
+    icon: '🎉',
+    defaultCurrency: 'EUR',
+  }
+
+  it('starts with the default currency of the first category', () => {
+    renderForm({ expenseCategories: [SERVER, FOOD] })
+
+    expect(select('recurring-form-currency').value).toBe('USD')
+  })
+
+  it('switching to a category with a default currency changes the currency', () => {
+    renderForm({ expenseCategories: [FOOD, SERVER] })
+    expect(select('recurring-form-currency').value).toBe('UAH')
+
+    setValue('recurring-form-category', 'cat-server')
+
+    expect(select('recurring-form-currency').value).toBe('USD')
+  })
+
+  it('switching back to a category without one returns to the main currency', () => {
+    renderForm({ expenseCategories: [FOOD, SERVER] })
+    setValue('recurring-form-category', 'cat-server')
+
+    setValue('recurring-form-category', 'cat-food')
+
+    expect(select('recurring-form-currency').value).toBe('UAH')
+  })
+
+  it('keeps a currency the user chose first', () => {
+    renderForm({ expenseCategories: [FOOD, SERVER] })
+    setValue('recurring-form-currency', 'EUR')
+
+    setValue('recurring-form-category', 'cat-server')
+
+    expect(select('recurring-form-currency').value).toBe('EUR')
+  })
+
+  it('submits the currency that followed the category', async () => {
+    const { onSubmit } = renderForm({ expenseCategories: [FOOD, SERVER] })
+    setValue('recurring-form-amount', '20')
+    setValue('recurring-form-category', 'cat-server')
+
+    submit()
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      categoryId: 'cat-server',
+      currency: 'USD',
+      amount: 20,
+    })
+  })
+
+  it('also follows the first category of the other kind after the kind toggle', () => {
+    renderForm({
+      expenseCategories: [FOOD, SERVER],
+      incomeCategories: [BONUS, INCOME_CATEGORIES[0]],
+    })
+    expect(select('recurring-form-currency').value).toBe('UAH')
+
+    fireEvent.click(screen.getByTestId('recurring-form-kind-income'))
+    expect(select('recurring-form-currency').value).toBe('EUR')
+
+    fireEvent.click(screen.getByTestId('recurring-form-kind-expense'))
+    expect(select('recurring-form-currency').value).toBe('UAH')
+  })
+
+  it('keeps a chosen currency across the kind toggle', () => {
+    renderForm({
+      expenseCategories: [FOOD, SERVER],
+      incomeCategories: [BONUS, INCOME_CATEGORIES[0]],
+    })
+    setValue('recurring-form-currency', 'USD')
+
+    fireEvent.click(screen.getByTestId('recurring-form-kind-income'))
+
+    expect(select('recurring-form-currency').value).toBe('USD')
+  })
+
+  it('editing keeps the stored currency when the category changes', () => {
+    renderForm({
+      expenseCategories: [FOOD, SERVER],
+      initial: item({
+        kind: 'expense',
+        categoryId: 'cat-food',
+        currency: 'EUR',
+      }),
+    })
+    expect(select('recurring-form-currency').value).toBe('EUR')
+
+    setValue('recurring-form-category', 'cat-server')
+
+    expect(select('recurring-form-currency').value).toBe('EUR')
+  })
+})

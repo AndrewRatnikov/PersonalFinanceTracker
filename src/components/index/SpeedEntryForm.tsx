@@ -6,20 +6,18 @@ import type {
   Currency,
   QuickRepeat,
 } from '@/lib/domain'
-import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import type { DescriptionSuggestion, SuggestionEntry } from '@/lib/suggestions'
+import { currencyForCategory } from '@/lib/categoryCurrency'
+import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
+import { CurrencyPicker } from '@/components/CurrencyPicker'
+import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
 
 import { createExpenseSchema } from '@/lib/schemas'
+
+const NO_ENTRIES: ReadonlyArray<SuggestionEntry> = []
 
 interface SpeedEntryFormProps {
   categories: Array<Category>
@@ -28,6 +26,8 @@ interface SpeedEntryFormProps {
   isPending?: boolean
   /** The preselected currency (the main currency) until the user picks one. */
   defaultCurrency?: Currency
+  /** Entries the description suggestions are computed from. */
+  entries?: ReadonlyArray<SuggestionEntry>
 }
 
 export default function SpeedEntryForm({
@@ -35,11 +35,24 @@ export default function SpeedEntryForm({
   onSubmit,
   isPending,
   defaultCurrency = DEFAULT_MAIN_CURRENCY,
+  entries = NO_ENTRIES,
 }: SpeedEntryFormProps) {
   const [amount, setAmount] = useState('')
-  const [chosenCurrency, setCurrency] = useState<Currency | null>(null)
-  const currency = chosenCurrency ?? defaultCurrency
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '')
+  // Set by any change event of the category select, even re-selecting the
+  // same category: a suggestion pick then keeps the user's category.
+  const [categoryTouched, setCategoryTouched] = useState(false)
+  const selectedCategory = categories.find((c) => c.id === categoryId)
+  // A tapped currency wins; else a suggestion's currency (until the category
+  // changes); else the category default; else the main currency.
+  const [chosenCurrency, setCurrency] = useState<Currency | null>(null)
+  const [suggestedCurrency, setSuggestedCurrency] = useState<Currency | null>(
+    null,
+  )
+  const currency =
+    chosenCurrency ??
+    suggestedCurrency ??
+    currencyForCategory(selectedCategory, defaultCurrency)
   const [description, setDescription] = useState('')
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -77,6 +90,23 @@ export default function SpeedEntryForm({
     setErrors({})
   }
 
+  const handleCategoryChange = (id: string) => {
+    setCategoryId(id)
+    setCategoryTouched(true)
+    setSuggestedCurrency(null)
+  }
+
+  const handlePick = (
+    s: DescriptionSuggestion,
+    { withAmount }: { withAmount: boolean },
+  ) => {
+    if (!categoryTouched && categories.some((c) => c.id === s.categoryId)) {
+      setCategoryId(s.categoryId)
+    }
+    if (chosenCurrency === null) setSuggestedCurrency(s.currency)
+    if (withAmount) setAmount(String(s.amount))
+  }
+
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm">
       <form data-testid="speed-entry-form" onSubmit={handleSubmit}>
@@ -107,32 +137,16 @@ export default function SpeedEntryForm({
                   [&::-webkit-outer-spin-button]:appearance-none
                   [&::-webkit-inner-spin-button]:appearance-none"
               />
-              <div className="w-px h-6 bg-border flex-shrink-0" />
-              <Select
-                value={currency}
-                onValueChange={(v) => setCurrency(v as Currency)}
-                disabled={isPending}
-              >
-                <SelectTrigger
-                  id="currency"
-                  className="w-[88px] h-full border-0 shadow-none rounded-none
-                    focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0
-                    font-semibold bg-transparent"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             {errors.amount && (
               <p className="text-xs text-destructive">{errors.amount}</p>
             )}
+            <CurrencyPicker
+              testIdPrefix="speed-entry"
+              value={currency}
+              onChange={setCurrency}
+              disabled={isPending}
+            />
           </div>
 
           {/* Category */}
@@ -143,30 +157,21 @@ export default function SpeedEntryForm({
             >
               Category
             </Label>
-            <Select
+            <select
+              id="category"
+              data-testid="speed-entry-category"
               value={categoryId}
-              onValueChange={(v) => setCategoryId(v)}
+              onChange={(e) => handleCategoryChange(e.target.value)}
               disabled={isPending}
+              aria-invalid={errors.categoryId ? true : undefined}
+              className={`h-11 w-full rounded-md border bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${errors.categoryId ? 'border-destructive' : 'border-input'}`}
             >
-              <SelectTrigger
-                id="category"
-                className={`h-11 ${errors.categoryId ? 'border-destructive' : ''}`}
-              >
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    <div className="flex items-center gap-2">
-                      {cat.icon && (
-                        <span className="text-base">{cat.icon}</span>
-                      )}
-                      <span>{cat.name}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
+                </option>
+              ))}
+            </select>
             {errors.categoryId && (
               <p className="text-xs text-destructive">{errors.categoryId}</p>
             )}
@@ -183,12 +188,14 @@ export default function SpeedEntryForm({
                 (optional)
               </span>
             </Label>
-            <Input
+            <DescriptionSuggestInput
               id="description"
-              data-testid="speed-entry-description"
-              type="text"
+              testIdPrefix="speed-entry"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={setDescription}
+              entries={entries}
+              categoryId={categoryId || undefined}
+              onPick={handlePick}
               placeholder="e.g. coffee with team"
               maxLength={120}
               disabled={isPending}

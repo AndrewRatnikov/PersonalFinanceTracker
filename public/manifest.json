@@ -20,5 +20,13 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add expense",
+      "short_name": "Add",
+      "url": "/transactions?add=expense",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    }
   ]
 }

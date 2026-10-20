@@ -11,11 +11,18 @@ interface ManifestIcon {
   purpose?: string
 }
 
+interface ManifestShortcut {
+  name: string
+  short_name?: string
+  url: string
+  icons?: Array<{ src: string; sizes: string }>
+}
+
 const publicDir = join(process.cwd(), 'public')
 
 const manifest = JSON.parse(
   readFileSync(join(publicDir, 'manifest.json'), 'utf8'),
-) as { icons: Array<ManifestIcon> }
+) as { icons: Array<ManifestIcon>; shortcuts?: Array<ManifestShortcut> }
 
 const purposes = (icon: ManifestIcon) => (icon.purpose ?? 'any').split(/\s+/)
 
@@ -54,6 +61,34 @@ describe('manifest icons', () => {
     for (const icon of manifest.icons) {
       expect(existsSync(join(publicDir, icon.src)), icon.src).toBe(true)
     }
+  })
+})
+
+describe('manifest shortcuts', () => {
+  it('has exactly the "Add expense" shortcut', () => {
+    expect(manifest.shortcuts).toEqual([
+      {
+        name: 'Add expense',
+        short_name: 'Add',
+        url: '/transactions?add=expense',
+        icons: [{ src: 'logo192.png', sizes: '192x192' }],
+      },
+    ])
+  })
+
+  it('opens the Transactions page with the add drawer', () => {
+    const shortcut = manifest.shortcuts?.[0]
+    expect(shortcut).toBeDefined()
+    const url = new URL(shortcut?.url ?? '', 'https://example.test')
+    expect(url.pathname).toBe('/transactions')
+    expect(url.searchParams.get('add')).toBe('expense')
+  })
+
+  it('uses an icon that exists, is one of the manifest icons (so it is precached)', () => {
+    const shortcutIcon = manifest.shortcuts?.[0].icons?.[0]
+    expect(shortcutIcon?.src).toBe('logo192.png')
+    expect(existsSync(join(publicDir, 'logo192.png'))).toBe(true)
+    expect(manifest.icons.map((i) => i.src)).toContain('logo192.png')
   })
 })
 

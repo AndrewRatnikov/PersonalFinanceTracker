@@ -38,6 +38,7 @@ async function becomeVisible() {
   visibility = 'visible'
   await act(async () => {
     document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
   })
 }
 
@@ -45,6 +46,7 @@ async function becomeHidden() {
   visibility = 'hidden'
   await act(async () => {
     document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
   })
 }
 
