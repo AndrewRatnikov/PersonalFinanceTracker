@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import dayjs from 'dayjs'
 import {
   Edit2,
@@ -9,7 +8,6 @@ import {
   WifiOff,
 } from 'lucide-react'
 import type { Category, Currency, Expense } from '@/lib/domain'
-import type { UpdateExpenseFormValues } from '@/lib/schemas'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
   Table,
@@ -32,47 +30,32 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ExpenseRowEditor } from '@/components/transactions/ExpenseRowEditor'
 import EntryAmount from '@/components/EntryAmount'
 
 interface TransactionsTableProps {
   transactions: Array<Expense>
+  /** Unused since the inline editor moved to the drawer; kept for callers. */
   categories: Array<Category>
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
   /** Amounts in other currencies show their main-currency value or "rate pending". */
   mainCurrency: Currency
-  onSave: (
-    id: string,
-    originalCreatedAt: string,
-    values: UpdateExpenseFormValues,
-  ) => Promise<void>
+  /** The row edit button: the page opens the expense drawer in edit mode. */
+  onEdit: (expense: Expense) => void
   onDelete: (id: string, createdAt: string) => void
 }
 
 export function TransactionsTable({
   transactions,
-  categories,
   isLoading,
   isError,
   isDeleting,
   mainCurrency,
-  onSave,
+  onEdit,
   onDelete,
 }: TransactionsTableProps) {
   const online = useOnlineStatus()
-  const [editingId, setEditingId] = useState<string | null>(null)
-
-  // Resolving leaves edit mode; a rejection propagates to the editor, which
-  // keeps the row (and the entered values) in edit mode.
-  const handleRowSave = async (
-    tx: Expense,
-    values: UpdateExpenseFormValues,
-  ) => {
-    await onSave(tx.id, tx.createdAt, values)
-    setEditingId(null)
-  }
 
   return (
     <Table>
@@ -140,16 +123,7 @@ export function TransactionsTable({
             </TableCell>
           </TableRow>
         ) : (
-          transactions.map((tx) =>
-            tx.id === editingId ? (
-              <ExpenseRowEditor
-                key={tx.id}
-                expense={tx}
-                categories={categories}
-                onSave={(values) => handleRowSave(tx, values)}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
+          transactions.map((tx) => (
               <TableRow
                 key={tx.id}
                 data-testid="transaction-row"
@@ -191,7 +165,8 @@ export function TransactionsTable({
                       variant="ghost"
                       size="icon"
                       data-testid="transaction-edit-button"
-                      onClick={() => setEditingId(tx.id)}
+                      onClick={() => onEdit(tx)}
+                      aria-label="Edit transaction"
                       className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                       title="Edit transaction"
                     >
@@ -235,8 +210,7 @@ export function TransactionsTable({
                   </div>
                 </TableCell>
               </TableRow>
-            ),
-          )
+          ))
         )}
       </TableBody>
     </Table>
