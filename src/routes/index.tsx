@@ -5,17 +5,20 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import type { CreateExpenseInput, QuickRepeat } from '@/lib/domain'
+import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
 
 import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 import RecentActivityList from '@/components/index/RecentActivityList'
 import RecurringDashboardSection from '@/components/index/RecurringDashboardSection'
 import { RecoveryKeyBanner } from '@/components/index/RecoveryKeyBanner'
+import { RepeatLastChips } from '@/components/index/RepeatLastChips'
 import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import { InstallHintCard } from '@/components/InstallHintCard'
 import LandingPage from '@/components/LandingPage'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
+import { ExpenseDrawer } from '@/components/transactions/ExpenseDrawer'
 import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
@@ -43,6 +46,10 @@ function IndexRoute() {
 function Dashboard() {
   const queryClient = useQueryClient()
   const [isPending, setIsPending] = useState(false)
+  // The repeat-last "…" / long-press opens the drawer here, prefilled (local
+  // state, not the URL: the user stays on the dashboard).
+  const [drawerInitial, setDrawerInitial] =
+    useState<ExpenseDrawerInitial | null>(null)
 
   const todayStr = dayjs().format('YYYY-MM-DD')
   const { from, to } = useMemo(
@@ -192,12 +199,20 @@ function Dashboard() {
         <section>
           <h2 className="text-xl font-bold mb-4">Quick Add</h2>
           {categories.length > 0 ? (
-            <SpeedEntryForm
-              categories={categories}
-              onSubmit={handleCreateExpense}
-              isPending={isPending}
-              defaultCurrency={mainCurrency}
-            />
+            <div className="flex flex-col gap-4">
+              <RepeatLastChips
+                expenses={expenses}
+                categories={categories}
+                onCustomize={setDrawerInitial}
+              />
+              <SpeedEntryForm
+                categories={categories}
+                onSubmit={handleCreateExpense}
+                isPending={isPending}
+                defaultCurrency={mainCurrency}
+                entries={expenses}
+              />
+            </div>
           ) : (
             <Card className="border-dashed bg-transparent">
               <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
@@ -214,6 +229,19 @@ function Dashboard() {
           />
         </section>
       </div>
+
+      <ExpenseDrawer
+        key={JSON.stringify(drawerInitial)}
+        mode="add"
+        open={drawerInitial !== null}
+        onOpenChange={(open) => {
+          if (!open) setDrawerInitial(null)
+        }}
+        initial={drawerInitial ?? undefined}
+        categories={categories}
+        mainCurrency={mainCurrency}
+        entries={expenses}
+      />
     </PageShell>
   )
 }
