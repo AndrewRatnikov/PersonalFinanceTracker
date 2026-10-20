@@ -10,6 +10,7 @@ import type {
   RecurringKind,
   RecurringMode,
 } from '@/lib/domain'
+import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { recurringInputSchemaFor } from '@/lib/schemas'
 import { Button } from '@/components/ui/button'
@@ -113,11 +114,12 @@ export default function RecurringForm({
   const [amount, setAmount] = useState(
     initial ? String(initial.amount) : '',
   )
-  // A new item follows defaultCurrency until the user picks a currency.
+  // A new item follows the chosen category's default currency (else
+  // defaultCurrency) until the user picks a currency; editing keeps the
+  // stored one.
   const [chosenCurrency, setCurrency] = useState<Currency | null>(
     initial?.currency ?? null,
   )
-  const currency = chosenCurrency ?? defaultCurrency
   const [categoryId, setCategoryId] = useState(
     initial ? initial.categoryId : (expenseCategories[0]?.id ?? ''),
   )
@@ -146,6 +148,12 @@ export default function RecurringForm({
 
   const categories = kind === 'income' ? incomeCategories : expenseCategories
   const categoryKnown = categories.some((c) => c.id === categoryId)
+  const currency =
+    chosenCurrency ??
+    currencyForCategory(
+      categories.find((c) => c.id === categoryId),
+      defaultCurrency,
+    )
   const showBackfill = !isEdit && startDate !== '' && startDate <= today
   const backfill = backfillChoice ?? startDate === today
 
