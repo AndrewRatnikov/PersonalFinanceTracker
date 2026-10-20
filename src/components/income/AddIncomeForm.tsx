@@ -9,13 +9,16 @@ import type {
   Currency,
   QuickRepeat,
 } from '@/lib/domain'
+import type { DescriptionSuggestion, SuggestionEntry } from '@/lib/suggestions'
+import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { addIncome, addRepeatingIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
 
+import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
+
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -31,17 +34,27 @@ interface AddIncomeFormProps {
   onSuccess: () => void
   /** The preselected currency (the main currency) until the user picks one. */
   defaultCurrency?: Currency
+  /** Income entries the description suggestions are computed from. */
+  entries?: ReadonlyArray<SuggestionEntry>
 }
+
+const NO_ENTRIES: ReadonlyArray<SuggestionEntry> = []
 
 export function AddIncomeForm({
   categories,
   onSuccess,
   defaultCurrency = DEFAULT_MAIN_CURRENCY,
+  entries = NO_ENTRIES,
 }: AddIncomeFormProps) {
   const [amount, setAmount] = useState('')
   const [chosenCurrency, setCurrency] = useState<Currency | null>(null)
-  const currency = chosenCurrency ?? defaultCurrency
+  // A suggestion's currency, until the user changes the category.
+  const [suggestedCurrency, setSuggestedCurrency] = useState<Currency | null>(
+    null,
+  )
   const [selected, setSelected] = useState('')
+  // True once the user picked a category; a suggestion pick then keeps it.
+  const [categoryTouched, setCategoryTouched] = useState(false)
   const [description, setDescription] = useState('')
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -53,6 +66,29 @@ export function AddIncomeForm({
     ? selected
     : (categories[0]?.id ?? '')
   const selectedCategory = categories.find((c) => c.id === categoryId)
+  // A chosen currency wins; else a suggestion's; else the income category's
+  // default; else the main currency.
+  const currency =
+    chosenCurrency ??
+    suggestedCurrency ??
+    currencyForCategory(selectedCategory, defaultCurrency)
+
+  const handleCategoryChange = (id: string) => {
+    setSelected(id)
+    setCategoryTouched(true)
+    setSuggestedCurrency(null)
+  }
+
+  const handlePick = (
+    s: DescriptionSuggestion,
+    { withAmount }: { withAmount: boolean },
+  ) => {
+    if (!categoryTouched && categories.some((c) => c.id === s.categoryId)) {
+      setSelected(s.categoryId)
+    }
+    if (chosenCurrency === null) setSuggestedCurrency(s.currency)
+    if (withAmount) setAmount(String(s.amount))
+  }
 
   const mutation = useMutation({
     mutationFn: ({
@@ -133,7 +169,11 @@ export function AddIncomeForm({
                 onValueChange={(v) => setCurrency(v as Currency)}
                 disabled={mutation.isPending}
               >
-                <SelectTrigger className="w-[88px] h-full border-0 shadow-none rounded-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-semibold bg-transparent">
+                <SelectTrigger
+                  data-testid="income-form-currency"
+                  aria-label="Currency"
+                  className="w-[88px] h-full border-0 shadow-none rounded-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-semibold bg-transparent"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -169,7 +209,7 @@ export function AddIncomeForm({
             ) : (
               <Select
                 value={categoryId}
-                onValueChange={(v) => setSelected(v)}
+                onValueChange={handleCategoryChange}
                 disabled={mutation.isPending}
               >
                 <SelectTrigger
@@ -215,17 +255,23 @@ export function AddIncomeForm({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <Label
+              htmlFor="income-description"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            >
               Description{' '}
               <span className="normal-case font-normal opacity-50">
                 (optional)
               </span>
             </Label>
-            <Input
-              data-testid="income-form-description"
-              type="text"
+            <DescriptionSuggestInput
+              id="income-description"
+              testIdPrefix="income-form"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={setDescription}
+              entries={entries}
+              categoryId={categoryId || undefined}
+              onPick={handlePick}
               placeholder="e.g. March salary"
               disabled={mutation.isPending}
               className={errors.description ? 'border-destructive' : ''}
