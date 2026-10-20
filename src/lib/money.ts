@@ -26,6 +26,13 @@ export function formatMoney(value: number, currency: Currency): string {
   return `${formatAmount(value)} ${currency}`
 }
 
+// "65 UAH" for whole numbers, "12.50 USD" otherwise. Locale-free: used for
+// short hints and chip labels (suggestions, repeat last, toasts).
+export function formatShortMoney(amount: number, currency: Currency): string {
+  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+  return `${text} ${currency}`
+}
+
 export function formatRate(rate: number): string {
   return rate.toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
