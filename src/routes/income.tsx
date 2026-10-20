@@ -100,6 +100,7 @@ function IncomePage() {
                 categories={incomeCategoriesQuery.data}
                 onSuccess={handleAdded}
                 defaultCurrency={mainCurrency}
+                entries={sorted}
               />
             ) : null}
           </div>
