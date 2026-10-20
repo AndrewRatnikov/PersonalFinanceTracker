@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
-import type { Category } from '../../lib/domain'
+import type { Category, Currency } from '../../lib/domain'
+import { CURRENCIES, isCurrency } from '@/lib/domain'
 import {
   deleteCategory,
   deleteIncomeCategory,
@@ -40,11 +41,15 @@ export function CategoryRow({
   const [editName, setEditName] = useState(category.name)
   const [editIcon, setEditIcon] = useState(category.icon ?? '')
   const [isPending, setIsPending] = useState(false)
+  // The value just picked in the currency select, shown while it saves.
+  const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
 
+  const update = kind === 'income' ? updateIncomeCategory : updateCategory
+
+  // Renaming never sends defaultCurrency, so the stored value is kept.
   const save = async () => {
     setIsPending(true)
     try {
-      const update = kind === 'income' ? updateIncomeCategory : updateCategory
       await update({
         id: category.id,
         name: editName,
@@ -56,6 +61,27 @@ export function CategoryRow({
       onError(e?.message ?? 'Failed to update category')
     } finally {
       setIsPending(false)
+    }
+  }
+
+  // '' = "Main currency": clears the default (null).
+  const saveCurrency = async (value: string) => {
+    const next: Currency | null = isCurrency(value) ? value : null
+    setPendingCurrency(value)
+    setIsPending(true)
+    try {
+      await update({
+        id: category.id,
+        name: category.name,
+        icon: category.icon ?? null,
+        defaultCurrency: next,
+      })
+      onMutate()
+    } catch (e: any) {
+      onError(e?.message ?? 'Failed to update category')
+    } finally {
+      setIsPending(false)
+      setPendingCurrency(null)
     }
   }
 
@@ -79,6 +105,8 @@ export function CategoryRow({
           <Input
             autoFocus
             type="text"
+            data-testid="category-edit-name"
+            aria-label="Category name"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             maxLength={40}
@@ -89,12 +117,15 @@ export function CategoryRow({
             value={editIcon}
             onChange={(e) => setEditIcon(e.target.value)}
             placeholder="icon"
+            aria-label="Category icon"
             className="w-16 bg-transparent border-none text-muted-foreground text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0 text-center"
           />
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
+              data-testid="category-edit-save"
+              aria-label="Save category"
               onClick={save}
               disabled={isPending || !editName.trim()}
               className="h-8 w-8 text-primary hover:text-primary/80 hover:bg-transparent"
@@ -105,6 +136,7 @@ export function CategoryRow({
               variant="ghost"
               size="icon"
               onClick={() => setIsEditing(false)}
+              aria-label="Cancel renaming"
               className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-transparent"
             >
               <X size={16} />
@@ -133,10 +165,28 @@ export function CategoryRow({
           {category.name}
         </span>
 
+        <select
+          data-testid={`category-default-currency-${category.id}`}
+          aria-label={`Currency for ${category.name}`}
+          title="Default currency"
+          value={pendingCurrency ?? category.defaultCurrency ?? ''}
+          onChange={(e) => void saveCurrency(e.target.value)}
+          disabled={isPending}
+          className="h-11 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-8"
+        >
+          <option value="">Main currency</option>
+          {CURRENCIES.map((code) => (
+            <option key={code} value={code}>
+              {code}
+            </option>
+          ))}
+        </select>
+
         <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon"
+            data-testid="category-rename-btn"
             onClick={() => setIsEditing(true)}
             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent transition-colors"
             aria-label="Rename category"
