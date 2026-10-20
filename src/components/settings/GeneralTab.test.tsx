@@ -375,6 +375,7 @@ describe('GeneralTab: changing the main currency', () => {
         budgetsConverted: 3,
         rateDate: '2026-10-15',
       })
+      await Promise.resolve()
     })
 
     const note = await screen.findByTestId('main-currency-budgets-note')
@@ -405,6 +406,7 @@ describe('GeneralTab: changing the main currency', () => {
         budgetsConverted: 0,
         rateDate: null,
       })
+      await Promise.resolve()
     })
 
     expect((await screen.findByTestId('main-currency-budgets-note')).textContent).toBe(
@@ -427,6 +429,7 @@ describe('GeneralTab: changing the main currency', () => {
         budgetsConverted: 1,
         rateDate: '2026-10-15',
       })
+      await Promise.resolve()
     })
 
     await screen.findByTestId('main-currency-done-btn')

@@ -168,13 +168,13 @@ async function seedMixedVault() {
   })
 }
 
-async function snapshotVault() {
-  return {
+function snapshotVault() {
+  return Promise.resolve({
     chunk: mockStore.get(OCT_CHUNK),
     budgets: mockStore.get('budgets'),
     income: mockStore.get('income'),
     main: storedMain(),
-  }
+  })
 }
 
 async function expectRefusal(

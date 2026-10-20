@@ -1,9 +1,12 @@
-// No CONTRACT_GAPs: props and testids for TransactionsTable and ExpenseRowEditor
-// are fully specified in the Interface Contract; the required mainCurrency prop
-// and the EntryAmount cell (data-testid="entry-amount") come from the
-// EntryAmount contract.
+// No CONTRACT_GAPs: props and testids for TransactionsTable are fully specified
+// in the Interface Contract; the required mainCurrency prop and the EntryAmount
+// cell (data-testid="entry-amount") come from the EntryAmount contract.
+//
+// The inline row editor is gone: the edit button now calls onEdit(tx), and the
+// tests of the old editor (prefill, validation, Escape, Enter, failed save) live
+// in ExpenseDrawer.test.tsx.
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Category, Currency, EntryConversion, Expense } from '@/lib/domain'
@@ -43,12 +46,12 @@ const txTransport: Expense = {
 function renderTable(
   transactions: Array<Expense>,
   overrides: Partial<{
-    onSave: any
-    onDelete: any
+    onEdit: (expense: Expense) => void
+    onDelete: (id: string, createdAt: string) => void
     mainCurrency: Currency
   }> = {},
 ) {
-  const onSave = overrides.onSave ?? vi.fn().mockResolvedValue(undefined)
+  const onEdit = overrides.onEdit ?? vi.fn<(expense: Expense) => void>()
   const onDelete = overrides.onDelete ?? vi.fn()
   const utils = render(
     <TransactionsTable
@@ -58,11 +61,11 @@ function renderTable(
       isError={false}
       isDeleting={false}
       mainCurrency={overrides.mainCurrency ?? 'UAH'}
-      onSave={onSave}
+      onEdit={onEdit}
       onDelete={onDelete}
     />,
   )
-  return { ...utils, onSave, onDelete }
+  return { ...utils, onEdit, onDelete }
 }
 
 function conversion(overrides: Partial<EntryConversion> = {}): EntryConversion {
@@ -133,285 +136,94 @@ describe('TransactionsTable amount cell', () => {
   })
 })
 
-describe('TransactionsTable inline row editing', () => {
-  describe('criterion 6: entering edit mode', () => {
-    it("turns the clicked row into an editor prefilled with that row's own values", () => {
-      renderTable([txFood, txTransport])
+describe('TransactionsTable edit button', () => {
+  it('calls onEdit with the expense of the clicked row', () => {
+    const { onEdit } = renderTable([txFood, txTransport])
 
-      const editButtons = screen.getAllByTestId('transaction-edit-button')
-      fireEvent.click(editButtons[0])
+    fireEvent.click(screen.getAllByTestId('transaction-edit-button')[0])
 
-      expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-date-input').value,
-      ).toBe('2026-03-15')
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
-      ).toBe('12.5')
-      expect(
-        screen.getByTestId<HTMLSelectElement>('edit-currency-select').value,
-      ).toBe('UAH')
-      expect(
-        screen.getByTestId<HTMLSelectElement>('edit-category-select').value,
-      ).toBe('cat-food')
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-description-input').value,
-      ).toBe('Lunch')
-    })
-
-    it('prefills a different row with its own (different) values, proving the editor is not hardcoded', () => {
-      renderTable([txFood, txTransport])
-
-      const editButtons = screen.getAllByTestId('transaction-edit-button')
-      fireEvent.click(editButtons[1])
-
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-date-input').value,
-      ).toBe('2026-04-02')
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
-      ).toBe('40')
-      expect(
-        screen.getByTestId<HTMLSelectElement>('edit-currency-select').value,
-      ).toBe('USD')
-      expect(
-        screen.getByTestId<HTMLSelectElement>('edit-category-select').value,
-      ).toBe('cat-transport')
-    })
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith(txFood)
   })
 
-  describe('criterion 6: only one row can be edited at a time', () => {
-    it('exits edit mode on the first row, without saving it, when Edit is clicked on a second row', () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood, txTransport], { onSave })
+  it('calls onEdit with the expense of another row', () => {
+    const { onEdit } = renderTable([txFood, txTransport])
 
-      const editButtons = screen.getAllByTestId('transaction-edit-button')
-      fireEvent.click(editButtons[0])
-      expect(screen.getAllByTestId('transaction-edit-row')).toHaveLength(1)
+    fireEvent.click(screen.getAllByTestId('transaction-edit-button')[1])
 
-      // Clicking Edit on the remaining read-only row's Edit button.
-      const remainingEditButtons = screen.getAllByTestId(
-        'transaction-edit-button',
-      )
-      fireEvent.click(remainingEditButtons[0])
-
-      // Still exactly one editor row, now prefilled with the second transaction.
-      expect(screen.getAllByTestId('transaction-edit-row')).toHaveLength(1)
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
-      ).toBe('40')
-      expect(onSave).not.toHaveBeenCalled()
-    })
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith(txTransport)
   })
 
-  describe('criterion 8: invalid input shows an inline error and does not save', () => {
-    it('shows an inline error for a non-positive amount and does not call onSave', () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
+  it('has an accessible name', () => {
+    renderTable([txFood])
 
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '0' },
-      })
-      fireEvent.click(screen.getByTestId('edit-save-button'))
-
-      expect(screen.getByTestId('edit-error-amount').textContent).toMatch(
-        /greater than 0/i,
-      )
-      expect(onSave).not.toHaveBeenCalled()
-      // Row stays in edit mode with the entered (invalid) value intact.
-      expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
-      ).toBe('0')
-    })
-
-    it('shows the same inline error for another non-positive amount, proving validation is not a one-off check', () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
-
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '-5' },
-      })
-      fireEvent.click(screen.getByTestId('edit-save-button'))
-
-      expect(screen.getByTestId('edit-error-amount').textContent).toMatch(
-        /greater than 0/i,
-      )
-      expect(onSave).not.toHaveBeenCalled()
-    })
+    expect(
+      screen.getByTestId('transaction-edit-button').getAttribute('aria-label'),
+    ).toBe('Edit transaction')
   })
 
-  describe('criterion 7: Escape reverts the row without saving', () => {
-    it('restores the read-only row and discards edits on Escape', () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
+  it('never turns the row into an inline editor', () => {
+    renderTable([txFood, txTransport])
 
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '999' },
-      })
-      fireEvent.keyDown(screen.getByTestId('edit-amount-input'), {
-        key: 'Escape',
-        code: 'Escape',
-      })
+    fireEvent.click(screen.getAllByTestId('transaction-edit-button')[0])
 
-      expect(screen.queryByTestId('transaction-edit-row')).toBeNull()
-      expect(screen.getByTestId('transaction-edit-button')).toBeTruthy()
-      expect(onSave).not.toHaveBeenCalled()
-      // Original (unedited) amount is still shown in the read-only row.
-      expect(screen.getByTestId('transaction-row').textContent).toContain(
-        fmt2(12.5),
-      )
-      expect(screen.getByTestId('transaction-row').textContent).not.toContain(
-        fmt2(999),
-      )
-    })
+    expect(screen.queryByTestId('transaction-edit-row')).toBeNull()
+    for (const id of [
+      'edit-date-input',
+      'edit-amount-input',
+      'edit-currency-select',
+      'edit-category-select',
+      'edit-description-input',
+      'edit-save-button',
+      'edit-cancel-button',
+      'edit-error-amount',
+    ]) {
+      expect(screen.queryByTestId(id)).toBeNull()
+    }
+    expect(screen.getAllByTestId('transaction-row')).toHaveLength(2)
   })
 
-  describe('criterion 7 & 9: Enter saves with the Zod-parsed values', () => {
-    it('calls onSave with the parsed values, keyed by id and originalCreatedAt, when Enter is pressed', async () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
+  it('keeps the delete buttons enabled after an edit click', () => {
+    renderTable([txFood, txTransport])
 
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '42.5' },
-      })
-      fireEvent.keyDown(screen.getByTestId('edit-amount-input'), {
-        key: 'Enter',
-        code: 'Enter',
-      })
+    fireEvent.click(screen.getAllByTestId('transaction-edit-button')[0])
 
-      await waitFor(() => {
-        expect(onSave).toHaveBeenCalledTimes(1)
-      })
-      expect(onSave).toHaveBeenCalledWith(
-        'tx-1',
-        '2026-03-15T12:00:00.000Z',
-        expect.objectContaining({
-          amount: 42.5,
-          currency: 'UAH',
-          categoryId: 'cat-food',
-          description: 'Lunch',
-          createdAt: '2026-03-15T12:00:00.000Z',
-        }),
-      )
-    })
-
-    it('calls onSave via the Save button with a different amount, producing a different parsed payload', async () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
-
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '7.25' },
-      })
-      fireEvent.click(screen.getByTestId('edit-save-button'))
-
-      await waitFor(() => {
-        expect(onSave).toHaveBeenCalledTimes(1)
-      })
-      expect(onSave).toHaveBeenCalledWith(
-        'tx-1',
-        '2026-03-15T12:00:00.000Z',
-        expect.objectContaining({ amount: 7.25 }),
-      )
-    })
-
-    it('calls onSave with the new categoryId when the edit-category-select value is changed', async () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
-
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-category-select'), {
-        target: { value: 'cat-transport' },
-      })
-      fireEvent.click(screen.getByTestId('edit-save-button'))
-
-      await waitFor(() => {
-        expect(onSave).toHaveBeenCalledTimes(1)
-      })
-      expect(onSave).toHaveBeenCalledWith(
-        'tx-1',
-        '2026-03-15T12:00:00.000Z',
-        expect.objectContaining({ categoryId: 'cat-transport' }),
-      )
-    })
+    const deleteButtons = screen.getAllByTestId<HTMLButtonElement>(
+      'transaction-delete-button',
+    )
+    expect(deleteButtons).toHaveLength(2)
+    expect(deleteButtons[0].disabled).toBe(false)
+    expect(deleteButtons[1].disabled).toBe(false)
   })
 
-  describe('criterion 9: a successful save returns the row to read-only mode', () => {
-    it('exits edit mode once the onSave promise resolves', async () => {
-      const onSave = vi.fn().mockResolvedValue(undefined)
-      renderTable([txFood], { onSave })
+  it('does not call onDelete when editing', () => {
+    const { onDelete } = renderTable([txFood])
 
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.click(screen.getByTestId('edit-save-button'))
+    fireEvent.click(screen.getByTestId('transaction-edit-button'))
 
-      await waitFor(() => {
-        expect(screen.queryByTestId('transaction-edit-row')).toBeNull()
-      })
-      expect(screen.getByTestId('transaction-edit-button')).toBeTruthy()
-    })
+    expect(onDelete).not.toHaveBeenCalled()
   })
 
-  describe('criterion 10: a failed save keeps the row editable', () => {
-    it('stays in edit mode with the entered values when onSave rejects', async () => {
-      const onSave = vi.fn().mockRejectedValue(new Error('network down'))
-      renderTable([txFood], { onSave })
+  it('disables the delete buttons while a delete runs, but not the edit buttons', () => {
+    render(
+      <TransactionsTable
+        transactions={[txFood]}
+        categories={categories}
+        isLoading={false}
+        isError={false}
+        isDeleting
+        mainCurrency="UAH"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
 
-      fireEvent.click(screen.getByTestId('transaction-edit-button'))
-      fireEvent.change(screen.getByTestId('edit-amount-input'), {
-        target: { value: '55' },
-      })
-      fireEvent.click(screen.getByTestId('edit-save-button'))
-
-      await waitFor(() => {
-        expect(onSave).toHaveBeenCalledTimes(1)
-      })
-      expect(screen.getByTestId('transaction-edit-row')).toBeTruthy()
-      expect(
-        screen.getByTestId<HTMLInputElement>('edit-amount-input').value,
-      ).toBe('55')
-    })
-  })
-
-  describe('criterion 11: Delete is disabled only on the row currently in edit mode', () => {
-    it("disables the editing row's Delete button while other rows stay enabled", () => {
-      renderTable([txFood, txTransport])
-
-      const editButtons = screen.getAllByTestId('transaction-edit-button')
-      fireEvent.click(editButtons[0])
-
-      const deleteButtons = screen.getAllByTestId('transaction-delete-button')
-      expect(deleteButtons).toHaveLength(2)
-      expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true)
-      expect((deleteButtons[1] as HTMLButtonElement).disabled).toBe(false)
-    })
-
-    it('re-enables the Delete button once the row exits edit mode via Escape', () => {
-      renderTable([txFood, txTransport])
-
-      const editButtons = screen.getAllByTestId('transaction-edit-button')
-      fireEvent.click(editButtons[0])
-      expect(
-        (
-          screen.getAllByTestId(
-            'transaction-delete-button',
-          )[0] as HTMLButtonElement
-        ).disabled,
-      ).toBe(true)
-
-      fireEvent.keyDown(screen.getByTestId('edit-amount-input'), {
-        key: 'Escape',
-        code: 'Escape',
-      })
-
-      const deleteButtonsAfter = screen.getAllByTestId(
-        'transaction-delete-button',
-      )
-      expect((deleteButtonsAfter[0] as HTMLButtonElement).disabled).toBe(false)
-    })
+    expect(
+      screen.getByTestId<HTMLButtonElement>('transaction-delete-button').disabled,
+    ).toBe(true)
+    expect(
+      screen.getByTestId<HTMLButtonElement>('transaction-edit-button').disabled,
+    ).toBe(false)
   })
 })

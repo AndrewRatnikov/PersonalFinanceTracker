@@ -9,15 +9,27 @@
 // skipRecurringOccurrence (the dashboard now renders RecurringDashboardSection
 // and a repeat-aware Quick Add). Dates for the section tests are built from the
 // real clock (today, +2 days) so they hold on any day.
+//
+// Fast-entry additions: the localDb mock gains deleteExpense and updateExpense
+// (the dashboard now renders the repeat-last row and the ExpenseDrawer).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import dayjs from 'dayjs'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type * as ReactRouter from '@tanstack/react-router'
 
-import type { RecurringItem } from '@/lib/domain'
+import type { Expense, RecurringItem } from '@/lib/domain'
 import {
   addExpense,
   addRepeatingExpense,
@@ -47,6 +59,8 @@ vi.mock('@/lib/localDb', () => ({
   getAllIncome: vi.fn(),
   getAllBudgets: vi.fn(),
   addExpense: vi.fn(),
+  deleteExpense: vi.fn(),
+  updateExpense: vi.fn(),
   getAllRecurring: vi.fn(),
   getAllIncomeCategories: vi.fn(),
   addRepeatingExpense: vi.fn(),
@@ -367,5 +381,145 @@ describe('index route: repeat-aware Quick Add', () => {
       ).toBe('')
     })
     expect(vi.mocked(getAllRecurring).mock.calls.length).toBe(callsBefore)
+  })
+})
+
+describe('index route: repeat-last row', () => {
+  function recent(overrides: Partial<Expense> = {}): Expense {
+    return {
+      id: 'x1',
+      amount: 30,
+      currency: 'UAH',
+      categoryId: 'c1',
+      description: 'Lunch',
+      createdAt: new Date().toISOString(),
+      ...overrides,
+    }
+  }
+
+  async function renderWith(
+    expenses: Array<Expense>,
+    categories: Array<typeof FOOD> = [FOOD],
+  ) {
+    vi.mocked(getAllCategories).mockResolvedValue(categories)
+    vi.mocked(getExpensesForRange).mockResolvedValue(expenses)
+    vi.mocked(addExpense).mockImplementation((input) =>
+      Promise.resolve({
+        ...input,
+        id: 'new1',
+        createdAt: '2026-10-20T08:15:00.000Z',
+      }),
+    )
+    setVaultPhase('unlocked')
+    renderIndex()
+    await screen.findByTestId('dashboard-summary')
+    await waitFor(() => expect(getExpensesForRange).toHaveBeenCalled())
+  }
+
+  it('shows a chip for a recent expense, above Quick Add', async () => {
+    await renderWith([recent()])
+
+    const chip = await screen.findByTestId('repeat-last-chip')
+    expect(chip.textContent).toBe('🍔 Lunch · 30 UAH')
+    const row = screen.getByTestId('repeat-last-row')
+    const quickAdd = screen.getByTestId('speed-entry-form')
+    expect(
+      row.compareDocumentPosition(quickAdd) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('shows one chip per distinct recent expense, at most 3', async () => {
+    await renderWith([
+      recent({ id: 'a', description: 'A', amount: 1 }),
+      recent({ id: 'b', description: 'B', amount: 2 }),
+      recent({ id: 'c', description: 'C', amount: 3 }),
+      recent({ id: 'd', description: 'D', amount: 4 }),
+      recent({ id: 'e', description: 'A', amount: 1 }),
+    ])
+
+    await screen.findByTestId('repeat-last-row')
+    expect(screen.getAllByTestId('repeat-last-chip')).toHaveLength(3)
+  })
+
+  it('shows no row when there are no expenses', async () => {
+    await renderWith([])
+
+    expect(screen.queryByTestId('repeat-last-row')).toBeNull()
+  })
+
+  it('shows no row when the only recent expense came from a recurring item', async () => {
+    await renderWith([recent({ recurringId: 'r1' })])
+
+    expect(screen.queryByTestId('repeat-last-row')).toBeNull()
+  })
+
+  it('shows no row when there are no categories', async () => {
+    await renderWith([recent()], [])
+
+    expect(screen.queryByTestId('repeat-last-row')).toBeNull()
+  })
+
+  it('a tap adds the expense and toasts', async () => {
+    await renderWith([recent()])
+
+    fireEvent.click(await screen.findByTestId('repeat-last-chip'))
+
+    await waitFor(() => expect(addExpense).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(addExpense).mock.calls[0][0]).toEqual({
+      amount: 30,
+      currency: 'UAH',
+      categoryId: 'c1',
+      description: 'Lunch',
+    })
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        'Added Lunch · 30 UAH',
+        expect.anything(),
+      )
+    })
+  })
+
+  it('"…" opens the drawer on the dashboard, prefilled, and adds nothing', async () => {
+    await renderWith([recent({ amount: 45, description: 'Dinner' })])
+
+    fireEvent.click(await screen.findByTestId('repeat-last-more'))
+
+    const drawer = await screen.findByTestId('expense-drawer')
+    expect(drawer.getAttribute('data-mode')).toBe('add')
+    expect(screen.getByTestId<HTMLInputElement>('drawer-amount').value).toBe('45')
+    expect(screen.getByTestId<HTMLInputElement>('drawer-description').value).toBe(
+      'Dinner',
+    )
+    const group = within(screen.getByTestId('drawer-category-group'))
+    expect(group.getByRole('radio', { checked: true }).textContent).toContain('Food')
+    expect(addExpense).not.toHaveBeenCalled()
+  })
+
+  it('the drawer is closed by Cancel and saves like the drawer on Transactions', async () => {
+    await renderWith([recent()])
+    expect(screen.queryByTestId('expense-drawer')).toBeNull()
+
+    fireEvent.click(await screen.findByTestId('repeat-last-more'))
+    await screen.findByTestId('expense-drawer')
+    fireEvent.click(screen.getByTestId('drawer-cancel'))
+    await waitFor(() => {
+      expect(screen.queryByTestId('expense-drawer')).toBeNull()
+    })
+    expect(addExpense).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('repeat-last-more'))
+    await screen.findByTestId('expense-drawer')
+    fireEvent.change(screen.getByTestId('drawer-amount'), { target: { value: '31' } })
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    await waitFor(() => expect(addExpense).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(addExpense).mock.calls[0][0]).toMatchObject({
+      amount: 31,
+      categoryId: 'c1',
+      description: 'Lunch',
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('expense-drawer')).toBeNull()
+    })
   })
 })

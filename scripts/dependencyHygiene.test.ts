@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 interface LockEntry {
   version?: string
   name?: string
+  dev?: boolean
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
 }
@@ -184,5 +185,28 @@ describe('nitro nightly pin', () => {
   it('equals the version locked at node_modules/nitro', () => {
     expect(match?.[1]).toBeDefined()
     expect(lock.packages['node_modules/nitro'].version).toBe(match?.[1])
+  })
+})
+
+describe('shadcn is a build-time dependency', () => {
+  it('is a devDependency of package.json, not a runtime dependency', () => {
+    expect(pkg.dependencies?.shadcn).toBeUndefined()
+    expect(pkg.devDependencies?.shadcn).toBeDefined()
+  })
+
+  it('is a dev dependency in the lockfile root entry', () => {
+    const root = lock.packages['']
+    expect(root.dependencies?.shadcn).toBeUndefined()
+    expect(root.devDependencies?.shadcn).toBeDefined()
+  })
+
+  it('the locked shadcn package is marked dev', () => {
+    expect(lock.packages['node_modules/shadcn'].dev).toBe(true)
+  })
+
+  it('the lock and package.json ask for the same shadcn range', () => {
+    expect(lock.packages[''].devDependencies?.shadcn).toBe(
+      pkg.devDependencies?.shadcn,
+    )
   })
 })

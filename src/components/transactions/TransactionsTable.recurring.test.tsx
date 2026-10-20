@@ -1,7 +1,7 @@
 // No CONTRACT_GAPs: transaction-recurring-icon, its title and the optional
 // recurringId / occurrenceDate fields are specified in the Interface Contract
 // (component changes: TransactionsTable). The required mainCurrency prop comes
-// from the EntryAmount contract.
+// from the EntryAmount contract; the onSave prop is replaced by onEdit.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -36,7 +36,7 @@ function renderTable(transactions: Array<Expense>) {
       isError={false}
       isDeleting={false}
       mainCurrency="UAH"
-      onSave={vi.fn().mockResolvedValue(undefined)}
+      onEdit={vi.fn()}
       onDelete={vi.fn()}
     />,
   )
