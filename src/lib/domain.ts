@@ -42,6 +42,8 @@ export interface Category {
   icon?: string | null
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** Preselected currency when this category is chosen; absent = main currency. */
+  defaultCurrency?: Currency
 }
 
 export interface Expense {
@@ -190,6 +192,8 @@ export interface UpdateCategoryInput {
   id: string
   name: string
   icon?: string | null
+  /** undefined = keep, null = remove, Currency = set. */
+  defaultCurrency?: Currency | null
 }
 
 export interface UpdateExpenseInput {
