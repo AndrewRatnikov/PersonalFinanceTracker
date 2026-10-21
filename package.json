@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:precache": "vite build && PRECACHE_BUILD_CHECK=1 vitest run scripts/precacheCheck.test.ts",
+    "i18n:review": "node scripts/i18n-review.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier",
