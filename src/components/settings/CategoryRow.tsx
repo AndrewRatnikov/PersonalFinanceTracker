@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
 import type { Category, Currency } from '../../lib/domain'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { CURRENCIES, isCurrency } from '@/lib/domain'
 import {
   deleteCategory,
@@ -43,6 +45,7 @@ export function CategoryRow({
   const [isPending, setIsPending] = useState(false)
   // The value just picked in the currency select, shown while it saves.
   const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
+  const { t } = useT()
 
   const update = kind === 'income' ? updateIncomeCategory : updateCategory
 
@@ -57,8 +60,8 @@ export function CategoryRow({
       })
       onMutate()
       setIsEditing(false)
-    } catch (e: any) {
-      onError(e?.message ?? 'Failed to update category')
+    } catch (e: unknown) {
+      onError(errorMessage(e))
     } finally {
       setIsPending(false)
     }
@@ -77,8 +80,8 @@ export function CategoryRow({
         defaultCurrency: next,
       })
       onMutate()
-    } catch (e: any) {
-      onError(e?.message ?? 'Failed to update category')
+    } catch (e: unknown) {
+      onError(errorMessage(e))
     } finally {
       setIsPending(false)
       setPendingCurrency(null)
@@ -91,8 +94,8 @@ export function CategoryRow({
       const del = kind === 'income' ? deleteIncomeCategory : deleteCategory
       await del(category.id)
       onMutate()
-    } catch (e: any) {
-      onError(e?.message ?? 'Failed to delete category')
+    } catch (e: unknown) {
+      onError(errorMessage(e))
     } finally {
       setIsPending(false)
     }
@@ -106,7 +109,7 @@ export function CategoryRow({
             autoFocus
             type="text"
             data-testid="category-edit-name"
-            aria-label="Category name"
+            aria-label={t('settings.categories.name')}
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             maxLength={40}
@@ -116,8 +119,8 @@ export function CategoryRow({
             type="text"
             value={editIcon}
             onChange={(e) => setEditIcon(e.target.value)}
-            placeholder="icon"
-            aria-label="Category icon"
+            placeholder={t('settings.categories.iconShort')}
+            aria-label={t('settings.categories.icon')}
             className="w-16 bg-transparent border-none text-muted-foreground text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-auto p-0 text-center"
           />
           <div className="flex items-center gap-1">
@@ -125,7 +128,7 @@ export function CategoryRow({
               variant="ghost"
               size="icon"
               data-testid="category-edit-save"
-              aria-label="Save category"
+              aria-label={t('settings.categories.save')}
               onClick={save}
               disabled={isPending || !editName.trim()}
               className="h-8 w-8 text-primary hover:text-primary/80 hover:bg-transparent"
@@ -136,7 +139,7 @@ export function CategoryRow({
               variant="ghost"
               size="icon"
               onClick={() => setIsEditing(false)}
-              aria-label="Cancel renaming"
+              aria-label={t('settings.categories.cancelRename')}
               className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-transparent"
             >
               <X size={16} />
@@ -167,14 +170,14 @@ export function CategoryRow({
 
         <select
           data-testid={`category-default-currency-${category.id}`}
-          aria-label={`Currency for ${category.name}`}
-          title="Default currency"
+          aria-label={t('settings.categories.currencyFor', { name: category.name })}
+          title={t('settings.categories.defaultCurrency')}
           value={pendingCurrency ?? category.defaultCurrency ?? ''}
           onChange={(e) => void saveCurrency(e.target.value)}
           disabled={isPending}
           className="h-11 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-8"
         >
-          <option value="">Main currency</option>
+          <option value="">{t('settings.general.mainCurrency')}</option>
           {CURRENCIES.map((code) => (
             <option key={code} value={code}>
               {code}
@@ -189,7 +192,7 @@ export function CategoryRow({
             data-testid="category-rename-btn"
             onClick={() => setIsEditing(true)}
             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent transition-colors"
-            aria-label="Rename category"
+            aria-label={t('settings.categories.rename')}
           >
             <Pencil size={14} />
           </Button>
@@ -201,29 +204,28 @@ export function CategoryRow({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
-                aria-label="Delete category"
+                aria-label={t('settings.categories.delete')}
               >
                 <Trash2 size={14} />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete Category</AlertDialogTitle>
+                <AlertDialogTitle>{t('settings.categories.deleteTitle')}</AlertDialogTitle>
                 <AlertDialogDescription data-testid="category-delete-description">
-                  Are you sure you want to delete{' '}
-                  <strong>{category.name}</strong>? A category that is still
-                  used by {kind === 'income' ? 'income entries' : 'expenses'}{' '}
-                  cannot be deleted.
+                  {kind === 'income'
+                    ? t('settings.categories.deleteIncomeQuestion', { name: category.name })
+                    : t('settings.categories.deleteExpenseQuestion', { name: category.name })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   data-testid="category-delete-confirm"
                   onClick={remove}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
-                  Delete
+                  {t('common.delete')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
