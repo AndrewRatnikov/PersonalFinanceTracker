@@ -10,6 +10,9 @@ import type {
   QuickRepeat,
 } from '@/lib/domain'
 import type { DescriptionSuggestion, SuggestionEntry } from '@/lib/suggestions'
+import { useT } from '@/i18n'
+import { errorMessage, validationMessage } from '@/i18n/errors'
+import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { addIncome, addRepeatingIncome } from '@/lib/localDb'
@@ -59,6 +62,7 @@ export function AddIncomeForm({
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
+  const { t } = useT()
 
   // The first category is the default, even when the list arrives later or
   // the selected one disappears.
@@ -106,11 +110,11 @@ export function AddIncomeForm({
       if (unit !== 'none') {
         void queryClient.invalidateQueries({ queryKey: ['recurring'] })
       }
-      toast.success('Income saved')
+      toast.success(t('toasts.incomeSaved'))
       onSuccess()
     },
-    onError: (error: any) => {
-      toast.error(`Failed to save income: ${error.message}`)
+    onError: (error: unknown) => {
+      toast.error(t('toasts.incomeSaveFailed', { error: errorMessage(error) }))
     },
   })
 
@@ -144,7 +148,7 @@ export function AddIncomeForm({
         <CardContent className="pt-5 pb-5 flex flex-col gap-4">
           <div className="space-y-2">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Amount
+              {t('common.amount')}
             </Label>
             <div
               className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}
@@ -156,7 +160,7 @@ export function AddIncomeForm({
                 min="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={formatAmount(0)}
                 disabled={mutation.isPending}
                 className="flex-1 h-full bg-transparent px-3 text-2xl font-bold outline-none
                   [appearance:textfield]
@@ -171,7 +175,7 @@ export function AddIncomeForm({
               >
                 <SelectTrigger
                   data-testid="income-form-currency"
-                  aria-label="Currency"
+                  aria-label={t('common.currency')}
                   className="w-[88px] h-full border-0 shadow-none rounded-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-semibold bg-transparent"
                 >
                   <SelectValue />
@@ -186,7 +190,7 @@ export function AddIncomeForm({
               </Select>
             </div>
             {errors.amount && (
-              <p className="text-xs text-destructive">{errors.amount}</p>
+              <p className="text-xs text-destructive">{validationMessage(errors.amount)}</p>
             )}
           </div>
 
@@ -195,7 +199,7 @@ export function AddIncomeForm({
               htmlFor="income-category"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Category
+              {t('common.category')}
             </Label>
             {categories.length === 0 ? (
               <Link
@@ -204,7 +208,7 @@ export function AddIncomeForm({
                 data-testid="income-form-no-categories"
                 className="block text-sm text-primary underline underline-offset-4"
               >
-                Add income categories in Settings → Categories
+                {t('income.noCategoriesLink')}
               </Link>
             ) : (
               <Select
@@ -217,7 +221,7 @@ export function AddIncomeForm({
                   data-testid="income-form-category"
                   className={`h-11 ${errors.categoryId ? 'border-destructive' : ''}`}
                 >
-                  <SelectValue placeholder="Select a category">
+                  <SelectValue placeholder={t('income.selectCategory')}>
                     {selectedCategory && (
                       <span className="flex items-center gap-2">
                         {selectedCategory.icon && (
@@ -249,7 +253,7 @@ export function AddIncomeForm({
                 data-testid="income-form-category-error"
                 className="text-xs text-destructive"
               >
-                {errors.categoryId}
+                {validationMessage(errors.categoryId)}
               </p>
             )}
           </div>
@@ -259,9 +263,9 @@ export function AddIncomeForm({
               htmlFor="income-description"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Description{' '}
+              {t('common.description')}{' '}
               <span className="normal-case font-normal opacity-50">
-                (optional)
+                {t('common.optional')}
               </span>
             </Label>
             <DescriptionSuggestInput
@@ -272,7 +276,7 @@ export function AddIncomeForm({
               entries={entries}
               categoryId={categoryId || undefined}
               onPick={handlePick}
-              placeholder="e.g. March salary"
+              placeholder={t('income.descriptionPlaceholder')}
               disabled={mutation.isPending}
               className={errors.description ? 'border-destructive' : ''}
             />
@@ -284,7 +288,7 @@ export function AddIncomeForm({
               htmlFor="income-repeat-select"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Repeat
+              {t('common.repeat.label')}
             </Label>
             <select
               id="income-repeat-select"
@@ -294,10 +298,10 @@ export function AddIncomeForm({
               disabled={mutation.isPending}
               className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
-              <option value="none">Don't repeat</option>
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
-              <option value="year">Yearly</option>
+              <option value="none">{t('common.repeat.none')}</option>
+              <option value="week">{t('common.repeat.week')}</option>
+              <option value="month">{t('common.repeat.month')}</option>
+              <option value="year">{t('common.repeat.year')}</option>
             </select>
           </div>
 
@@ -307,7 +311,7 @@ export function AddIncomeForm({
             disabled={mutation.isPending}
             className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
           >
-            {mutation.isPending ? 'Saving…' : 'Save Income'}
+            {mutation.isPending ? t('common.saving') : t('income.save')}
           </Button>
         </CardContent>
       </form>
