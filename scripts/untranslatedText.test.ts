@@ -128,7 +128,7 @@ describe('findUntranslatedText: attributes', () => {
     ['digits', '<button aria-label="123" />'],
     ['the brand', '<button aria-label="MinimaSpend" />'],
     ['a currency code', '<button title="UAH" />'],
-    ['an unrelated attribute', '<button className="btn primary" type="button" data-testid="x" />'],
+    ['an unrelated attribute', '<button className="btn primary" type="button" id="x" />'],
     ['a link target', '<a href="/settings">{t("nav.settings")}</a>'],
   ])('does not report %s', (_name, body) => {
     expect(findUntranslatedText(component(body))).toEqual([])
