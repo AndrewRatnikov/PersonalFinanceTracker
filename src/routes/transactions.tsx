@@ -5,6 +5,8 @@ import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { TransactionsSearch } from '@/lib/expenseDraft'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   drawerInitialFromSearch,
@@ -37,6 +39,7 @@ function Transactions() {
   const pageSize = 15
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const { t } = useT()
   // No loading gate: amounts fall back to the default main currency.
   const mainCurrency =
     useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
@@ -87,10 +90,10 @@ function Transactions() {
       deleteExpense(id, createdAt),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
-      toast.success('Transaction deleted')
+      toast.success(t('toasts.transactionDeleted'))
     },
-    onError: (error: any) => {
-      toast.error(`Failed to delete: ${error.message}`)
+    onError: (error: unknown) => {
+      toast.error(t('toasts.deleteFailedWith', { error: errorMessage(error) }))
     },
   })
 
@@ -123,9 +126,9 @@ function Transactions() {
     if (editId === undefined || !expensesLoaded || editFound) return
     if (judgedEditRef.current === editId) return
     judgedEditRef.current = editId
-    toast.error('Transaction not found')
+    toast.error(t('toasts.transactionNotFound'))
     void navigate({ search: {}, replace: true })
-  }, [editId, editFound, expensesLoaded, navigate])
+  }, [editId, editFound, expensesLoaded, navigate, t])
 
   const openAdd = () => {
     void navigate({ search: { add: 'expense' } })
@@ -156,11 +159,9 @@ function Transactions() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div className="space-y-1">
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              Transactions
+              {t('transactions.title')}
             </h2>
-            <p className="text-muted-foreground">
-              Manage and review your recent spending history.
-            </p>
+            <p className="text-muted-foreground">{t('transactions.subtitle')}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -178,7 +179,7 @@ function Transactions() {
               className="min-h-11 sm:min-h-9"
             >
               <Plus />
-              Add transaction
+              {t('drawer.addTitle')}
             </Button>
           </div>
         </div>
@@ -217,7 +218,7 @@ function Transactions() {
         type="button"
         size="icon"
         data-testid="transactions-add-fab"
-        aria-label="Add transaction"
+        aria-label={t('drawer.addTitle')}
         onClick={openAdd}
         className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 h-14 w-14 rounded-full shadow-lg sm:hidden"
       >
