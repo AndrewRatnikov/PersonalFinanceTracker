@@ -7,6 +7,9 @@ import type {
   QuickRepeat,
 } from '@/lib/domain'
 import type { DescriptionSuggestion, SuggestionEntry } from '@/lib/suggestions'
+import { useT } from '@/i18n'
+import { validationMessage } from '@/i18n/errors'
+import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { Label } from '@/components/ui/label'
@@ -56,6 +59,7 @@ export default function SpeedEntryForm({
   const [description, setDescription] = useState('')
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const { t } = useT()
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault()
@@ -73,6 +77,7 @@ export default function SpeedEntryForm({
       for (const issue of result.error.issues) {
         const key = issue.path[0] as string
         if (!fieldErrors[key]) fieldErrors[key] = issue.message
+
       }
       setErrors(fieldErrors)
       return
@@ -117,7 +122,7 @@ export default function SpeedEntryForm({
               htmlFor="amount"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Amount
+              {t('common.amount')}
             </Label>
             <div
               className={`flex items-center h-12 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 overflow-hidden ${errors.amount ? 'border-destructive' : 'border-input'}`}
@@ -130,7 +135,7 @@ export default function SpeedEntryForm({
                 min="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={formatAmount(0)}
                 disabled={isPending}
                 className="flex-1 h-full bg-transparent px-3 text-2xl font-bold outline-none
                   [appearance:textfield]
@@ -139,7 +144,7 @@ export default function SpeedEntryForm({
               />
             </div>
             {errors.amount && (
-              <p className="text-xs text-destructive">{errors.amount}</p>
+              <p className="text-xs text-destructive">{validationMessage(errors.amount)}</p>
             )}
             <CurrencyPicker
               testIdPrefix="speed-entry"
@@ -155,7 +160,7 @@ export default function SpeedEntryForm({
               htmlFor="category"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Category
+              {t('common.category')}
             </Label>
             <select
               id="category"
@@ -173,7 +178,7 @@ export default function SpeedEntryForm({
               ))}
             </select>
             {errors.categoryId && (
-              <p className="text-xs text-destructive">{errors.categoryId}</p>
+              <p className="text-xs text-destructive">{validationMessage(errors.categoryId)}</p>
             )}
           </div>
 
@@ -183,9 +188,9 @@ export default function SpeedEntryForm({
               htmlFor="description"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Description{' '}
+              {t('common.description')}{' '}
               <span className="normal-case font-normal opacity-50">
-                (optional)
+                {t('common.optional')}
               </span>
             </Label>
             <DescriptionSuggestInput
@@ -196,7 +201,7 @@ export default function SpeedEntryForm({
               entries={entries}
               categoryId={categoryId || undefined}
               onPick={handlePick}
-              placeholder="e.g. coffee with team"
+              placeholder={t('dashboard.quickAdd.descriptionPlaceholder')}
               maxLength={120}
               disabled={isPending}
               className={errors.description ? 'border-destructive' : ''}
@@ -209,7 +214,7 @@ export default function SpeedEntryForm({
               htmlFor="repeat"
               className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-              Repeat
+              {t('common.repeat.label')}
             </Label>
             <select
               id="repeat"
@@ -219,10 +224,10 @@ export default function SpeedEntryForm({
               disabled={isPending}
               className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
-              <option value="none">Don't repeat</option>
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
-              <option value="year">Yearly</option>
+              <option value="none">{t('common.repeat.none')}</option>
+              <option value="week">{t('common.repeat.week')}</option>
+              <option value="month">{t('common.repeat.month')}</option>
+              <option value="year">{t('common.repeat.year')}</option>
             </select>
           </div>
 
@@ -232,7 +237,7 @@ export default function SpeedEntryForm({
             disabled={isPending}
             className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
           >
-            {isPending ? 'Saving…' : 'Save Expense'}
+            {isPending ? t('common.saving') : t('dashboard.quickAdd.save')}
           </Button>
         </CardContent>
       </form>
