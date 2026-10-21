@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 
 import type { RestoreMode, RestoreSummary } from '@/lib/backup'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import {
   defaultRestoreMode,
   formatRestoreSummary,
@@ -33,12 +35,6 @@ interface RestoreBackupDialogProps {
   onRestored?: (summary: RestoreSummary) => void
 }
 
-const UNLOCK_RULE =
-  'Use the password that was current when this backup was made, or your recovery key (unless you have generated a new one since).'
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
 
 // Restore a .minima backup (spec §7.3).
 export function RestoreBackupDialog({
@@ -55,6 +51,7 @@ export function RestoreBackupDialog({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<RestoreSummary | null>(null)
+  const { t } = useT()
 
   useEffect(() => {
     if (!open) {
@@ -97,7 +94,7 @@ export function RestoreBackupDialog({
       setSummary(result)
       onRestored?.(result)
     } catch (err) {
-      setError(errorText(err))
+      setError(errorMessage(err))
     } finally {
       setPending(false)
     }
@@ -107,16 +104,13 @@ export function RestoreBackupDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="restore-backup-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Restore from backup</AlertDialogTitle>
-          <AlertDialogDescription>
-            Choose a .minima backup file and enter the password or recovery key
-            that opens it.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t('backup.restoreFromBackup')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('backup.restore.description')}</AlertDialogDescription>
         </AlertDialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="restore-backup-file">Backup file</Label>
+            <Label htmlFor="restore-backup-file">{t('backup.restore.file')}</Label>
             <Input
               id="restore-backup-file"
               data-testid="restore-backup-file-input"
@@ -128,9 +122,7 @@ export function RestoreBackupDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="restore-backup-secret">
-              Backup password or recovery key
-            </Label>
+            <Label htmlFor="restore-backup-secret">{t('backup.restore.secret')}</Label>
             <Input
               id="restore-backup-secret"
               data-testid="restore-backup-secret-input"
@@ -144,7 +136,7 @@ export function RestoreBackupDialog({
               data-testid="restore-backup-unlock-rule"
               className="text-xs text-muted-foreground"
             >
-              {UNLOCK_RULE}
+              {t('backup.restore.unlockRule')}
             </p>
           </div>
 
@@ -153,13 +145,13 @@ export function RestoreBackupDialog({
               data-testid="restore-backup-replace-note"
               className="text-sm text-muted-foreground"
             >
-              The data on this device will be replaced by the backup.
+              {t('backup.restore.replaceNote')}
             </p>
           )}
 
           {!replaceOnly && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="restore-backup-mode">Restore mode</Label>
+              <Label htmlFor="restore-backup-mode">{t('backup.restore.mode')}</Label>
               <select
                 id="restore-backup-mode"
                 data-testid="restore-backup-mode-select"
@@ -170,8 +162,8 @@ export function RestoreBackupDialog({
                 }
                 disabled={pending}
               >
-                <option value="merge">Merge with this device</option>
-                <option value="replace">Replace data on this device</option>
+                <option value="merge">{t('backup.restore.modeMerge')}</option>
+                <option value="replace">{t('backup.restore.modeReplace')}</option>
               </select>
             </div>
           )}
@@ -190,9 +182,9 @@ export function RestoreBackupDialog({
               {formatRestoreSummary(summary)}
               {summary.skipped.length > 0 && (
                 <span className="mt-1 block text-muted-foreground">
-                  {`Not in this backup: ${summary.skipped
-                    .map(storageKeyLabel)
-                    .join(', ')}`}
+                  {t('backup.restore.notInBackup', {
+                    keys: summary.skipped.map(storageKeyLabel).join(', '),
+                  })}
                 </span>
               )}
             </p>
@@ -201,7 +193,7 @@ export function RestoreBackupDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="restore-backup-cancel">
-            {summary !== null ? 'Done' : 'Cancel'}
+            {summary !== null ? t('common.done') : t('common.cancel')}
           </AlertDialogCancel>
           {/* A plain Button, so the dialog stays open while it restores. */}
           <Button
@@ -215,7 +207,7 @@ export function RestoreBackupDialog({
             ) : (
               <Upload className="mr-2 h-4 w-4" />
             )}
-            Restore
+            {t('backup.restore.submit')}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
