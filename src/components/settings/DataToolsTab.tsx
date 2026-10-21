@@ -3,7 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatabaseBackup, Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import type { BackupSettings } from '@/lib/backupReminder'
-import type { ImportResult } from '@/lib/localImport'
+import type { ImportResult, ImportRowError } from '@/lib/localImport'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { downloadBackup } from '@/lib/backup'
 import {
   BACKUP_REMINDER_OPTIONS,
@@ -39,25 +42,20 @@ interface FileImportResult {
   error?: string
 }
 
-const CSV_LABEL = 'Readable by spreadsheets · not encrypted · not a full backup'
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-function reminderLabel(days: number): string {
-  return days === 0 ? 'Off' : `Every ${days} days`
-}
-
-function duplicatesNotice(count: number): string {
-  return count === 1
-    ? '1 row looked like a duplicate and was skipped.'
-    : `${count} rows looked like duplicates and were skipped.`
+const ROW_ERROR_KEYS: Record<ImportRowError['code'], MessageKey> = {
+  'missing-name': 'settings.data.rowErrors.missingName',
+  'missing-source': 'settings.data.rowErrors.missingSource',
+  'invalid-amount': 'settings.data.rowErrors.invalidAmount',
+  'invalid-currency': 'settings.data.rowErrors.invalidCurrency',
+  'unknown-category': 'settings.data.rowErrors.unknownCategory',
+  'invalid-date': 'settings.data.rowErrors.invalidDate',
+  'invalid-limit': 'settings.data.rowErrors.invalidLimit',
 }
 
 export function DataToolsTab() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { t, plural } = useT()
 
   const [backupPending, setBackupPending] = useState(false)
   const [restoreOpen, setRestoreOpen] = useState(false)
@@ -85,12 +83,12 @@ export function DataToolsTab() {
     try {
       const result = await downloadBackup()
       if (result.status === 'saved') {
-        toast.success('Backup saved')
+        toast.success(t('toasts.backupSaved'))
         invalidateBackupQueries()
       }
     } catch (err) {
       if (isDecryptError(err)) reportDataProblem(err)
-      toast.error(`Could not download the backup: ${errorText(err)}`)
+      toast.error(t('toasts.backupDownloadFailed', { error: errorMessage(err) }))
     } finally {
       setBackupPending(false)
     }
@@ -116,7 +114,7 @@ export function DataToolsTab() {
       await exportAllLocalData()
     } catch (err) {
       console.error('Export failed:', err)
-      toast.error(`Could not export CSV: ${errorText(err)}`)
+      toast.error(t('toasts.exportFailed', { error: errorMessage(err) }))
     } finally {
       setExportPending(false)
     }
@@ -135,7 +133,7 @@ export function DataToolsTab() {
       return {
         filename: file.name,
         file,
-        error: err instanceof Error ? err.message : 'Import failed',
+        error: err instanceof Error ? errorMessage(err) : t('settings.data.importFailed'),
       }
     }
   }
@@ -171,7 +169,7 @@ export function DataToolsTab() {
       }
       void queryClient.invalidateQueries()
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed')
+      setImportError(err instanceof Error ? errorMessage(err) : t('settings.data.importFailed'))
     } finally {
       setImportPending(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -213,11 +211,8 @@ export function DataToolsTab() {
         className="bg-card/50 border-border backdrop-blur-sm"
       >
         <CardHeader>
-          <CardTitle className="text-lg">Backup (.minima)</CardTitle>
-          <CardDescription>
-            Encrypted, lossless backup of all your data. Restore it here or on
-            another device.
-          </CardDescription>
+          <CardTitle className="text-lg">{t('settings.data.backupTitle')}</CardTitle>
+          <CardDescription>{t('settings.data.backupDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -229,7 +224,7 @@ export function DataToolsTab() {
               className="flex items-center gap-2"
             >
               <DatabaseBackup size={16} />
-              {backupPending ? 'Preparing…' : 'Download backup (.minima)'}
+              {backupPending ? t('settings.data.preparing') : t('settings.data.downloadBackup')}
             </Button>
             <Button
               type="button"
@@ -239,12 +234,12 @@ export function DataToolsTab() {
               className="flex items-center gap-2"
             >
               <Upload size={16} />
-              Restore backup
+              {t('settings.data.restoreBackup')}
             </Button>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="backup-reminder-select">Backup reminder</Label>
+            <Label htmlFor="backup-reminder-select">{t('settings.data.reminder')}</Label>
             <select
               id="backup-reminder-select"
               data-testid="backup-reminder-select"
@@ -254,7 +249,9 @@ export function DataToolsTab() {
             >
               {BACKUP_REMINDER_OPTIONS.map((days) => (
                 <option key={days} value={String(days)}>
-                  {reminderLabel(days)}
+                  {days === 0
+                    ? t('settings.data.reminderOff')
+                    : plural('settings.data.reminderEvery', days)}
                 </option>
               ))}
             </select>
@@ -265,18 +262,15 @@ export function DataToolsTab() {
       {/* Export */}
       <Card className="bg-card/50 border-border backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-lg">Export CSV (.zip)</CardTitle>
-          <CardDescription>
-            Download one zip with your expenses, income, categories and budgets
-            as CSV files.
-          </CardDescription>
+          <CardTitle className="text-lg">{t('settings.data.exportTitle')}</CardTitle>
+          <CardDescription>{t('settings.data.exportDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <p
             data-testid="csv-export-label"
             className="text-xs text-muted-foreground"
           >
-            {CSV_LABEL}
+            {t('settings.data.csvLabel')}
           </p>
           <Button
             id="export-csv-btn"
@@ -287,7 +281,7 @@ export function DataToolsTab() {
             className="self-start flex items-center gap-2"
           >
             <Download size={16} />
-            {exportPending ? 'Preparing…' : 'Download CSV (.zip)'}
+            {exportPending ? t('settings.data.preparing') : t('settings.data.downloadCsv')}
           </Button>
         </CardContent>
       </Card>
@@ -295,13 +289,8 @@ export function DataToolsTab() {
       {/* Import */}
       <Card className="bg-card/50 border-border backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-lg">Import from CSV</CardTitle>
-          <CardDescription>
-            Upload one or more CSV files from a Minima export (expenses.csv,
-            income.csv, categories.csv, budgets.csv). Import categories before
-            expenses or budgets. Rows that match an existing expense or income
-            entry are skipped.
-          </CardDescription>
+          <CardTitle className="text-lg">{t('settings.data.importTitle')}</CardTitle>
+          <CardDescription>{t('settings.data.importDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <input
@@ -323,7 +312,7 @@ export function DataToolsTab() {
             className="self-start flex items-center gap-2"
           >
             <Upload size={16} />
-            {importPending ? 'Importing…' : 'Choose CSV Files'}
+            {importPending ? t('settings.data.importing') : t('settings.data.chooseFiles')}
           </Button>
 
           {importError && (
@@ -338,7 +327,7 @@ export function DataToolsTab() {
               className="bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
             >
               <AlertTitle className="text-sm font-medium mb-2">
-                Import complete
+                {t('settings.data.importComplete')}
               </AlertTitle>
               <AlertDescription>
                 <ul className="flex flex-col gap-1.5">
@@ -353,25 +342,29 @@ export function DataToolsTab() {
                       ) : (
                         <>
                           <span>
-                            {`${result?.inserted ?? 0} inserted`}
+                            {t('settings.data.inserted', { count: result?.inserted ?? 0 })}
                             {result && result.skipped > 0
-                              ? `, ${result.skipped} skipped`
+                              ? t('settings.data.skipped', { count: result.skipped })
                               : ''}
                             {result && result.duplicates > 0
-                              ? `, ${result.duplicates} duplicates`
+                              ? t('settings.data.duplicates', { count: result.duplicates })
                               : ''}
                             {result?.createdCategories
-                              ? `, ${result.createdCategories} new income ${
-                                  result.createdCategories === 1
-                                    ? 'category'
-                                    : 'categories'
-                                } created`
+                              ? plural(
+                                  'settings.data.createdCategories',
+                                  result.createdCategories,
+                                )
                               : ''}
                           </span>
-                          {result && result.errors.length > 0 && (
+                          {result && result.rowErrors.length > 0 && (
                             <ul className="text-muted-foreground text-xs list-disc list-inside mt-1 space-y-0.5">
-                              {result.errors.map((err, i) => (
-                                <li key={i}>{err}</li>
+                              {result.rowErrors.map((rowError, i) => (
+                                <li key={i}>
+                                  {t(ROW_ERROR_KEYS[rowError.code], {
+                                    row: rowError.row,
+                                    value: rowError.value ?? '',
+                                  })}
+                                </li>
                               ))}
                             </ul>
                           )}
@@ -390,7 +383,7 @@ export function DataToolsTab() {
                 data-testid="import-duplicates-notice"
                 className="text-sm text-muted-foreground"
               >
-                {duplicatesNotice(totalDuplicates)}
+                {plural('settings.data.duplicatesNotice', totalDuplicates)}
               </p>
               <Button
                 type="button"
@@ -400,7 +393,7 @@ export function DataToolsTab() {
                 onClick={() => void handleImportAnyway()}
                 disabled={importPending}
               >
-                Import them anyway
+                {t('settings.data.importAnyway')}
               </Button>
             </div>
           )}
@@ -416,11 +409,9 @@ export function DataToolsTab() {
       >
         <CardHeader>
           <CardTitle className="text-lg text-destructive">
-            Danger Zone
+            {t('settings.data.dangerZone')}
           </CardTitle>
-          <CardDescription>
-            Remove all data from this device. This cannot be undone.
-          </CardDescription>
+          <CardDescription>{t('settings.data.dangerDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button
@@ -429,7 +420,7 @@ export function DataToolsTab() {
             onClick={() => setRemoveDataOpen(true)}
             className="flex items-center gap-2"
           >
-            Remove data from this device
+            {t('settings.data.removeData')}
           </Button>
         </CardContent>
       </Card>
