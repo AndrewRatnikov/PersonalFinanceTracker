@@ -1,7 +1,7 @@
-import dayjs from 'dayjs'
-
 import type { RecentItem } from '@/lib/dashboardSummary'
 import type { Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatDay, formatTime } from '@/i18n/format'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
 import EntryAmount from '@/components/EntryAmount'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,31 +16,31 @@ export default function RecentActivityList({
   items,
   mainCurrency,
 }: RecentActivityListProps) {
+  const { t } = useT()
   return (
     <div className="flex flex-col gap-4" data-testid="recent-activity">
-      <h3 className="text-lg font-semibold tracking-tight">Recent activity</h3>
+      <h3 className="text-lg font-semibold tracking-tight">{t('dashboard.recentActivity')}</h3>
       {items.length === 0 ? (
         <Card
           className="border-dashed bg-transparent"
           data-testid="recent-activity-empty"
         >
           <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
-            No recent activity yet.
+            {t('dashboard.noRecentActivity')}
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-3">
           {items.map((item) => {
-            const date = dayjs(item.createdAt)
-            const timeString = date.format('hh:mm A')
-            const dateString = date.format('MMM D')
+            const timeString = formatTime(item.createdAt)
+            const dateString = formatDay(item.createdAt)
             const isIncome = item.kind === 'income'
             const icon = isIncome
               ? item.category?.icon || '💰'
               : item.category?.icon || '🏷️'
             const label = isIncome
               ? incomeSourceLabel(item)
-              : item.category?.name || 'Uncategorized'
+              : item.category?.name || t('common.uncategorized')
 
             return (
               <Card
