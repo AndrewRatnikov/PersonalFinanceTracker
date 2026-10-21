@@ -6,11 +6,17 @@
 // are chosen so that a local-time implementation would shift a date in one of
 // them. Expectations that need a local date are built with local-time Date
 // constructors, so they hold in any timezone.
+//
+// i18n: the language is pinned to English in beforeEach (describeFrequency now
+// lives in src/i18n/frequency.ts and is re-exported here; recurringCreatedMessage
+// reads the plural from the catalog). Ukrainian cases pass an explicit language
+// or switch it with setLang.
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { RecurringItem } from '@/lib/domain'
 import type { RateTable } from '@/lib/rates/types'
+import { setLang } from '@/i18n/core'
 import { formatMoney } from '@/lib/money'
 import {
   addDaysToDate,
@@ -30,6 +36,14 @@ import {
   toLocalDateString,
   upcomingOccurrences,
 } from '@/lib/recurrence'
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 function item(overrides: Partial<RecurringItem> = {}): RecurringItem {
   return {
@@ -324,6 +338,12 @@ describe('toLocalDateString and occurrenceCreatedAt', () => {
   it('formats the local calendar date of a Date', () => {
     expect(toLocalDateString(new Date(2026, 2, 5, 23, 59))).toBe('2026-03-05')
     expect(toLocalDateString(new Date(2026, 11, 31, 0, 1))).toBe('2026-12-31')
+  })
+
+  it('stays a machine date whatever the UI language', () => {
+    setLang('uk', { persist: false })
+
+    expect(toLocalDateString(new Date(2026, 2, 5, 23, 59))).toBe('2026-03-05')
   })
 
   it('occurrenceCreatedAt is local noon of the date, as an ISO string', () => {
@@ -936,12 +956,33 @@ describe('describeFrequency', () => {
       describeFrequency({ frequency: { unit: 'month', interval: 1 }, startDate }),
     ).toBe(`Every month on the ${ordinal}`)
   })
+
+  it('speaks Ukrainian when the language is Ukrainian', () => {
+    setLang('uk', { persist: false })
+
+    expect(describeFrequency(item({ frequency: { unit: 'day', interval: 1 } }))).toBe('Щодня')
+    expect(describeFrequency(item({ frequency: { unit: 'week', interval: 2 } }))).toBe(
+      'Кожні 2 тижні',
+    )
+    expect(
+      describeFrequency({
+        frequency: { unit: 'month', interval: 1 },
+        startDate: '2026-01-31',
+      }),
+    ).toBe('Щомісяця, 31-го')
+    expect(
+      describeFrequency({
+        frequency: { unit: 'year', interval: 1 },
+        startDate: '2026-03-01',
+      }),
+    ).toBe('Щороку, 1 березня')
+  })
 })
 
 describe('formatRecurringAmount', () => {
   it('is the money format: always 2 decimals, then the currency code', () => {
     const fmt2 = (n: number) =>
-      n.toLocaleString(undefined, {
+      n.toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })
@@ -956,6 +997,13 @@ describe('formatRecurringAmount', () => {
     expect(formatRecurringAmount(10, 'UAH')).not.toBe(formatRecurringAmount(20, 'UAH'))
     expect(formatRecurringAmount(10, 'UAH')).not.toBe(formatRecurringAmount(10, 'USD'))
   })
+
+  it('follows the UI language: грн and the Ukrainian separators', () => {
+    setLang('uk', { persist: false })
+
+    expect(formatRecurringAmount(1234.5, 'UAH')).toMatch(/^1\s234,50 грн$/u)
+    expect(formatRecurringAmount(9.99, 'USD')).toBe('9,99 USD')
+  })
 })
 
 describe('recurringCreatedMessage', () => {
@@ -966,5 +1014,17 @@ describe('recurringCreatedMessage', () => {
   it('is plural for other counts', () => {
     expect(recurringCreatedMessage(3)).toBe('Added 3 recurring transactions')
     expect(recurringCreatedMessage(12)).toBe('Added 12 recurring transactions')
+  })
+
+  it('is Ukrainian in Ukrainian, with a form per count', () => {
+    setLang('uk', { persist: false })
+
+    const messages = [1, 2, 5, 21].map((n) => recurringCreatedMessage(n))
+    for (const [index, count] of [1, 2, 5, 21].entries()) {
+      expect(messages[index]).toMatch(/[Ѐ-ӿ]/)
+      expect(messages[index]).toContain(String(count))
+      expect(messages[index]).not.toContain('Added')
+    }
+    expect(new Set(messages).size).toBe(messages.length)
   })
 })

@@ -4,16 +4,25 @@
 // analytics-no-data). The main currency and the rates switch come from
 // getCurrencySettings (mocked); the router Link used by
 // ConversionPendingNote is replaced by a plain anchor.
+//
+// i18n: the UI language is pinned to English in beforeEach and amounts are
+// built with the @/i18n/format helpers. The Ukrainian block asserts amounts
+// exactly and the rest of the Ukrainian wording as "Cyrillic and not the
+// English text".
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type * as ReactRouter from '@tanstack/react-router'
 import type * as AppSettings from '@/lib/appSettings'
 
 import type { CurrencySettings } from '@/lib/appSettings'
 import type { BudgetEntry, EntryConversion, Expense, IncomeEntry } from '@/lib/domain'
+import type { Lang } from '@/i18n/lang'
+import { setLang } from '@/i18n/core'
+import { formatAmount } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { Route } from '@/routes/analytics'
 import { getCurrencySettings } from '@/lib/appSettings'
 import {
@@ -21,6 +30,7 @@ import {
   getAllIncome,
   getExpensesForRange,
 } from '@/lib/localDb'
+import { pendingLabel } from '@/lib/money'
 
 vi.mock('@/lib/localDb', () => ({
   getExpensesForRange: vi.fn(),
@@ -54,11 +64,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   },
 }))
 
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt2 = (n: number) => formatAmount(n, 'en')
 
 function conv(
   main: EntryConversion['mainCurrency'],
@@ -119,7 +125,7 @@ function setSettings(settings: Partial<CurrencySettings> = {}) {
   })
 }
 
-function renderPage() {
+function renderPage(lang: Lang | null = null) {
   const Page = Route.options.component
   if (!Page) throw new Error('analytics route has no component')
   const client = new QueryClient({
@@ -127,14 +133,25 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <Page />
+      {lang === null ? (
+        <Page />
+      ) : (
+        <I18nProvider initialLang={lang}>
+          <Page />
+        </I18nProvider>
+      )}
     </QueryClientProvider>,
   )
 }
 
+afterEach(() => {
+  setLang('en', { persist: false })
+})
+
 describe('analytics page: totals in the main currency', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    setLang('en', { persist: false })
     vi.spyOn(Route, 'useSearch').mockReturnValue({})
     vi.mocked(getAllIncome).mockResolvedValue([])
     vi.mocked(getAllBudgets).mockResolvedValue([])
@@ -269,6 +286,7 @@ describe('analytics page: totals in the main currency', () => {
 describe('analytics page: Where your money comes from', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    setLang('en', { persist: false })
     vi.spyOn(Route, 'useSearch').mockReturnValue({})
     vi.mocked(getAllBudgets).mockResolvedValue([])
     setSettings()
@@ -396,5 +414,86 @@ describe('analytics page: Where your money comes from', () => {
     expect(screen.getByTestId('analytics-income-donut').textContent).not.toContain(
       'Salary',
     )
+  })
+})
+
+describe('analytics page in Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    setLang('en', { persist: false })
+    vi.spyOn(Route, 'useSearch').mockReturnValue({})
+    vi.mocked(getAllBudgets).mockResolvedValue([])
+    vi.mocked(getAllIncome).mockResolvedValue([])
+    setSettings()
+  })
+
+  it('shows the totals with грн and Ukrainian separators', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 1234.5, 'UAH')])
+    vi.mocked(getAllIncome).mockResolvedValue([income('i1', 250, 'UAH', SALARY)])
+
+    renderPage('uk')
+
+    const spent = await screen.findByTestId('analytics-total-spent')
+    expect(spent.textContent).toMatch(/1\s234,50 грн/u)
+    expect(spent.textContent).not.toContain('UAH')
+    expect(screen.getByTestId('analytics-total-income').textContent).toContain(
+      `${formatAmount(250, 'uk')} грн`,
+    )
+    expect(screen.getByTestId('dashboard-stats-total').textContent).toContain(
+      formatAmount(1234.5, 'uk'),
+    )
+  })
+
+  it('keeps the code of a foreign main currency', async () => {
+    setSettings({ mainCurrency: 'EUR' })
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 50, 'EUR')])
+
+    renderPage('uk')
+
+    const spent = await screen.findByTestId('analytics-total-spent')
+    expect(spent.textContent).toContain('50,00 EUR')
+    expect(spent.textContent).not.toContain('грн')
+  })
+
+  it('translates the pending-entries note with a plural form', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([
+      expense('e1', 1000, 'UAH'),
+      expense('e2', 100, 'USD'),
+      expense('e3', 100, 'USD'),
+    ])
+
+    renderPage('uk')
+
+    const note = await screen.findByTestId('conversion-pending-note')
+    expect(note.textContent).toBe(pendingLabel(2))
+    expect(note.textContent).toMatch(CYRILLIC)
+    expect(note.textContent).not.toContain('entries')
+  })
+
+  it('translates the donut titles and the empty states and keeps category names as typed', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+    vi.mocked(getAllIncome).mockResolvedValue([])
+
+    renderPage('uk')
+
+    const incomeDonut = await screen.findByTestId('analytics-income-donut')
+    expect(incomeDonut.textContent).toMatch(CYRILLIC)
+    expect(incomeDonut.textContent).not.toContain('Where your money comes from')
+    expect(incomeDonut.textContent).not.toContain('No income in this period.')
+    const spending = screen.getByTestId('analytics-category-donut').textContent
+    expect(spending).toContain('Food')
+    expect(spending).toMatch(CYRILLIC)
+  })
+
+  it('translates the no-data card', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([])
+
+    renderPage('uk')
+
+    const noData = await screen.findByTestId('analytics-no-data')
+    expect(noData.textContent).toMatch(CYRILLIC)
+    expect(noData.textContent).not.toContain('No data found')
   })
 })

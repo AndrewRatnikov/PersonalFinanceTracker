@@ -1,13 +1,21 @@
 // No CONTRACT_GAPs: the Interface Contract's "Component: DashboardSummarySection"
 // section plus the ConversionPendingNote contract specify props (summary,
 // optional fetchExchangeRates) and every testid this file uses.
+//
+// i18n: the UI language is pinned in beforeEach; amounts are built with the
+// @/i18n/format helpers and an explicit language. The Ukrainian wording is the
+// Coder's, so the Ukrainian block asserts "Ukrainian, not the English text".
 
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
 import type { BudgetWatchItem, DashboardSummary } from '@/lib/dashboardSummary'
+import { setLang } from '@/i18n/core'
+import { formatAmount } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
+import { pendingLabel } from '@/lib/money'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
 
 // The component needs a router context for `Link`. Per the contract's testing
@@ -34,11 +42,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 // Locale-independent assertions: every amount is shown with 2 decimals.
-const fmt = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt = (n: number) => formatAmount(n, 'en')
 
 // Counts non-overlapping occurrences of `needle` in `haystack` (no RegExp, so
 // no escaping concerns with non-ASCII separators).
@@ -58,6 +62,14 @@ const baseSummary: DashboardSummary = {
   budgetWatch: [],
   recent: [],
 }
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('root wrapper and hero', () => {
   it('always renders the root wrapper and hero card testids', () => {
@@ -522,5 +534,109 @@ describe('criterion 20: empty-data render', () => {
     expect(screen.queryByTestId('dashboard-pace')).toBeNull()
     expect(screen.queryByTestId('conversion-pending-note')).toBeNull()
     expect(screen.queryByTestId('budget-watch')).toBeNull()
+  })
+})
+
+describe('in Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  function renderUk(summary: DashboardSummary) {
+    return render(
+      <I18nProvider initialLang="uk">
+        <DashboardSummarySection summary={summary} />
+      </I18nProvider>,
+    )
+  }
+
+  it('shows left-to-spend and the daily allowance with грн and Ukrainian separators', () => {
+    renderUk({ ...baseSummary, leftToSpend: 1100, dailyAllowance: 1100 / 17 })
+
+    const left = screen.getByTestId('dashboard-left-to-spend').textContent
+    expect(left).toMatch(/1\s100,00 грн/u)
+    expect(left).not.toContain('UAH')
+    const allowance = screen.getByTestId('dashboard-daily-allowance').textContent
+    expect(allowance).toContain(formatAmount(1100 / 17, 'uk'))
+    expect(allowance).toContain('грн')
+    expect(allowance).not.toContain(formatAmount(1100 / 17, 'en'))
+  })
+
+  it('shows the month figures with грн, once each', () => {
+    renderUk({
+      ...baseSummary,
+      monthIncome: 1234,
+      monthExpenses: 321,
+      net: 913,
+      pace: { spentSoFar: 0, lastMonthSameDay: 0, changePct: null },
+    })
+
+    expect(screen.getByTestId('dashboard-month-income').textContent).toMatch(
+      /1\s234,00 грн/u,
+    )
+    expect(screen.getByTestId('dashboard-month-expenses').textContent).toContain(
+      `${formatAmount(321, 'uk')} грн`,
+    )
+    expect(screen.getByTestId('dashboard-month-net').textContent).toContain(
+      `${formatAmount(913, 'uk')} грн`,
+    )
+  })
+
+  it('keeps the code of a foreign main currency', () => {
+    renderUk({ ...baseSummary, mainCurrency: 'EUR' })
+
+    const text = screen.getByTestId('dashboard-month-income').textContent
+    expect(text).toContain('EUR')
+    expect(text).not.toContain('грн')
+  })
+
+  it('translates the pending-entries note with a plural form per count', () => {
+    renderUk({ ...baseSummary, pendingCount: 3 })
+
+    const note = screen.getByTestId('conversion-pending-note').textContent
+    expect(note).toMatch(CYRILLIC)
+    expect(note).not.toContain('entries')
+    expect(note).toBe(pendingLabel(3))
+    expect(note).toContain('3')
+  })
+
+  it('translates the hero labels and the setup link', () => {
+    renderUk(baseSummary)
+
+    const hero = screen.getByTestId('dashboard-hero').textContent
+    expect(hero).toMatch(CYRILLIC)
+    expect(hero).not.toMatch(/\b(Income|Expenses|Net|Set up)\b/)
+    expect(screen.getByTestId('dashboard-budget-setup-link').textContent).toMatch(CYRILLIC)
+  })
+
+  it('translates the pace line', () => {
+    renderUk({
+      ...baseSummary,
+      pace: { spentSoFar: 880, lastMonthSameDay: 1000, changePct: -12.4 },
+    })
+
+    const pace = screen.getByTestId('dashboard-pace').textContent
+    expect(pace).toMatch(CYRILLIC)
+    expect(pace).not.toContain('less')
+    expect(pace).not.toContain('than this time last month')
+  })
+
+  it('shows budget watch amounts with the main currency label and keeps names as typed', () => {
+    renderUk({
+      ...baseSummary,
+      budgetWatch: [
+        {
+          categoryId: 'cat-a',
+          name: 'Food',
+          spent: 90,
+          limit: 100,
+          ratio: 0.9,
+          status: 'warning',
+        },
+      ],
+    })
+
+    const item = screen.getByTestId('budget-watch-item').textContent
+    expect(item).toContain('Food')
+    expect(item).toContain(formatAmount(90, 'uk'))
+    expect(item).toContain('грн')
   })
 })

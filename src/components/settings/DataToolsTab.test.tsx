@@ -1,7 +1,13 @@
-// No CONTRACT_GAPs: DataToolsTab selectors are fully specified in the
-// Interface Contract (component: DataToolsTab). StorageStatusCard,
-// RemoveDataDialog and RestoreBackupDialog are replaced by fakes
-// (fake-storage-status, fake-remove-data-dialog, fake-restore-backup-dialog).
+// CONTRACT_GAP: how DataToolsTab words an import row error built from
+// ImportResult.rowErrors ({ row, code, value }) is not fixed by the Interface
+// Contract, so those cases assert the row number, that different codes read
+// differently and that the Ukrainian text is not the English one.
+// CONTRACT_GAP: the Ukrainian wording of the cards is the Coder's; the Ukrainian
+// block asserts "Cyrillic and not the English text".
+// Selectors are otherwise fully specified in the Interface Contract (component:
+// DataToolsTab). StorageStatusCard, RemoveDataDialog and RestoreBackupDialog are
+// replaced by fakes (fake-storage-status, fake-remove-data-dialog,
+// fake-restore-backup-dialog). ImportResult fixtures now carry rowErrors: [].
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -13,8 +19,11 @@ import {
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { Lang } from '@/i18n/lang'
 import type { BackupSettings } from '@/lib/backupReminder'
 import type { ImportResult } from '@/lib/localImport'
+import { setLang } from '@/i18n/core'
+import { I18nProvider } from '@/i18n/react'
 import { downloadBackup } from '@/lib/backup'
 import {
   getBackupSettings,
@@ -67,20 +76,27 @@ function importResult(patch: Partial<ImportResult> = {}): ImportResult {
     inserted: 0,
     skipped: 0,
     errors: [],
+    rowErrors: [],
     duplicates: 0,
     duplicateRows: [],
     ...patch,
   }
 }
 
-function renderTab() {
+function renderTab(lang: Lang | null = null) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   const view = render(
     <QueryClientProvider client={client}>
-      <DataToolsTab />
+      {lang === null ? (
+        <DataToolsTab />
+      ) : (
+        <I18nProvider initialLang={lang}>
+          <DataToolsTab />
+        </I18nProvider>
+      )}
     </QueryClientProvider>,
   )
   return { client, invalidate, ...view }
@@ -101,6 +117,7 @@ function chooseCsvFiles(files: Array<File>) {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  setLang('en', { persist: false })
   vi.mocked(getBackupSettings).mockResolvedValue(SETTINGS)
   vi.mocked(updateBackupSettings).mockResolvedValue(undefined)
   vi.mocked(downloadBackup).mockResolvedValue({
@@ -113,6 +130,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  setLang('en', { persist: false })
 })
 
 describe('DataToolsTab', () => {
@@ -385,7 +403,12 @@ describe('DataToolsTab CSV import', () => {
   it('shows inserted and skipped counts per file, and no duplicate notice without duplicates', async () => {
     vi.mocked(importLocalDataFile).mockResolvedValue({
       type: 'expenses',
-      result: importResult({ inserted: 4, skipped: 2, errors: ['Row 3: bad'] }),
+      result: importResult({
+        inserted: 4,
+        skipped: 2,
+        errors: ['Row 3: bad'],
+        rowErrors: [{ row: 3, code: 'invalid-amount', value: 'bad' }],
+      }),
     })
     renderTab()
 
@@ -395,10 +418,36 @@ describe('DataToolsTab CSV import', () => {
     expect(results.textContent).toContain('expenses.csv')
     expect(results.textContent).toContain('4 inserted')
     expect(results.textContent).toContain(', 2 skipped')
-    expect(results.textContent).toContain('Row 3: bad')
+    expect(results.textContent).toContain('3')
     expect(results.textContent).not.toContain('duplicates')
     expect(screen.queryByTestId('import-duplicates-notice')).toBeNull()
     expect(screen.queryByTestId('import-anyway-btn')).toBeNull()
+  })
+
+  it('words a row error by its code, so different codes read differently', async () => {
+    const textFor = async (code: 'missing-name' | 'invalid-amount') => {
+      vi.mocked(importLocalDataFile).mockResolvedValue({
+        type: 'expenses',
+        result: importResult({
+          skipped: 1,
+          errors: ['Row 5: x'],
+          rowErrors: [{ row: 5, code }],
+        }),
+      })
+      const view = renderTab()
+      chooseCsvFiles([new File(['x'], 'expenses.csv')])
+      const results = await screen.findByTestId('import-results')
+      const text = results.textContent
+      view.unmount()
+      return text
+    }
+
+    const a = await textFor('missing-name')
+    const b = await textFor('invalid-amount')
+
+    expect(a).toContain('5')
+    expect(b).toContain('5')
+    expect(a).not.toBe(b)
   })
 
   it('imports categories before the other files', async () => {
@@ -558,5 +607,104 @@ describe('DataToolsTab CSV import', () => {
     expect(screen.getByTestId('import-results').textContent).toContain(
       '5 inserted',
     )
+  })
+})
+
+describe('DataToolsTab in Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  it('translates the backup, CSV and danger zone cards', () => {
+    renderTab('uk')
+
+    const card = screen.getByTestId('data-backup-card').textContent
+    expect(card).toMatch(CYRILLIC)
+    expect(card).not.toContain('Encrypted, lossless backup')
+    expect(card).not.toContain('Backup reminder')
+    expect(screen.getByTestId('backup-download-btn').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('backup-download-btn').textContent).not.toContain('Download')
+    expect(screen.getByTestId('backup-restore-btn').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('csv-export-label').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('csv-export-label').textContent).not.toContain(
+      'Readable by spreadsheets',
+    )
+    const zone = screen.getByTestId('danger-zone-card').textContent
+    expect(zone).toMatch(CYRILLIC)
+    expect(zone).not.toContain('Remove all data from this device')
+    expect(screen.getByTestId('remove-data-btn').textContent).not.toContain('Remove data')
+  })
+
+  it('translates the reminder options and keeps their values', () => {
+    renderTab('uk')
+
+    const select = screen.getByTestId<HTMLSelectElement>('backup-reminder-select')
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['7', '14', '30', '0'])
+    for (const option of Array.from(select.options)) {
+      expect(option.textContent, option.value).toMatch(CYRILLIC)
+    }
+    expect(select.options[0].textContent).not.toBe(select.options[1].textContent)
+  })
+
+  it('translates the success toast', async () => {
+    renderTab('uk')
+
+    fireEvent.click(screen.getByTestId('backup-download-btn'))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1))
+    const message = String(toastSuccess.mock.calls[0][0])
+    expect(message).toMatch(CYRILLIC)
+    expect(message).not.toBe('Backup saved')
+  })
+
+  it('translates the import results and the duplicate notice, with a plural form per count', async () => {
+    const noticeFor = async (duplicates: number) => {
+      vi.mocked(importLocalDataFile).mockResolvedValue({
+        type: 'expenses',
+        result: importResult({
+          inserted: 4,
+          duplicates,
+          duplicateRows: Array.from({ length: duplicates }, (_, i) => i + 2),
+        }),
+      })
+      const view = renderTab('uk')
+      chooseCsvFiles([new File(['x'], 'expenses.csv')])
+      const notice = await screen.findByTestId('import-duplicates-notice')
+      const text = notice.textContent
+      const results = screen.getByTestId('import-results').textContent
+      view.unmount()
+      return { text, results }
+    }
+
+    const one = await noticeFor(1)
+    const three = await noticeFor(3)
+    const five = await noticeFor(5)
+
+    for (const { text, results } of [one, three, five]) {
+      expect(text).toMatch(CYRILLIC)
+      expect(text).not.toContain('duplicate')
+      expect(results).toContain('expenses.csv')
+      expect(results).not.toContain('inserted')
+    }
+    expect(three.text).toContain('3')
+    expect(five.text).toContain('5')
+    expect(new Set([one.text, three.text, five.text]).size).toBe(3)
+  })
+
+  it('words a row error in Ukrainian', async () => {
+    vi.mocked(importLocalDataFile).mockResolvedValue({
+      type: 'expenses',
+      result: importResult({
+        skipped: 1,
+        errors: ['Row 7: Invalid amount'],
+        rowErrors: [{ row: 7, code: 'invalid-amount', value: 'abc' }],
+      }),
+    })
+    renderTab('uk')
+
+    chooseCsvFiles([new File(['x'], 'expenses.csv')])
+
+    const results = await screen.findByTestId('import-results')
+    expect(results.textContent).toContain('7')
+    expect(results.textContent).toMatch(CYRILLIC)
+    expect(results.textContent).not.toContain('Invalid amount')
   })
 })

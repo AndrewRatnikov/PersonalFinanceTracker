@@ -6,6 +6,11 @@
 // settings and the rate provider ('@/lib/rates', as the contract requires) are
 // mocked. "Today" is pinned with fake Date to local 2026-05-15 so totals and
 // next dates are exact.
+//
+// i18n: the UI language is pinned to English in beforeEach and amounts are
+// built with the @/i18n/format helpers. The Ukrainian block asserts the
+// recurrence texts of the plan exactly ("Щомісяця, 15-го") and the rest of the
+// Ukrainian wording as "Cyrillic and not the English text".
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -25,7 +30,11 @@ import type * as Rates from '@/lib/rates'
 
 import type { CurrencySettings } from '@/lib/appSettings'
 import type { Category, RecurringItem } from '@/lib/domain'
+import type { Lang } from '@/i18n/lang'
 import type { RateTable } from '@/lib/rates/types'
+import { setLang } from '@/i18n/core'
+import { formatAmount, formatFullDate } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { getCurrencySettings } from '@/lib/appSettings'
 import {
   addRecurring,
@@ -72,11 +81,7 @@ vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))
 vi.mock('@/lib/localWipe', () => ({ reloadToHome: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt2 = (n: number) => formatAmount(n, 'en')
 
 const EXPENSE_CATEGORIES: Array<Category> = [
   { id: 'c1', name: 'Food', icon: '🍔' },
@@ -179,7 +184,7 @@ function setSettings(settings: Partial<CurrencySettings> = {}) {
   })
 }
 
-function renderPage() {
+function renderPage(lang: Lang | null = null) {
   const Page = Route.options.component as React.ComponentType | undefined
   if (!Page) throw new Error('recurring route has no component')
   const client = new QueryClient({
@@ -187,7 +192,13 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <Page />
+      {lang === null ? (
+        <Page />
+      ) : (
+        <I18nProvider initialLang={lang}>
+          <Page />
+        </I18nProvider>
+      )}
     </QueryClientProvider>,
   )
 }
@@ -208,6 +219,7 @@ function rowFor(name: string) {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  setLang('en', { persist: false })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 4, 15, 10, 0, 0))
   vi.mocked(getAllRecurring).mockResolvedValue(ITEMS)
@@ -228,6 +240,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  setLang('en', { persist: false })
 })
 
 describe('recurring route is a data route', () => {
@@ -486,7 +499,7 @@ describe('recurring page: list', () => {
       'Every month on the 15th',
     )
     expect(gym.getByTestId('recurring-row-next').textContent).toContain(
-      'Jun 15, 2026',
+      formatFullDate('2026-06-15', 'en'),
     )
     expect(gym.getByTestId('recurring-row-mode').textContent).toContain('Auto')
 
@@ -496,7 +509,7 @@ describe('recurring page: list', () => {
     )
     expect(paycheck.getByTestId('recurring-row-mode').textContent).toContain('Ask')
     expect(paycheck.getByTestId('recurring-row-next').textContent).toContain(
-      'Jun 1, 2026',
+      formatFullDate('2026-06-01', 'en'),
     )
   })
 
@@ -719,5 +732,112 @@ describe('recurring page: query errors', () => {
     await waitFor(() => expect(getAllRecurring).toHaveBeenCalledTimes(2))
     await screen.findAllByTestId('recurring-row')
     expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+})
+
+describe('recurring page in Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  it('describes the frequency in Ukrainian', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+
+    expect(
+      within(rowFor('Gym')).getByTestId('recurring-row-frequency').textContent,
+    ).toBe('Щомісяця, 15-го')
+    expect(
+      within(rowFor('Weekly beans')).getByTestId('recurring-row-frequency').textContent,
+    ).toBe('Щотижня')
+    expect(
+      within(rowFor('Domain')).getByTestId('recurring-row-frequency').textContent,
+    ).toBe('Щороку, 1 березня')
+  })
+
+  it('shows the next date with the Ukrainian month and the mode and status in Ukrainian', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+
+    const gym = within(rowFor('Gym'))
+    expect(gym.getByTestId('recurring-row-next').textContent).toContain(
+      formatFullDate('2026-06-15', 'uk'),
+    )
+    expect(gym.getByTestId('recurring-row-next').textContent).toContain('черв.')
+    expect(gym.getByTestId('recurring-row-mode').textContent).toMatch(CYRILLIC)
+    expect(gym.getByTestId('recurring-row-mode').textContent).not.toContain('Auto')
+    expect(gym.getByTestId('recurring-pause-btn').textContent).not.toContain('Pause')
+    expect(
+      within(rowFor('Paused sub')).getByTestId('recurring-row-paused').textContent,
+    ).toMatch(CYRILLIC)
+    expect(
+      within(rowFor('Old plan')).getByTestId('recurring-row-next').textContent,
+    ).not.toContain('Ended')
+  })
+
+  it('shows the amounts with грн and Ukrainian separators', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+
+    expect(
+      within(rowFor('Gym')).getByTestId('recurring-row-amount').textContent,
+    ).toContain('100,00 грн')
+    expect(
+      within(rowFor('Paycheck')).getByTestId('recurring-row-amount').textContent,
+    ).toMatch(/2\s000,00 EUR/u)
+  })
+
+  it('totals the month in Ukrainian: грн, ≈ and Ukrainian separators', async () => {
+    vi.mocked(rateProvider.getRates).mockResolvedValue(RATES)
+    renderPage('uk')
+
+    const expense = await screen.findByTestId('recurring-monthly-main-expense')
+    expect(expense.textContent).toContain(
+      `≈ ${formatAmount(100 + 433.33 + 100 * 41.52, 'uk')} грн`,
+    )
+    expect(expense.textContent).not.toContain('UAH')
+    expect(expense.textContent).not.toContain('Expenses')
+    expect(screen.getByTestId('recurring-monthly-total').textContent).not.toContain(
+      'Committed per month',
+    )
+  })
+
+  it('translates the empty state and the delete question', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+
+    fireEvent.click(within(rowFor('Gym')).getByTestId('recurring-delete-btn'))
+    const description = await screen.findByTestId('recurring-delete-description')
+
+    expect(description.textContent).toMatch(CYRILLIC)
+    expect(description.textContent).not.toContain('Past transactions are kept.')
+  })
+
+  it('reports a saved item in Ukrainian', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+    fireEvent.click(within(rowFor('Gym')).getByTestId('recurring-edit-btn'))
+    const form = await screen.findByTestId('recurring-form')
+
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    const message = String(vi.mocked(toast.success).mock.calls[0][0])
+    expect(message).toMatch(CYRILLIC)
+    expect(message).not.toBe('Recurring item saved')
+  })
+
+  it('shows a form validation error in Ukrainian', async () => {
+    renderPage('uk')
+    await screen.findAllByTestId('recurring-row')
+    fireEvent.click(screen.getByTestId('recurring-add-btn'))
+    const form = await screen.findByTestId('recurring-form')
+    fireEvent.change(within(form).getByTestId('recurring-form-amount'), {
+      target: { value: '0' },
+    })
+
+    fireEvent.submit(form)
+
+    const error = await screen.findByTestId('recurring-form-error-amount')
+    expect(error.textContent).toBe('Сума має бути більшою за 0')
+    expect(addRecurring).not.toHaveBeenCalled()
   })
 })
