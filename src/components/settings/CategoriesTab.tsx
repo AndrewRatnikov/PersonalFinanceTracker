@@ -4,6 +4,8 @@ import { Plus } from 'lucide-react'
 
 import { CategoryRow } from './CategoryRow'
 import type { Category } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import {
   addCategory,
   addIncomeCategory,
@@ -42,6 +44,7 @@ function CategorySection({
   const [newName, setNewName] = useState('')
   const [newIcon, setNewIcon] = useState('')
   const isIncome = kind === 'income'
+  const { t } = useT()
 
   const handleAdd = async () => {
     onError(null)
@@ -52,7 +55,7 @@ function CategorySection({
       setNewIcon('')
       await onMutate()
     } catch (e: unknown) {
-      onError(e instanceof Error ? e.message : 'Something went wrong')
+      onError(errorMessage(e))
     } finally {
       setIsPending(false)
     }
@@ -70,13 +73,13 @@ function CategorySection({
       className="flex flex-col gap-4"
     >
       <h2 className="text-base font-semibold">
-        {isIncome ? 'Income categories' : 'Expense categories'}
+        {isIncome ? t('settings.categories.income') : t('settings.categories.expense')}
       </h2>
 
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {isIncome ? 'Add Income Category' : 'Add Category'}
+            {isIncome ? t('settings.categories.addIncome') : t('settings.categories.add')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -86,7 +89,7 @@ function CategorySection({
                 id="new-income-category-name"
                 data-testid="income-category-add-input"
                 type="text"
-                placeholder="Name (e.g. Salary)"
+                placeholder={t('settings.categories.incomeNamePlaceholder')}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 maxLength={40}
@@ -96,7 +99,7 @@ function CategorySection({
                 id="new-income-category-icon"
                 data-testid="income-category-add-icon"
                 type="text"
-                placeholder="Icon (optional)"
+                placeholder={t('settings.categories.iconPlaceholder')}
                 value={newIcon}
                 onChange={(e) => setNewIcon(e.target.value)}
                 className="w-32"
@@ -107,7 +110,7 @@ function CategorySection({
                 onClick={handleAdd}
                 disabled={isPending || !newName.trim()}
                 className="px-3"
-                aria-label="Add income category"
+                aria-label={t('settings.categories.addIncomeLabel')}
               >
                 <Plus className="w-5 h-5" />
               </Button>
@@ -117,7 +120,7 @@ function CategorySection({
               <Input
                 id="new-category-name"
                 type="text"
-                placeholder="Name (e.g. Coffee)"
+                placeholder={t('settings.categories.expenseNamePlaceholder')}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 maxLength={40}
@@ -126,7 +129,7 @@ function CategorySection({
               <Input
                 id="new-category-icon"
                 type="text"
-                placeholder="Icon (optional)"
+                placeholder={t('settings.categories.iconPlaceholder')}
                 value={newIcon}
                 onChange={(e) => setNewIcon(e.target.value)}
                 className="w-32"
@@ -137,7 +140,7 @@ function CategorySection({
                 onClick={handleAdd}
                 disabled={isPending || !newName.trim()}
                 className="px-3"
-                aria-label="Add category"
+                aria-label={t('settings.categories.addLabel')}
               >
                 <Plus className="w-5 h-5" />
               </Button>
@@ -156,11 +159,11 @@ function CategorySection({
                 data-testid="income-categories-empty"
                 className="text-muted-foreground text-sm text-center py-10 italic"
               >
-                No income categories yet.
+                {t('settings.categories.incomeEmpty')}
               </p>
             ) : (
               <p className="text-muted-foreground text-sm text-center py-10 italic">
-                No categories yet. Add one above to get started.
+                {t('settings.categories.expenseEmpty')}
               </p>
             ))}
           {categories.map((cat) => (
