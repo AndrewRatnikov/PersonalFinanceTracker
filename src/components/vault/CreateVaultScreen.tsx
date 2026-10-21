@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import { KeyRound, Loader2, Lock } from 'lucide-react'
 
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { updateAppSettings } from '@/lib/appSettings'
 import { requestPersistentStorage } from '@/lib/storagePersistence'
 import { VaultError, createVault } from '@/lib/vault'
+import { LanguageToggle } from '@/components/LanguageToggle'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,10 +29,10 @@ interface CreateVaultScreenProps {
 
 const MIN_PASSWORD_LENGTH = 8
 
-function strengthLabel(password: string): string {
-  if (password.length < MIN_PASSWORD_LENGTH) return 'Too short'
-  if (password.length < 12) return 'OK'
-  return 'Strong'
+function strengthKey(password: string): MessageKey {
+  if (password.length < MIN_PASSWORD_LENGTH) return 'vault.strength.tooShort'
+  if (password.length < 12) return 'vault.strength.ok'
+  return 'vault.strength.strong'
 }
 
 export function CreateVaultScreen({
@@ -41,16 +45,17 @@ export function CreateVaultScreen({
   const [pending, setPending] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const { t } = useT()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError('Password must be at least 8 characters')
+      setError(t('vault.passwordTooShort'))
       return
     }
     if (password !== confirm) {
-      setError('Passwords do not match')
+      setError(t('vault.passwordsDontMatch'))
       return
     }
     setPending(true)
@@ -63,10 +68,10 @@ export function CreateVaultScreen({
       setRecoveryKey(result.recoveryKey)
     } catch (err) {
       if (err instanceof VaultError) {
-        setError(err.message)
+        setError(errorMessage(err))
       } else {
         console.error(err)
-        setError('Something went wrong. Please try again.')
+        setError(t('errors.unexpected'))
       }
     } finally {
       setPending(false)
@@ -94,12 +99,10 @@ export function CreateVaultScreen({
             <CardHeader>
               <div className="flex items-center gap-2">
                 <KeyRound className="h-4 w-4 text-muted-foreground" />
-                <CardTitle>Save your recovery key</CardTitle>
+                <CardTitle>{t('vault.saveKey.title')}</CardTitle>
+                <LanguageToggle testId="create-vault-language" className="ml-auto" />
               </div>
-              <CardDescription>
-                If you forget your password, this key is the only way to open
-                your data.
-              </CardDescription>
+              <CardDescription>{t('vault.saveKey.description')}</CardDescription>
             </CardHeader>
             <CardContent>
               <RecoveryKeySaveStep
@@ -113,18 +116,16 @@ export function CreateVaultScreen({
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Lock className="h-4 w-4 text-muted-foreground" />
-                <CardTitle>Create encryption password</CardTitle>
+                <CardTitle>{t('vault.create.title')}</CardTitle>
+                <LanguageToggle testId="create-vault-language" className="ml-auto" />
               </div>
-              <CardDescription>
-                This password encrypts your data on this device. MinimaSpend
-                can&apos;t see it and can&apos;t reset it for you.
-              </CardDescription>
+              <CardDescription>{t('vault.create.description')}</CardDescription>
             </CardHeader>
 
             <form onSubmit={(e) => void handleSubmit(e)}>
               <CardContent className="flex flex-col gap-4 mb-4">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t('vault.password')}</Label>
                   <Input
                     id="password"
                     data-testid="create-vault-password-input"
@@ -139,12 +140,12 @@ export function CreateVaultScreen({
                     data-testid="create-vault-strength"
                     className="text-xs text-muted-foreground"
                   >
-                    Strength: {strengthLabel(password)}
+                    {t('vault.strength.label', { strength: t(strengthKey(password)) })}
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="confirm">Confirm password</Label>
+                  <Label htmlFor="confirm">{t('vault.confirmPassword')}</Label>
                   <Input
                     id="confirm"
                     data-testid="create-vault-confirm-input"
@@ -176,10 +177,10 @@ export function CreateVaultScreen({
                   {pending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating…
+                      {t('vault.create.creating')}
                     </>
                   ) : (
-                    'Create password'
+                    t('vault.create.submit')
                   )}
                 </Button>
                 {onCancel && (
@@ -191,7 +192,7 @@ export function CreateVaultScreen({
                     onClick={onCancel}
                     disabled={pending}
                   >
-                    Back
+                    {t('common.back')}
                   </Button>
                 )}
               </CardFooter>
