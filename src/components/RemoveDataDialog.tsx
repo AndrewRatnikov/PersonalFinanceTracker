@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { downloadBackup } from '@/lib/backup'
 import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
 import { VaultError, verifyPassword } from '@/lib/vault'
@@ -28,10 +30,6 @@ interface RemoveDataDialogProps {
 
 const DELETE_CONFIRMATION = 'DELETE'
 
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 // Remove data from this device (spec §2.5).
 export function RemoveDataDialog({
   open,
@@ -43,6 +41,7 @@ export function RemoveDataDialog({
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     if (!open) {
@@ -62,9 +61,9 @@ export function RemoveDataDialog({
     setBackingUp(true)
     try {
       const result = await downloadBackup()
-      if (result.status === 'saved') toast.success('Backup saved')
+      if (result.status === 'saved') toast.success(t('toasts.backupSaved'))
     } catch (err) {
-      toast.error(`Could not download the backup: ${errorText(err)}`)
+      toast.error(t('toasts.backupDownloadFailed', { error: errorMessage(err) }))
     } finally {
       setBackingUp(false)
     }
@@ -81,8 +80,8 @@ export function RemoveDataDialog({
         } catch (err) {
           setError(
             err instanceof VaultError
-              ? err.message
-              : `Could not check the password: ${errorText(err)}`,
+              ? errorMessage(err)
+              : t('backup.remove.checkPasswordFailed', { error: errorMessage(err) }),
           )
           return
         }
@@ -90,7 +89,7 @@ export function RemoveDataDialog({
       try {
         await wipeLocalData()
       } catch (err) {
-        setError(`Could not remove data: ${errorText(err)}`)
+        setError(t('backup.remove.failed', { error: errorMessage(err) }))
         return
       }
       reloadToHome()
@@ -103,12 +102,8 @@ export function RemoveDataDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="remove-data-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Remove data from this device?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This deletes everything MinimaSpend stores on this device: your
-            expenses, income, categories and budgets, the password and recovery
-            key for this device, and your app settings. This cannot be undone.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t('backup.remove.title')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('backup.remove.description')}</AlertDialogDescription>
         </AlertDialogHeader>
 
         <div className="flex flex-col gap-4">
@@ -126,13 +121,13 @@ export function RemoveDataDialog({
               ) : (
                 <Download className="h-4 w-4" />
               )}
-              Download backup first
+              {t('backup.remove.backupFirst')}
             </Button>
           )}
 
           {withPassword ? (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="remove-data-password">Password</Label>
+              <Label htmlFor="remove-data-password">{t('vault.password')}</Label>
               <Input
                 id="remove-data-password"
                 data-testid="remove-data-password-input"
@@ -145,7 +140,9 @@ export function RemoveDataDialog({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="remove-data-delete">Type DELETE to confirm</Label>
+              <Label htmlFor="remove-data-delete">
+                {t('common.typeToConfirm', { word: DELETE_CONFIRMATION })}
+              </Label>
               <Input
                 id="remove-data-delete"
                 data-testid="remove-data-delete-input"
@@ -170,7 +167,7 @@ export function RemoveDataDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="remove-data-cancel-btn">
-            Cancel
+            {t('common.cancel')}
           </AlertDialogCancel>
           {/* A plain Button, so the dialog stays open while it verifies. */}
           <Button
@@ -181,7 +178,7 @@ export function RemoveDataDialog({
             onClick={() => void handleConfirm()}
           >
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Remove all data
+            {t('backup.remove.confirm')}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
