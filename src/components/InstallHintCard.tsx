@@ -7,6 +7,7 @@ import {
   getAppSettings,
   updateAppSettings,
 } from '@/lib/appSettings'
+import { useT } from '@/i18n'
 import { shouldShowInstallHint } from '@/lib/installHint'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,6 +24,7 @@ export function InstallHintCard() {
   const [show] = useState(() => shouldShowInstallHint())
   const [dismissed, setDismissed] = useState(false)
   const queryClient = useQueryClient()
+  const { t } = useT()
   const { data } = useQuery({
     queryKey: APP_SETTINGS_QUERY_KEY,
     queryFn: getAppSettings,
@@ -46,13 +48,9 @@ export function InstallHintCard() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Smartphone className="h-4 w-4 text-[#6366f1]" />
-          <CardTitle>Add to Home Screen to keep your data safe</CardTitle>
+          <CardTitle>{t('dashboard.installHint.title')}</CardTitle>
         </div>
-        <CardDescription>
-          Safari can clear website data you haven&apos;t used for a while. Tap
-          Share, then &ldquo;Add to Home Screen&rdquo;, and open MinimaSpend
-          from there.
-        </CardDescription>
+        <CardDescription>{t('dashboard.installHint.body')}</CardDescription>
       </CardHeader>
       <CardContent>
         <Button
@@ -62,7 +60,7 @@ export function InstallHintCard() {
           data-testid="install-hint-dismiss"
           onClick={() => void handleDismiss()}
         >
-          Dismiss
+          {t('common.dismiss')}
         </Button>
       </CardContent>
     </Card>

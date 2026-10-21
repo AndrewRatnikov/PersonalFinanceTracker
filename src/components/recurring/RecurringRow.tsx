@@ -1,7 +1,8 @@
-import dayjs from 'dayjs'
 import { Pause, Pencil, Play, Trash2 } from 'lucide-react'
 
 import type { Category, RecurringItem } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatFullDate } from '@/i18n/format'
 import {
   describeFrequency,
   formatRecurringAmount,
@@ -40,7 +41,8 @@ export default function RecurringRow({
   onDelete,
   isBusy,
 }: RecurringRowProps) {
-  const name = item.description || category?.name || 'Unknown category'
+  const { t } = useT()
+  const name = item.description || category?.name || t('recurring.unknownCategory')
   const next = nextUnhandledOccurrence(item)
 
   return (
@@ -76,18 +78,18 @@ export default function RecurringRow({
             <span aria-hidden="true">·</span>
             <span data-testid="recurring-row-next">
               {next === null
-                ? 'Ended'
-                : `Next: ${dayjs(next).format('MMM D, YYYY')}`}
+                ? t('recurring.row.ended')
+                : t('recurring.row.next', { date: formatFullDate(next) })}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge data-testid="recurring-row-mode" variant="secondary">
-              {item.mode === 'auto' ? 'Auto' : 'Ask'}
+              {item.mode === 'auto' ? t('recurring.row.auto') : t('recurring.row.ask')}
             </Badge>
             {item.paused && (
               <Badge data-testid="recurring-row-paused" variant="outline">
-                Paused
+                {t('recurring.row.paused')}
               </Badge>
             )}
           </div>
@@ -97,7 +99,7 @@ export default function RecurringRow({
               data-testid="recurring-row-category-missing"
               className="text-xs text-destructive"
             >
-              Category missing – edit to choose one
+              {t('recurring.row.categoryMissing')}
             </p>
           )}
         </div>
@@ -108,7 +110,7 @@ export default function RecurringRow({
             variant="ghost"
             size="icon"
             data-testid="recurring-edit-btn"
-            aria-label="Edit recurring item"
+            aria-label={t('recurring.row.edit')}
             onClick={() => onEdit(item)}
             disabled={isBusy}
             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent"
@@ -125,7 +127,7 @@ export default function RecurringRow({
             className="h-8 px-2 text-muted-foreground hover:text-foreground hover:bg-transparent"
           >
             {item.paused ? <Play size={14} /> : <Pause size={14} />}
-            {item.paused ? 'Resume' : 'Pause'}
+            {item.paused ? t('recurring.row.resume') : t('recurring.row.pause')}
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -134,7 +136,7 @@ export default function RecurringRow({
                 variant="ghost"
                 size="icon"
                 data-testid="recurring-delete-btn"
-                aria-label="Delete recurring item"
+                aria-label={t('recurring.row.delete')}
                 disabled={isBusy}
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent"
               >
@@ -143,20 +145,19 @@ export default function RecurringRow({
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete recurring item</AlertDialogTitle>
+                <AlertDialogTitle>{t('recurring.row.delete')}</AlertDialogTitle>
                 <AlertDialogDescription data-testid="recurring-delete-description">
-                  Stop repeating <strong>{name}</strong>? Past transactions
-                  are kept.
+                  {t('recurring.row.deleteQuestion', { name })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   data-testid="recurring-delete-confirm"
                   onClick={() => onDelete(item)}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
-                  Delete
+                  {t('common.delete')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

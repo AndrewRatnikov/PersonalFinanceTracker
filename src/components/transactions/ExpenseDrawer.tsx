@@ -14,6 +14,10 @@ import type {
 } from '@/lib/domain'
 import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
 import type { DescriptionSuggestion } from '@/lib/suggestions'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
+import { errorMessage, validationMessage } from '@/i18n/errors'
+import { formatAmount, formatDay } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import {
   buildCreatedAt,
@@ -155,24 +159,20 @@ const LABEL_CLASS =
 const SELECT_CLASS =
   'h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-10'
 
-const REPEAT_OPTIONS: ReadonlyArray<{ value: QuickRepeat; label: string }> = [
-  { value: 'none', label: "Don't repeat" },
-  { value: 'week', label: 'Weekly' },
-  { value: 'month', label: 'Monthly' },
-  { value: 'year', label: 'Yearly' },
+const REPEAT_OPTIONS: ReadonlyArray<{ value: QuickRepeat; label: MessageKey }> = [
+  { value: 'none', label: 'common.repeat.none' },
+  { value: 'week', label: 'common.repeat.week' },
+  { value: 'month', label: 'common.repeat.month' },
+  { value: 'year', label: 'common.repeat.year' },
 ]
 
 function todayString(): string {
   return dayjs().format('YYYY-MM-DD')
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function sourceLabel(source: string): string {
-  if (source === 'nbu') return 'NBU'
-  if (source === 'manual') return 'Manual rate'
+function sourceLabel(source: string, t: (key: MessageKey) => string): string {
+  if (source === 'nbu') return t('common.rateSource.nbu')
+  if (source === 'manual') return t('common.rateSource.manual')
   return source.toUpperCase()
 }
 
@@ -199,7 +199,7 @@ function FieldError({
   if (!message) return null
   return (
     <p data-testid={`drawer-error-${field}`} className="text-xs text-destructive">
-      {message}
+      {validationMessage(message)}
     </p>
   )
 }
@@ -225,6 +225,7 @@ function ExpenseDrawerForm({
   amountRef,
 }: FormProps) {
   const queryClient = useQueryClient()
+  const { t } = useT()
   const record = mode === 'edit' ? expense : undefined
   const isEdit = record !== undefined
 
@@ -307,7 +308,7 @@ function ExpenseDrawerForm({
       unit === 'none' ? addExpense(input) : addRepeatingExpense(input, unit),
     onSuccess: (_saved, { repeat: unit, another }) => {
       invalidateData(unit !== 'none')
-      toast.success('Expense saved')
+      toast.success(t('toasts.expenseSaved'))
       if (another) {
         setAmount('')
         setDescription('')
@@ -319,7 +320,7 @@ function ExpenseDrawerForm({
       }
     },
     onError: (error: unknown) => {
-      toast.error(`Failed to save: ${errorMessage(error)}`)
+      toast.error(t('toasts.saveFailedWith', { error: errorMessage(error) }))
     },
     onSettled: () => {
       busyRef.current = false
@@ -338,11 +339,11 @@ function ExpenseDrawerForm({
     }) => updateExpense(id, originalCreatedAt, patch),
     onSuccess: () => {
       invalidateData(false)
-      toast.success('Transaction updated')
+      toast.success(t('toasts.transactionUpdated'))
       onOpenChange(false)
     },
     onError: (error: unknown) => {
-      toast.error(`Failed to update: ${errorMessage(error)}`)
+      toast.error(t('toasts.updateFailedWith', { error: errorMessage(error) }))
     },
     onSettled: () => {
       busyRef.current = false
@@ -354,11 +355,11 @@ function ExpenseDrawerForm({
       deleteExpense(id, createdAt),
     onSuccess: () => {
       invalidateData(false)
-      toast.success('Transaction deleted')
+      toast.success(t('toasts.transactionDeleted'))
       onOpenChange(false)
     },
     onError: (error: unknown) => {
-      toast.error(`Failed to delete: ${errorMessage(error)}`)
+      toast.error(t('toasts.deleteFailedWith', { error: errorMessage(error) }))
     },
     onSettled: () => {
       busyRef.current = false
@@ -434,8 +435,8 @@ function ExpenseDrawerForm({
     })
     if (!result.success) collectErrors(result.error.issues, found)
     if (repeat === 'none') {
-      if (date === '') found.createdAt = 'Date is required'
-      else if (!dayjs(date).isValid()) found.createdAt = 'Invalid date'
+      if (date === '') found.createdAt = 'errors.validation.dateRequired'
+      else if (!dayjs(date).isValid()) found.createdAt = 'errors.validation.invalidDate'
     }
     setErrors(found)
     if (!result.success || Object.keys(found).length > 0) return
@@ -503,12 +504,10 @@ function ExpenseDrawerForm({
     <>
       <SheetHeader className="border-b border-border pr-12">
         <SheetTitle data-testid="expense-drawer-title" className="text-lg">
-          {isEdit ? 'Edit transaction' : 'Add transaction'}
+          {isEdit ? t('drawer.editTitle') : t('drawer.addTitle')}
         </SheetTitle>
         <SheetDescription className="sr-only">
-          {isEdit
-            ? 'Change the amount, currency, category, date or description of this expense.'
-            : 'Enter the amount, currency, category, date and description of a new expense.'}
+          {isEdit ? t('drawer.editDescription') : t('drawer.addDescription')}
         </SheetDescription>
       </SheetHeader>
 
@@ -518,14 +517,14 @@ function ExpenseDrawerForm({
             data-testid="drawer-recurring-note"
             className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground"
           >
-            From a recurring item. Changes apply only to this entry.
+            {t('drawer.recurringNote')}
           </p>
         )}
 
         {/* a. Amount */}
         <div className="space-y-2">
           <Label htmlFor="drawer-amount" className={LABEL_CLASS}>
-            Amount
+            {t('common.amount')}
           </Label>
           <Input
             ref={amountRef}
@@ -534,7 +533,7 @@ function ExpenseDrawerForm({
             type="text"
             inputMode="decimal"
             autoComplete="off"
-            placeholder="0.00"
+            placeholder={formatAmount(0)}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={(e) => {
@@ -552,7 +551,7 @@ function ExpenseDrawerForm({
               data-testid="drawer-conversion-info"
               className="text-xs text-muted-foreground"
             >
-              {`≈ ${formatMoney(conversion.mainAmount, mainCurrency)} · ${sourceLabel(conversion.source)} · ${dayjs(conversion.rateDate).format('D MMM')}`}
+              {`≈ ${formatMoney(conversion.mainAmount, mainCurrency)} · ${sourceLabel(conversion.source, t)} · ${formatDay(conversion.rateDate)}`}
             </p>
           )}
           {willRecalculate && (
@@ -560,7 +559,7 @@ function ExpenseDrawerForm({
               data-testid="drawer-recalc-note"
               className="text-xs text-muted-foreground"
             >
-              Will be recalculated
+              {t('drawer.willRecalculate')}
             </p>
           )}
         </div>
@@ -568,7 +567,7 @@ function ExpenseDrawerForm({
         {/* b. Currency */}
         <div className="space-y-2">
           <div className={LABEL_CLASS} aria-hidden="true">
-            Currency
+            {t('common.currency')}
           </div>
           <CurrencyPicker
             testIdPrefix="drawer"
@@ -580,11 +579,11 @@ function ExpenseDrawerForm({
         {/* c. Category */}
         <div className="space-y-2">
           <div className={LABEL_CLASS} aria-hidden="true">
-            Category
+            {t('common.category')}
           </div>
           <div
             role="radiogroup"
-            aria-label="Category"
+            aria-label={t('common.category')}
             data-testid="drawer-category-group"
             className="flex flex-wrap gap-2"
           >
@@ -625,7 +624,7 @@ function ExpenseDrawerForm({
         {/* d. Date */}
         <div className="space-y-2">
           <Label htmlFor="drawer-date" className={LABEL_CLASS}>
-            Date
+            {t('common.date')}
           </Label>
           <Input
             id="drawer-date"
@@ -642,12 +641,12 @@ function ExpenseDrawerForm({
               data-testid="drawer-future-hint"
               className="text-xs text-muted-foreground"
             >
-              Future date
+              {t('drawer.futureDate')}
             </p>
           )}
           {repeating && (
             <p className="text-xs text-muted-foreground">
-              Repeating entries start today
+              {t('drawer.repeatStartsToday')}
             </p>
           )}
           <FieldError field="createdAt" errors={errors} />
@@ -656,9 +655,9 @@ function ExpenseDrawerForm({
         {/* e. Description */}
         <div className="space-y-2">
           <Label htmlFor="drawer-description" className={LABEL_CLASS}>
-            Description{' '}
+            {t('common.description')}{' '}
             <span className="normal-case font-normal opacity-50">
-              (optional)
+              {t('common.optional')}
             </span>
           </Label>
           <DescriptionSuggestInput
@@ -670,7 +669,7 @@ function ExpenseDrawerForm({
             categoryId={categoryId || undefined}
             onPick={pickSuggestion}
             onEnter={() => save(false)}
-            placeholder="e.g. coffee with team"
+            placeholder={t('dashboard.quickAdd.descriptionPlaceholder')}
             maxLength={120}
             className="h-11 sm:h-10"
           />
@@ -680,7 +679,7 @@ function ExpenseDrawerForm({
         {!isEdit && (
           <div className="space-y-2">
             <Label htmlFor="drawer-repeat" className={LABEL_CLASS}>
-              Repeat
+              {t('common.repeat.label')}
             </Label>
             <select
               id="drawer-repeat"
@@ -691,7 +690,7 @@ function ExpenseDrawerForm({
             >
               {REPEAT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.label}
+                  {t(o.label)}
                 </option>
               ))}
             </select>
@@ -707,7 +706,7 @@ function ExpenseDrawerForm({
           disabled={busy}
           className="min-h-11 flex-1 sm:min-h-9"
         >
-          Save
+          {t('common.save')}
         </Button>
         {isEdit ? (
           <AlertDialog>
@@ -719,27 +718,24 @@ function ExpenseDrawerForm({
                 disabled={busy}
                 className="min-h-11 sm:min-h-9"
               >
-                Delete
+                {t('common.delete')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete this transaction?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this transaction from your
-                  history. This action cannot be undone.
-                </AlertDialogDescription>
+                <AlertDialogTitle>{t('drawer.deleteTitle')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('drawer.deleteDescription')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel data-testid="drawer-delete-cancel">
-                  Cancel
+                  {t('common.cancel')}
                 </AlertDialogCancel>
                 <AlertDialogAction
                   data-testid="drawer-delete-confirm"
                   variant="destructive"
                   onClick={remove}
                 >
-                  Delete
+                  {t('common.delete')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -753,7 +749,7 @@ function ExpenseDrawerForm({
             disabled={busy}
             className="min-h-11 flex-1 sm:min-h-9"
           >
-            Save &amp; add another
+            {t('drawer.saveAnother')}
           </Button>
         )}
         <Button
@@ -764,7 +760,7 @@ function ExpenseDrawerForm({
           disabled={busy}
           className="min-h-11 sm:min-h-9"
         >
-          Cancel
+          {t('common.cancel')}
         </Button>
       </div>
     </>

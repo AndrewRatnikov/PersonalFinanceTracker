@@ -4,6 +4,8 @@ import dayjs from 'dayjs'
 import { formatRangeLabel, toDateInputValue } from '../../lib/analyticsUtils'
 import type { AnalyticsRangeSummary } from '../../lib/domain'
 import type { AnalyticsSearch } from '../../routes/analytics'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,8 +21,9 @@ export default function AnalyticsFilters({
   search,
 }: AnalyticsFiltersProps) {
   const router = useRouter()
+  const { t } = useT()
 
-  const [validationError, setValidationError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<MessageKey | null>(null)
 
   const fromValue = useMemo(
     () => search.from || toDateInputValue(analytics.from),
@@ -36,24 +39,24 @@ export default function AnalyticsFilters({
     setValidationError(null)
 
     if (!nextFrom || !nextTo) {
-      setValidationError('Please provide both start and end dates.')
+      setValidationError('analytics.filters.bothDates')
       return
     }
 
     const fromDate = dayjs(nextFrom)
     const toDate = dayjs(nextTo)
     if (!fromDate.isValid() || !toDate.isValid()) {
-      setValidationError('Dates are invalid.')
+      setValidationError('analytics.filters.invalidDates')
       return
     }
 
     if (fromDate.isAfter(toDate, 'day')) {
-      setValidationError('Start date must be before end date.')
+      setValidationError('analytics.filters.startAfterEnd')
       return
     }
 
     if (toDate.isAfter(dayjs(), 'day')) {
-      setValidationError('End date cannot be in the future.')
+      setValidationError('analytics.filters.endInFuture')
       return
     }
 
@@ -81,10 +84,10 @@ export default function AnalyticsFilters({
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <div className="space-y-1">
           <CardTitle className="text-xl font-bold tracking-tight">
-            Analytics
+            {t('analytics.title')}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Showing expenses from {formatRangeLabel(analytics)}
+            {t('analytics.filters.showing', { range: formatRangeLabel(analytics) })}
           </p>
         </div>
         <div className="flex items-center gap-1.5 translate-y-1">
@@ -97,7 +100,7 @@ export default function AnalyticsFilters({
               className="h-8 px-2.5 text-xs font-medium"
               onClick={() => applyPreset(days)}
             >
-              {days}d
+              {t('analytics.filters.presetDays', { days })}
             </Button>
           ))}
         </div>
@@ -106,7 +109,7 @@ export default function AnalyticsFilters({
       <CardContent className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
-            From
+            {t('analytics.filters.from')}
           </Label>
           <Input
             type="date"
@@ -118,7 +121,7 @@ export default function AnalyticsFilters({
         </div>
         <div className="space-y-2">
           <Label className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
-            To
+            {t('analytics.filters.to')}
           </Label>
           <Input
             type="date"
@@ -130,7 +133,7 @@ export default function AnalyticsFilters({
         </div>
         {validationError && (
           <p className="col-span-2 text-xs font-medium text-destructive mt-1 italic animate-in fade-in slide-in-from-top-1">
-            {validationError}
+            {t(validationError)}
           </p>
         )}
       </CardContent>

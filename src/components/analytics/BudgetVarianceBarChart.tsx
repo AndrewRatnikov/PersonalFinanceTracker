@@ -9,6 +9,8 @@ import {
   YAxis,
 } from 'recharts'
 import type { BudgetVarianceItem, Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatNumber } from '@/i18n/format'
 import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -21,10 +23,9 @@ const ROW_HEIGHT = 48
 const LEGEND_HEIGHT = 36
 const CHART_PADDING = { top: 8, right: 16, bottom: 8, left: 8 }
 
+// Axis ticks: "2K" / "2 тис.", in the UI language.
 function formatValue(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}k`
-  return String(value)
+  return formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 })
 }
 
 const tooltipStyle = {
@@ -37,11 +38,12 @@ const tooltipStyle = {
 }
 
 export default function BudgetVarianceBarChart({ data, currency }: Props) {
+  const { t } = useT()
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-24 flex items-center justify-center">
         <CardContent className="text-muted-foreground text-sm">
-          No budget data found.
+          {t('analytics.noBudgetData')}
         </CardContent>
       </Card>
     )
@@ -113,11 +115,17 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
           />
           <Bar
             dataKey="Budget"
+            name={t('analytics.budget')}
             fill="#6366f1"
             radius={[0, 4, 4, 0]}
             maxBarSize={16}
           />
-          <Bar dataKey="Actual" radius={[0, 4, 4, 0]} maxBarSize={16}>
+          <Bar
+            dataKey="Actual"
+            name={t('analytics.actual')}
+            radius={[0, 4, 4, 0]}
+            maxBarSize={16}
+          >
             {chartData.map((entry, index) => (
               <Cell
                 key={`actual-cell-${index}`}

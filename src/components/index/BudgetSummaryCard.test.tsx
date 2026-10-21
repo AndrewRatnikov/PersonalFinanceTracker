@@ -1,16 +1,23 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { setLang } from '@/i18n/core'
+import { formatAmount } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
 
-// The card formats amounts with the shared money format (always 2 decimals).
-// Separators follow the host locale (this machine resolves to uk-UA), so the
-// expectations are built with the same toLocaleString options, never literals.
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+// The card formats amounts with the shared money format (always 2 decimals) in
+// the UI language. The language is pinned in beforeEach and the expectations
+// are built with the format helper, never with literal separators.
+const fmt2 = (n: number) => formatAmount(n, 'en')
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('BudgetSummaryCard', () => {
   describe('rendering', () => {
@@ -151,6 +158,43 @@ describe('BudgetSummaryCard', () => {
       expect(() =>
         render(<BudgetSummaryCard income={0} expenses={0} />),
       ).not.toThrow()
+    })
+  })
+
+  describe('in Ukrainian', () => {
+    function renderUk(ui: React.ReactElement) {
+      return render(<I18nProvider initialLang="uk">{ui}</I18nProvider>)
+    }
+
+    it('shows the hryvnia as грн with Ukrainian separators', () => {
+      renderUk(<BudgetSummaryCard income={1234567} expenses={400} />)
+
+      expect(screen.getByTestId('budget-summary-income').textContent).toMatch(
+        /^1\s234\s567,00 грн$/u,
+      )
+      expect(screen.getByTestId('budget-summary-expenses').textContent).toBe(
+        `${formatAmount(400, 'uk')} грн`,
+      )
+      expect(screen.getByTestId('budget-summary-net-balance').textContent).toBe(
+        `${formatAmount(1234167, 'uk')} грн`,
+      )
+    })
+
+    it('keeps the code of another currency', () => {
+      renderUk(<BudgetSummaryCard income={500} expenses={200} currency="USD" />)
+
+      expect(screen.getByTestId('budget-summary-income').textContent).toBe('500,00 USD')
+      expect(screen.getByTestId('budget-summary-net-balance').textContent).toBe(
+        '300,00 USD',
+      )
+    })
+
+    it('translates the card labels', () => {
+      renderUk(<BudgetSummaryCard income={1000} expenses={400} />)
+
+      const text = screen.getByTestId('budget-summary-card').textContent
+      expect(text).toMatch(/[Ѐ-ӿ]/)
+      expect(text).not.toMatch(/\b(Income|Expenses|Net|Balance)\b/)
     })
   })
 })

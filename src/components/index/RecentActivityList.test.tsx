@@ -1,19 +1,22 @@
 // No CONTRACT_GAPs: the Interface Contract's "Component: RecentActivityList"
 // section plus the EntryAmount contract specify props (mainCurrency is now
 // required) and every testid this file uses.
+//
+// i18n: the UI language is pinned in beforeEach; amounts are built with the
+// @/i18n/format helpers and an explicit language. The Ukrainian wording is the
+// Coder's, so the Ukrainian block asserts "Ukrainian, not the English text".
 
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { EntryConversion, Expense, IncomeEntry } from '@/lib/domain'
 import type { RecentItem } from '@/lib/dashboardSummary'
+import { setLang } from '@/i18n/core'
+import { formatAmount } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import RecentActivityList from '@/components/index/RecentActivityList'
 
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt2 = (n: number) => formatAmount(n, 'en')
 
 function conv(overrides: Partial<EntryConversion> = {}): EntryConversion {
   return {
@@ -55,6 +58,14 @@ function rowText(item: RecentItem): string {
   render(<RecentActivityList items={[item]} mainCurrency="UAH" />)
   return screen.getAllByTestId('recent-activity-item')[0].textContent
 }
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('root wrapper and empty state', () => {
   it('renders the root wrapper testid and the empty-state card when items is empty', () => {
@@ -269,5 +280,53 @@ describe('criterion 14: currency always shown, per row', () => {
     expect(
       within(rows[1]).getByTestId('recent-activity-amount').textContent,
     ).toContain('USD')
+  })
+})
+
+describe('in Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  function renderUk(items: Array<RecentItem>) {
+    return render(
+      <I18nProvider initialLang="uk">
+        <RecentActivityList items={items} mainCurrency="UAH" />
+      </I18nProvider>,
+    )
+  }
+
+  it('shows signed amounts with грн and Ukrainian separators', () => {
+    renderUk([mkExpenseItem({ amount: 1250.5 }), mkIncomeItem({ amount: 500 })])
+
+    const amounts = screen.getAllByTestId('recent-activity-amount').map((a) => a.textContent)
+    expect(amounts[0].trim().startsWith('-')).toBe(true)
+    expect(amounts[0]).toMatch(/1\s250,50 грн/u)
+    expect(amounts[1].trim().startsWith('+')).toBe(true)
+    expect(amounts[1]).toContain(`${formatAmount(500, 'uk')} грн`)
+    expect(amounts[0]).not.toContain('UAH')
+  })
+
+  it('shows a converted amount with грн only on the hryvnia', () => {
+    renderUk([mkExpenseItem({ amount: 20, currency: 'USD', conversion: conv() })])
+
+    expect(screen.getByTestId('entry-amount').textContent).toBe('-20,00 USD ≈ 830,40 грн')
+  })
+
+  it('translates the empty state', () => {
+    renderUk([])
+
+    const text = screen.getByTestId('recent-activity-empty').textContent
+    expect(text).toMatch(CYRILLIC)
+  })
+
+  it('translates the Uncategorized fallback and keeps category names as typed', () => {
+    renderUk([
+      mkIncomeItem(),
+      mkIncomeItem({ id: 'inc-2', categoryId: '', category: undefined }),
+    ])
+
+    const rows = screen.getAllByTestId('recent-activity-item').map((r) => r.textContent)
+    expect(rows[0]).toContain('Salary')
+    expect(rows[1]).not.toContain('Uncategorized')
+    expect(rows[1]).toMatch(CYRILLIC)
   })
 })

@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { Loader2, Lock } from 'lucide-react'
 
 import type { UnlockResult } from '@/lib/vault'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { VaultError, unlockWithPassword } from '@/lib/vault'
+import { LanguageToggle } from '@/components/LanguageToggle'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -30,6 +33,7 @@ export function UnlockScreen({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const { t } = useT()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,10 +44,10 @@ export function UnlockScreen({
       onUnlocked(result)
     } catch (err) {
       if (err instanceof VaultError) {
-        setError(err.message)
+        setError(errorMessage(err))
       } else {
         console.error(err)
-        setError('Something went wrong. Please try again.')
+        setError(t('errors.unexpected'))
       }
     } finally {
       setPending(false)
@@ -56,19 +60,18 @@ export function UnlockScreen({
         <CardHeader>
           <div className="flex items-center gap-2">
             <Lock className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Enter encryption password</CardTitle>
+            <CardTitle>{t('vault.unlock.title')}</CardTitle>
+            <LanguageToggle testId="unlock-language" className="ml-auto" />
           </div>
           <CardDescription>
-            {legacy
-              ? 'Enter your password to decrypt your local data. After unlocking, your data will be upgraded to the new encryption format.'
-              : 'Enter your password to decrypt your local data.'}
+            {legacy ? t('vault.unlock.descriptionLegacy') : t('vault.unlock.description')}
           </CardDescription>
         </CardHeader>
 
         <form onSubmit={(e) => void handleSubmit(e)}>
           <CardContent className="flex flex-col gap-4 mb-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('vault.password')}</Label>
               <Input
                 id="password"
                 data-testid="unlock-password-input"
@@ -98,10 +101,10 @@ export function UnlockScreen({
               {pending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {legacy ? 'Upgrading…' : 'Unlocking…'}
+                  {legacy ? t('vault.unlock.upgrading') : t('vault.unlock.unlocking')}
                 </>
               ) : (
-                'Unlock'
+                t('vault.unlock.submit')
               )}
             </Button>
             {!legacy && (
@@ -113,7 +116,7 @@ export function UnlockScreen({
                 onClick={onForgotPassword}
                 disabled={pending}
               >
-                Forgot password?
+                {t('vault.unlock.forgotPassword')}
               </Button>
             )}
           </CardFooter>

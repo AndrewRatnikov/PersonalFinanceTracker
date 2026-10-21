@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import type { CreateExpenseInput, QuickRepeat } from '@/lib/domain'
 import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
+import { useT } from '@/i18n'
 
 import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
@@ -45,6 +46,7 @@ function IndexRoute() {
 
 function Dashboard() {
   const queryClient = useQueryClient()
+  const { t, lang } = useT()
   const [isPending, setIsPending] = useState(false)
   // The repeat-last "…" / long-press opens the drawer here, prefilled (local
   // state, not the URL: the user stays on the dashboard).
@@ -111,8 +113,9 @@ function Dashboard() {
         now: new Date(),
         mainCurrency,
       }),
-    // todayStr recomputes the summary when the day changes.
-    [expenses, income, budgets, categories, mainCurrency, todayStr],
+    // todayStr recomputes the summary when the day changes; lang re-labels
+    // the "Uncategorized" fallback.
+    [expenses, income, budgets, categories, mainCurrency, todayStr, lang],
   )
 
   const addMutation = useMutation({
@@ -130,11 +133,11 @@ function Dashboard() {
       if (repeat !== 'none') {
         void queryClient.invalidateQueries({ queryKey: ['recurring'] })
       }
-      toast.success('Expense saved')
+      toast.success(t('toasts.expenseSaved'))
     },
     onError: (error: any) => {
       console.error('Failed to create expense:', error)
-      toast.error('Failed to save expense. Please try again.')
+      toast.error(t('toasts.expenseSaveFailed'))
     },
   })
 
@@ -197,7 +200,7 @@ function Dashboard() {
         <RecurringDashboardSection today={todayStr} />
 
         <section>
-          <h2 className="text-xl font-bold mb-4">Quick Add</h2>
+          <h2 className="text-xl font-bold mb-4">{t('dashboard.quickAdd.title')}</h2>
           {categories.length > 0 ? (
             <div className="flex flex-col gap-4">
               <RepeatLastChips
@@ -216,7 +219,7 @@ function Dashboard() {
           ) : (
             <Card className="border-dashed bg-transparent">
               <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
-                No categories found. Please create some categories first.
+                {t('dashboard.quickAdd.noCategories')}
               </CardContent>
             </Card>
           )}

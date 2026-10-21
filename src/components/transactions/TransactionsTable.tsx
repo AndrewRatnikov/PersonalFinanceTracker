@@ -1,4 +1,3 @@
-import dayjs from 'dayjs'
 import {
   Edit2,
   Loader2,
@@ -8,6 +7,8 @@ import {
   WifiOff,
 } from 'lucide-react'
 import type { Category, Currency, Expense } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatFullDate } from '@/i18n/format'
 import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import {
   Table,
@@ -56,19 +57,20 @@ export function TransactionsTable({
   onDelete,
 }: TransactionsTableProps) {
   const online = useOnlineStatus()
+  const { t } = useT()
 
   return (
     <Table>
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
-          <TableHead className="pl-6 font-semibold">Date</TableHead>
-          <TableHead className="font-semibold">Category</TableHead>
+          <TableHead className="pl-6 font-semibold">{t('common.date')}</TableHead>
+          <TableHead className="font-semibold">{t('common.category')}</TableHead>
           <TableHead className="hidden md:table-cell font-semibold">
-            Description
+            {t('common.description')}
           </TableHead>
-          <TableHead className="text-right font-semibold">Amount</TableHead>
+          <TableHead className="text-right font-semibold">{t('common.amount')}</TableHead>
           <TableHead className="pr-6 text-right font-semibold">
-            Actions
+            {t('common.actions')}
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -90,13 +92,12 @@ export function TransactionsTable({
             >
               {online ? (
                 <span className="text-destructive">
-                  Failed to load transactions. Please try again later.
+                  {t('transactions.loadFailed')}
                 </span>
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <WifiOff className="h-5 w-5" />
-                  Offline — transaction history unavailable without a
-                  connection.
+                  {t('transactions.offline')}
                 </div>
               )}
             </TableCell>
@@ -113,11 +114,9 @@ export function TransactionsTable({
                 </div>
                 <div className="space-y-1">
                   <p className="font-medium text-foreground">
-                    No transactions found
+                    {t('transactions.emptyTitle')}
                   </p>
-                  <p className="text-sm">
-                    Try adjusting your filters or search query.
-                  </p>
+                  <p className="text-sm">{t('transactions.emptyHint')}</p>
                 </div>
               </div>
             </TableCell>
@@ -130,7 +129,7 @@ export function TransactionsTable({
                 className="hover:bg-muted/30 transition-colors group"
               >
                 <TableCell className="pl-6 text-sm text-muted-foreground">
-                  {dayjs(tx.createdAt).format('MMM D, YYYY')}
+                  {formatFullDate(tx.createdAt)}
                 </TableCell>
                 <TableCell className="text-sm font-medium">
                   {tx.category ? (
@@ -140,12 +139,12 @@ export function TransactionsTable({
                     </Badge>
                   ) : (
                     <span className="text-muted-foreground italic text-xs">
-                      Uncategorized
+                      {t('common.uncategorized')}
                     </span>
                   )}
                   {tx.recurringId && (
                     <span
-                      title="From a recurring item"
+                      title={t('transactions.fromRecurring')}
                       data-testid="transaction-recurring-icon"
                       className="ml-1.5 inline-flex align-middle text-muted-foreground"
                     >
@@ -166,9 +165,9 @@ export function TransactionsTable({
                       size="icon"
                       data-testid="transaction-edit-button"
                       onClick={() => onEdit(tx)}
-                      aria-label="Edit transaction"
+                      aria-label={t('transactions.edit')}
                       className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                      title="Edit transaction"
+                      title={t('transactions.edit')}
                     >
                       <Edit2 className="w-4 h-4" />
                     </Button>
@@ -181,28 +180,26 @@ export function TransactionsTable({
                           data-testid="transaction-delete-button"
                           disabled={isDeleting}
                           className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          title="Delete transaction"
+                          aria-label={t('transactions.delete')}
+                          title={t('transactions.delete')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Are you absolutely sure?
-                          </AlertDialogTitle>
+                          <AlertDialogTitle>{t('transactions.deleteTitle')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently delete this transaction from
-                            your history. This action cannot be undone.
+                            {t('drawer.deleteDescription')}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() => onDelete(tx.id, tx.createdAt)}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
-                            Delete
+                            {t('common.delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

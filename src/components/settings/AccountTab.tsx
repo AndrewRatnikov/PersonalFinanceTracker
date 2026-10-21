@@ -9,6 +9,7 @@ import {
   signOutAccount,
   useAccountSession,
 } from '@/lib/accountSession'
+import { useT } from '@/i18n'
 import { DeleteAccountDialog } from '@/components/settings/DeleteAccountDialog'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
@@ -26,6 +27,7 @@ export function AccountTab() {
   const queryClient = useQueryClient()
   const [signingOut, setSigningOut] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const { t } = useT()
 
   const handleSignOut = async () => {
     setSigningOut(true)
@@ -34,13 +36,13 @@ export function AccountTab() {
       await queryClient.invalidateQueries({
         queryKey: ACCOUNT_SESSION_QUERY_KEY,
       })
-      toast.success('Signed out')
+      toast.success(t('toasts.signedOut'))
     } catch (err) {
       console.error('Sign out failed:', err)
       toast.error(
         err instanceof Error && err.message
-          ? `Could not sign out: ${err.message}`
-          : 'Could not sign out.',
+          ? t('toasts.signOutFailedWith', { error: err.message })
+          : t('toasts.signOutFailed'),
       )
     } finally {
       setSigningOut(false)
@@ -53,11 +55,9 @@ export function AccountTab() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserRound className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Account</CardTitle>
+            <CardTitle>{t('settings.account.title')}</CardTitle>
           </div>
-          <CardDescription>
-            An account is optional. Your data stays on this device either way.
-          </CardDescription>
+          <CardDescription>{t('settings.account.description')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {session ? (
@@ -67,7 +67,7 @@ export function AccountTab() {
                 className="flex items-center gap-2 text-sm"
               >
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                {session.email ?? 'Signed in'}
+                {session.email ?? t('settings.account.signedIn')}
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button
@@ -83,7 +83,7 @@ export function AccountTab() {
                   ) : (
                     <LogOut className="h-4 w-4" />
                   )}
-                  Sign out
+                  {t('settings.account.signOut')}
                 </Button>
                 <Button
                   type="button"
@@ -91,7 +91,7 @@ export function AccountTab() {
                   data-testid="delete-account-btn"
                   onClick={() => setDeleteOpen(true)}
                 >
-                  Delete account
+                  {t('settings.account.deleteAccount')}
                 </Button>
               </div>
             </>
@@ -101,7 +101,7 @@ export function AccountTab() {
               data-testid="account-sign-in-link"
               className={buttonVariants({ variant: 'outline' })}
             >
-              Sign in
+              {t('nav.signIn')}
             </Link>
           )}
         </CardContent>

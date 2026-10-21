@@ -2,18 +2,22 @@
 // testids are fully specified in the Interface Contract; the required
 // mainCurrency prop and the EntryAmount cell (data-testid="entry-amount") come
 // from the EntryAmount contract.
+//
+// i18n: the UI language is pinned in beforeEach; amounts and dates are built
+// with the @/i18n/format helpers and an explicit language. The Ukrainian wording
+// of headers and fallbacks is the Coder's, so those cases assert "Ukrainian, not
+// the English text".
 
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { EntryConversion, IncomeEntry } from '@/lib/domain'
+import { setLang } from '@/i18n/core'
+import { formatAmount, formatFullDate } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { IncomeTable } from '@/components/income/IncomeTable'
 
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt2 = (n: number) => formatAmount(n, 'en')
 
 function entry(overrides: Partial<IncomeEntry> = {}): IncomeEntry {
   return {
@@ -50,6 +54,14 @@ function renderTable(income: Array<IncomeEntry>) {
     />,
   )
 }
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('IncomeTable header', () => {
   it('has a Category column and no Source column', () => {
@@ -165,6 +177,19 @@ describe('IncomeTable amount cell', () => {
   })
 })
 
+describe('IncomeTable date cell', () => {
+  it('shows the full date with the English month', () => {
+    const first = entry()
+    const second = entry({ id: 'i2', createdAt: '2026-05-20T12:00:00.000Z' })
+    renderTable([first, second])
+
+    const rows = screen.getAllByTestId('income-row')
+    expect(rows[0].textContent).toContain(formatFullDate(first.createdAt, 'en'))
+    expect(rows[1].textContent).toContain(formatFullDate(second.createdAt, 'en'))
+    expect(rows[0].textContent).not.toContain(formatFullDate(second.createdAt, 'en'))
+  })
+})
+
 describe('IncomeTable rows', () => {
   it('renders one income-row per entry, in the given order', () => {
     renderTable([
@@ -226,5 +251,59 @@ describe('IncomeTable rows', () => {
     )
     expect(screen.queryAllByTestId('income-row')).toHaveLength(0)
     expect(screen.getByText('No income recorded yet')).toBeTruthy()
+  })
+})
+
+describe('IncomeTable in Ukrainian', () => {
+  function renderUk(income: Array<IncomeEntry>) {
+    return render(
+      <I18nProvider initialLang="uk">
+        <IncomeTable
+          income={income}
+          isLoading={false}
+          isError={false}
+          isDeleting={false}
+          mainCurrency="UAH"
+          onDelete={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+  }
+
+  it('shows amounts with грн and Ukrainian separators', () => {
+    renderUk([entry({ amount: 1234.5 })])
+
+    const amount = screen.getByTestId('entry-amount').textContent
+    expect(amount).toMatch(/^1\s234,50 грн$/u)
+  })
+
+  it('shows the date with the Ukrainian month', () => {
+    const row = entry()
+    renderUk([row])
+
+    const text = screen.getByTestId('income-row').textContent
+    expect(text).toContain(formatFullDate(row.createdAt, 'uk'))
+    expect(text).toContain('бер.')
+    expect(text).not.toContain(formatFullDate(row.createdAt, 'en'))
+  })
+
+  it('translates the header and the Uncategorized fallback, and keeps category names as typed', () => {
+    renderUk([
+      entry(),
+      entry({ id: 'i2', categoryId: '', category: undefined }),
+    ])
+
+    expect(screen.queryByText('Category')).toBeNull()
+    const cells = screen.getAllByTestId('income-row-category').map((c) => c.textContent)
+    expect(cells[0]).toContain('Salary')
+    expect(cells[1]).toMatch(/[Ѐ-ӿ]/)
+    expect(cells[1]).not.toContain('Uncategorized')
+  })
+
+  it('translates the empty state', () => {
+    renderUk([])
+
+    expect(screen.queryByText('No income recorded yet')).toBeNull()
+    expect(screen.queryAllByTestId('income-row')).toHaveLength(0)
   })
 })

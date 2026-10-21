@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useT } from '@/i18n'
 import { deleteCurrentUserAccount } from '@/lib/account'
 import { ACCOUNT_SESSION_QUERY_KEY, signOutAccount } from '@/lib/accountSession'
 import { reloadToHome, wipeLocalData } from '@/lib/localWipe'
@@ -32,6 +33,7 @@ export function DeleteAccountDialog({
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [removeLocal, setRemoveLocal] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     if (!open) {
@@ -48,7 +50,9 @@ export function DeleteAccountDialog({
       await deleteCurrentUserAccount()
     } catch (e: unknown) {
       const message =
-        e instanceof Error && e.message ? e.message : 'Account deletion failed'
+        e instanceof Error && e.message
+          ? e.message
+          : t('settings.account.deleteFailed')
       setError(message)
       toast.error(message)
       setDeleting(false)
@@ -61,7 +65,7 @@ export function DeleteAccountDialog({
       console.error('Sign-out after account deletion failed:', e)
     }
 
-    toast.success('Account deleted')
+    toast.success(t('toasts.accountDeleted'))
 
     if (removeLocal) {
       try {
@@ -82,10 +86,9 @@ export function DeleteAccountDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="delete-account-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete account?</AlertDialogTitle>
+          <AlertDialogTitle>{t('settings.account.deleteTitle')}</AlertDialogTitle>
           <AlertDialogDescription>
-            Deletes your MinimaSpend account on the server. Data on this device
-            is kept unless you tick the box below.
+            {t('settings.account.deleteDescription')}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -102,7 +105,7 @@ export function DeleteAccountDialog({
             onChange={(e) => setRemoveLocal(e.target.checked)}
             disabled={deleting}
           />
-          Also remove data from this device
+          {t('settings.account.alsoRemoveData')}
         </label>
 
         {error && (
@@ -116,7 +119,7 @@ export function DeleteAccountDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="delete-account-cancel-btn">
-            No
+            {t('common.no')}
           </AlertDialogCancel>
           <AlertDialogAction
             data-testid="delete-account-confirm-btn"
@@ -124,7 +127,7 @@ export function DeleteAccountDialog({
             disabled={deleting}
             onClick={() => void handleDelete()}
           >
-            {deleting ? 'Deleting…' : 'Yes'}
+            {deleting ? t('settings.account.deleting') : t('common.yes')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

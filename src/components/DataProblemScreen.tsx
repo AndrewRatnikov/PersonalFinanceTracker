@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Loader2, TriangleAlert } from 'lucide-react'
 
 import type { RestoreSummary } from '@/lib/backup'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { storageKeyLabel } from '@/lib/dataErrors'
 import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 import { Button } from '@/components/ui/button'
@@ -27,7 +29,7 @@ interface DataProblemScreenProps {
 }
 
 function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  return errorMessage(err)
 }
 
 export function DataProblemScreen({
@@ -44,6 +46,7 @@ export function DataProblemScreen({
   const [backupSkipped, setBackupSkipped] = useState<Array<string> | null>(
     null,
   )
+  const { t } = useT()
 
   const handleQuarantine = async () => {
     setError(null)
@@ -92,32 +95,24 @@ export function DataProblemScreen({
         <CardHeader>
           <div className="flex items-center gap-2">
             <TriangleAlert className="h-4 w-4 text-destructive" />
-            <CardTitle>Data problem</CardTitle>
+            <CardTitle>{t('backup.dataProblem.title')}</CardTitle>
           </div>
-          <CardDescription>
-            Some of your local data could not be decrypted. It has not been
-            changed.
-          </CardDescription>
+          <CardDescription>{t('backup.dataProblem.description')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <p className="text-sm">
-            Affected data:{' '}
+            {t('backup.dataProblem.affected')}{' '}
             <span data-testid="data-problem-key" className="font-semibold">
               {storageKeyLabel(storageKey)}
             </span>
           </p>
-          <p className="text-sm text-muted-foreground">
-            Retry if this might be temporary. Quarantine moves the unreadable
-            data aside, unchanged, so you can keep using the app.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('backup.dataProblem.explain')}</p>
           {onRestored && (
             <p
               data-testid="data-problem-restore-hint"
               className="text-sm text-muted-foreground"
             >
-              Restore from backup replaces the data on this device with the
-              backup. The unreadable data is kept aside in quarantine,
-              unchanged.
+              {t('backup.dataProblem.restoreHint')}
             </p>
           )}
           {backupSkipped !== null && (
@@ -125,9 +120,11 @@ export function DataProblemScreen({
               data-testid="data-problem-backup-done"
               className="text-sm text-emerald-600 dark:text-emerald-400"
             >
-              Readable data backed up.
+              {t('backup.dataProblem.backupDone')}
               {backupSkipped.length > 0 &&
-                ` Not included: ${backupSkipped.map(storageKeyLabel).join(', ')}`}
+                ` ${t('backup.dataProblem.notIncluded', {
+                  keys: backupSkipped.map(storageKeyLabel).join(', '),
+                })}`}
             </p>
           )}
           {error !== null && (
@@ -147,7 +144,7 @@ export function DataProblemScreen({
             onClick={() => void onRetry()}
             disabled={pending}
           >
-            Retry
+            {t('common.retry')}
           </Button>
           {onBackupReadable && (
             <Button
@@ -158,7 +155,7 @@ export function DataProblemScreen({
               disabled={pending}
             >
               {backingUp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Back up readable data
+              {t('backup.dataProblem.backupReadable')}
             </Button>
           )}
           {onRestored && (
@@ -169,7 +166,7 @@ export function DataProblemScreen({
               onClick={() => setRestoreOpen(true)}
               disabled={pending}
             >
-              Restore from backup
+              {t('backup.restoreFromBackup')}
             </Button>
           )}
           <Button
@@ -181,7 +178,7 @@ export function DataProblemScreen({
             {pending && !backingUp && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            Quarantine and continue
+            {t('backup.dataProblem.quarantine')}
           </Button>
         </CardFooter>
       </Card>

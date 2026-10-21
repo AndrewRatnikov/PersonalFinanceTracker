@@ -5,6 +5,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+import { useT } from '@/i18n'
 
 interface TransactionsPaginationProps {
   pageIndex: number
@@ -21,6 +22,7 @@ export function TransactionsPagination({
   totalPages,
   onPageChange,
 }: TransactionsPaginationProps) {
+  const { t } = useT()
   if (totalPages <= 1) return null
 
   const isPrevDisabled = pageIndex === 0
@@ -29,23 +31,20 @@ export function TransactionsPagination({
   return (
     <div className="flex items-center justify-between p-4 border-t bg-muted/20">
       <span className="text-sm text-muted-foreground">
-        Showing{' '}
-        <span className="font-medium text-foreground">
-          {pageIndex * pageSize + 1}
-        </span>{' '}
-        to{' '}
-        <span className="font-medium text-foreground">
-          {Math.min((pageIndex + 1) * pageSize, totalCount)}
-        </span>{' '}
-        of <span className="font-medium text-foreground">{totalCount}</span>{' '}
-        results
+        {t('transactions.pagination.showing', {
+          from: pageIndex * pageSize + 1,
+          to: Math.min((pageIndex + 1) * pageSize, totalCount),
+          total: totalCount,
+        })}
       </span>
 
-      <Pagination className="w-auto mx-0">
+      <Pagination className="w-auto mx-0" aria-label={t('transactions.pagination.label')}>
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
               href="#"
+              text={t('transactions.pagination.previous')}
+              aria-label={t('transactions.pagination.previousLabel')}
               onClick={(e) => {
                 e.preventDefault()
                 if (!isPrevDisabled) onPageChange(pageIndex - 1)
@@ -66,6 +65,8 @@ export function TransactionsPagination({
           <PaginationItem>
             <PaginationNext
               href="#"
+              text={t('transactions.pagination.next')}
+              aria-label={t('transactions.pagination.nextLabel')}
               onClick={(e) => {
                 e.preventDefault()
                 if (!isNextDisabled) onPageChange(pageIndex + 1)

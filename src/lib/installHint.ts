@@ -1,6 +1,8 @@
 // iOS Safari may evict a website's storage; an app added to the Home Screen
 // keeps it (spec §6.1). Pure detection, so it is easy to test.
 
+import { t } from '../i18n/core'
+
 export interface InstallEnv {
   userAgent: string
   maxTouchPoints: number
@@ -11,10 +13,6 @@ export interface InstallEnv {
 const IOS_DEVICE = /iPhone|iPad|iPod/
 const OTHER_IOS_BROWSER = /CriOS|FxiOS|EdgiOS|OPiOS/
 
-const IOS_HINT =
-  'Add MinimaSpend to your Home Screen so Safari keeps your data.'
-const OTHER_HINT =
-  'Install the app or bookmark it so the browser is less likely to clear your data.'
 
 export function currentInstallEnv(): InstallEnv | null {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -56,6 +54,9 @@ export function shouldShowInstallHint(
   )
 }
 
+// The hint of the Best-effort storage status, in the UI language.
 export function bestEffortHint(env: InstallEnv | null): string {
-  return env !== null && isIosSafari(env) ? IOS_HINT : OTHER_HINT
+  return env !== null && isIosSafari(env)
+    ? t('settings.storage.hintIos')
+    : t('settings.storage.hintOther')
 }

@@ -11,6 +11,7 @@
 // and year steps clamp to the end of a short month without drifting:
 // Jan 31 monthly gives Feb 28, then Mar 31 again.
 
+import { plural } from '../i18n/core'
 import { CURRENCIES } from './domain'
 import { formatMoney } from './money'
 import { crossRate } from './rates/types'
@@ -25,21 +26,6 @@ import type {
 type Schedule = Pick<RecurringItem, 'frequency' | 'startDate' | 'end'>
 
 const DAY_MS = 24 * 60 * 60 * 1000
-
-const MONTH_NAMES = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-]
 
 interface DateParts {
   y: number
@@ -383,40 +369,9 @@ export function monthlyTotalsInMain(
   return result
 }
 
-function ordinal(n: number): string {
-  const lastTwo = n % 100
-  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`
-  switch (n % 10) {
-    case 1:
-      return `${n}st`
-    case 2:
-      return `${n}nd`
-    case 3:
-      return `${n}rd`
-    default:
-      return `${n}th`
-  }
-}
-
-// "Every day", "Every 2 weeks", "Every month on the 31st", "Every year on Mar 1".
-export function describeFrequency(
-  item: Pick<RecurringItem, 'frequency' | 'startDate'>,
-): string {
-  const interval = intervalOf(item)
-  const { m, d } = parseDate(item.startDate)
-  const every = (singular: string) =>
-    interval === 1 ? `Every ${singular}` : `Every ${interval} ${singular}s`
-  switch (item.frequency.unit) {
-    case 'day':
-      return every('day')
-    case 'week':
-      return every('week')
-    case 'month':
-      return `${every('month')} on the ${ordinal(d)}`
-    case 'year':
-      return `${every('year')} on ${MONTH_NAMES[m]} ${d}`
-  }
-}
+// "Every month on the 31st" / "Щомісяця, 31-го": language-specific, in
+// src/i18n/frequency.ts.
+export { describeFrequency } from '../i18n/frequency'
 
 export function formatRecurringAmount(
   amount: number,
@@ -425,8 +380,7 @@ export function formatRecurringAmount(
   return formatMoney(amount, currency)
 }
 
+// "Added 1 recurring transaction" / "Added 3 recurring transactions"
 export function recurringCreatedMessage(count: number): string {
-  return count === 1
-    ? 'Added 1 recurring transaction'
-    : `Added ${count} recurring transactions`
+  return plural('toasts.recurringCreated', count)
 }

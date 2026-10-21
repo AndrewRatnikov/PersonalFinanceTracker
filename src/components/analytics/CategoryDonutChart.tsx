@@ -1,5 +1,7 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import type { CategoryBreakdownItem, Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatNumber } from '@/i18n/format'
 import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -40,6 +42,7 @@ export default function CategoryDonutChart({
   emptyText,
   ariaLabel,
 }: Props) {
+  const { t } = useT()
   const figureProps = ariaLabel
     ? { role: 'figure', 'aria-label': ariaLabel }
     : {}
@@ -52,7 +55,7 @@ export default function CategoryDonutChart({
         {...figureProps}
       >
         <CardContent className="text-muted-foreground text-sm">
-          {emptyText ?? 'No data found.'}
+          {emptyText ?? t('analytics.noData')}
         </CardContent>
       </Card>
     )
@@ -75,8 +78,8 @@ export default function CategoryDonutChart({
       ? [
           {
             categoryId: 'other',
-            name: 'Other',
-            shortName: 'Other',
+            name: t('analytics.other'),
+            shortName: t('analytics.other'),
             icon: null,
             value: otherTotal,
           },
@@ -124,8 +127,10 @@ export default function CategoryDonutChart({
               itemStyle={{ fontWeight: 600, padding: '0 4px' }}
               formatter={(value, name) => {
                 const n = Number(value ?? 0)
-                const pct =
-                  grandTotal > 0 ? ((n / grandTotal) * 100).toFixed(1) : '0'
+                const pct = formatNumber(
+                  grandTotal > 0 ? (n / grandTotal) * 100 : 0,
+                  { maximumFractionDigits: 1 },
+                )
                 return [
                   `${formatMoney(n, currency)} (${pct}%)`,
                   name ?? '',

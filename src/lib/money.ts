@@ -3,39 +3,22 @@
 // Amounts and conversions are stored unrounded; rounding to 2 decimals
 // happens only here, for display. Every total in the app sums mainAmountOf().
 
+import { plural } from '../i18n/core'
 import type { Currency, EntryConversion } from './domain'
 
-// The local calendar date of an ISO timestamp as YYYY-MM-DD. Same rule as
-// recurrence.toLocalDateString (kept local to avoid an import cycle, since
-// recurrence formats its amounts with formatMoney).
+// The local calendar date of an ISO timestamp as YYYY-MM-DD (a machine date,
+// whatever the UI language). Same rule as recurrence.toLocalDateString (kept
+// local to avoid an import cycle, since recurrence formats its amounts with
+// formatMoney).
 function localDateOf(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function formatAmount(value: number): string {
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
-// "830.40 UAH" (en-US) / "830,40 UAH" (uk-UA)
-export function formatMoney(value: number, currency: Currency): string {
-  return `${formatAmount(value)} ${currency}`
-}
-
-// "65 UAH" for whole numbers, "12.50 USD" otherwise. Locale-free: used for
-// short hints and chip labels (suggestions, repeat last, toasts).
-export function formatShortMoney(amount: number, currency: Currency): string {
-  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
-  return `${text} ${currency}`
-}
-
-export function formatRate(rate: number): string {
-  return rate.toLocaleString(undefined, { maximumFractionDigits: 4 })
-}
+// Display formatting lives in src/i18n/format.ts (it follows the UI language);
+// re-exported here so every existing import keeps working.
+export { formatAmount, formatMoney, formatShortMoney, formatRate } from '../i18n/format'
 
 // The stored definition: converted iff the stored conversion is for `main`.
 export function isConverted(
@@ -69,8 +52,7 @@ export function identityConversion(
   }
 }
 
+// "1 entry waiting for exchange rates" / "3 entries waiting for exchange rates"
 export function pendingLabel(count: number): string {
-  return count === 1
-    ? '1 entry waiting for exchange rates'
-    : `${count} entries waiting for exchange rates`
+  return plural('common.pendingEntries', count)
 }

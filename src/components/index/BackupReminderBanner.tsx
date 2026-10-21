@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatabaseBackup, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { downloadBackup } from '@/lib/backup'
 import {
   BACKUP_REMINDER_QUERY_KEY,
@@ -15,16 +17,13 @@ import { reportDataProblem } from '@/lib/dataProblem'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 // Dashboard backup reminder (spec §6.2): "Last backup: N days ago.
 // [Back up now] [Later]". The rule lives in backupReminder.ts.
 export function BackupReminderBanner() {
   const queryClient = useQueryClient()
   const [hidden, setHidden] = useState(false)
   const [pending, setPending] = useState(false)
+  const { t } = useT()
   const { data } = useQuery({
     queryKey: BACKUP_REMINDER_QUERY_KEY,
     queryFn: () => getBackupReminderStatus(),
@@ -37,14 +36,14 @@ export function BackupReminderBanner() {
     try {
       const result = await downloadBackup()
       if (result.status === 'saved') {
-        toast.success('Backup saved')
+        toast.success(t('toasts.backupSaved'))
         await queryClient.invalidateQueries({
           queryKey: BACKUP_REMINDER_QUERY_KEY,
         })
       }
     } catch (err) {
       if (isDecryptError(err)) reportDataProblem(err)
-      toast.error(`Could not download the backup: ${errorText(err)}`)
+      toast.error(t('toasts.backupDownloadFailed', { error: errorMessage(err) }))
     } finally {
       setPending(false)
     }
@@ -78,7 +77,7 @@ export function BackupReminderBanner() {
             disabled={pending}
           >
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Back up now
+            {t('dashboard.backupReminder.now')}
           </Button>
           <Button
             type="button"
@@ -88,7 +87,7 @@ export function BackupReminderBanner() {
             onClick={() => void handleLater()}
             disabled={pending}
           >
-            Later
+            {t('dashboard.backupReminder.later')}
           </Button>
         </div>
       </CardContent>

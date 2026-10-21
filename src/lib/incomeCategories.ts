@@ -2,22 +2,15 @@
 // income `source` values into income categories. No storage access here, so
 // both localDb.ensureIncomeCategories() and backup restore can reuse it.
 
+import { t } from '../i18n/core'
+import { defaultIncomeCategories } from './defaultCategories'
+import type { Lang } from '../i18n/lang'
 import type { Category, IncomeEntry } from './domain'
 
 export const DEFAULT_INCOME_CATEGORIES: ReadonlyArray<{
   name: string
   icon: string
-}> = [
-  { name: 'Salary', icon: '💼' },
-  { name: 'Freelance', icon: '💻' },
-  { name: 'Gifts', icon: '🎁' },
-  { name: 'Investments', icon: '📈' },
-  { name: 'Refunds', icon: '↩️' },
-  { name: 'Other', icon: '🪙' },
-]
-
-const OTHER_NAME = 'Other'
-const OTHER_ICON = '🪙'
+}> = defaultIncomeCategories('en')
 
 export interface ConvertIncomeSourcesOptions {
   /** ISO timestamp; defaults to the current time. */
@@ -26,6 +19,8 @@ export interface ConvertIncomeSourcesOptions {
   addDefaults?: boolean
   /** Keep each converted entry's own updatedAt instead of `now`. Default false. */
   preserveUpdatedAt?: boolean
+  /** Language of the defaults and of the "Other" fallback. Default 'en'. */
+  lang?: Lang
 }
 
 export interface ConvertIncomeSourcesResult {
@@ -55,6 +50,8 @@ export function convertIncomeSources(
   options: ConvertIncomeSourcesOptions = {},
 ): ConvertIncomeSourcesResult {
   const now = options.now ?? new Date().toISOString()
+  const defaults = defaultIncomeCategories(options.lang ?? 'en')
+  const other = defaults[defaults.length - 1]
   const list: Array<Category> = [...existingIncomeCategories]
   const byName = new Map<string, Category>()
   for (const c of list) {
@@ -85,7 +82,7 @@ export function convertIncomeSources(
 
   // Pass 2: missing defaults.
   if (options.addDefaults) {
-    for (const d of DEFAULT_INCOME_CATEGORIES) {
+    for (const d of defaults) {
       if (!byName.has(nameKey(d.name))) append(d.name, d.icon)
     }
   }
@@ -97,7 +94,7 @@ export function convertIncomeSources(
     let category = source ? byName.get(nameKey(source)) : undefined
     if (!category) {
       category =
-        byName.get(nameKey(OTHER_NAME)) ?? append(OTHER_NAME, OTHER_ICON)
+        byName.get(nameKey(other.name)) ?? append(other.name, other.icon)
     }
     const rest: Record<string, unknown> = { ...entry }
     delete rest.source
@@ -125,5 +122,5 @@ export function incomeSourceLabel(
   const name = entry.category?.name
   if (name) return name
   const source = typeof entry.source === 'string' ? entry.source.trim() : ''
-  return source || 'Uncategorized'
+  return source || t('common.uncategorized')
 }

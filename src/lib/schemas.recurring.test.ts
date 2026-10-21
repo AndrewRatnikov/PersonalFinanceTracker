@@ -1,13 +1,25 @@
 // No CONTRACT_GAPs: recurringInputSchema, recurringInputSchemaFor, the issue
 // paths and the messages are specified in the Interface Contract (module:
-// schemas) and plan section 3.
+// schemas) and plan section 9. The schema messages are now catalog keys
+// ('errors.validation.*'); validationMessage() turns them into text in the
+// current language.
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { setLang } from '@/i18n/core'
+import { validationMessage } from '@/i18n/errors'
 import {
   recurringInputSchema,
   recurringInputSchemaFor,
 } from '@/lib/schemas'
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 function valid(overrides: Record<string, unknown> = {}) {
   return {
@@ -102,13 +114,13 @@ describe('recurringInputSchema accepts', () => {
 })
 
 describe('recurringInputSchema rejects', () => {
-  it.each([0, -5])('amount %s with "Amount must be greater than 0" on amount', (amount) => {
+  it.each([0, -5])('amount %s with the amount-positive key on amount', (amount) => {
     const result = recurringInputSchema.safeParse(valid({ amount }))
 
     expect(result.success).toBe(false)
     expect(issuesOf(result)).toContainEqual({
       path: 'amount',
-      message: 'Amount must be greater than 0',
+      message: 'errors.validation.amountPositive',
     })
   })
 
@@ -119,18 +131,18 @@ describe('recurringInputSchema rejects', () => {
     expect(issuesOf(result).map((i) => i.path)).toContain('currency')
   })
 
-  it('an empty categoryId with "Category is required" on categoryId', () => {
+  it('an empty categoryId with the category-required key on categoryId', () => {
     const result = recurringInputSchema.safeParse(valid({ categoryId: '' }))
 
     expect(result.success).toBe(false)
     expect(issuesOf(result)).toContainEqual({
       path: 'categoryId',
-      message: 'Category is required',
+      message: 'errors.validation.categoryRequired',
     })
   })
 
   it.each([0, 366, 1.5, -1])(
-    'interval %s with the interval message on frequency.interval',
+    'interval %s with the interval-range key on frequency.interval',
     (interval) => {
       const result = recurringInputSchema.safeParse(
         valid({ frequency: { unit: 'month', interval } }),
@@ -139,7 +151,7 @@ describe('recurringInputSchema rejects', () => {
       expect(result.success).toBe(false)
       expect(issuesOf(result)).toContainEqual({
         path: 'frequency.interval',
-        message: 'Interval must be a whole number from 1 to 365',
+        message: 'errors.validation.intervalRange',
       })
     },
   )
@@ -156,14 +168,14 @@ describe('recurringInputSchema rejects', () => {
   })
 
   it.each(['2026-02-30', '2026-13-01', '2027-02-29', 'not-a-date', '2026-3-1', ''])(
-    'startDate %s with "Invalid date" on startDate',
+    'startDate %s with the invalid-date key on startDate',
     (startDate) => {
       const result = recurringInputSchema.safeParse(valid({ startDate }))
 
       expect(result.success).toBe(false)
       expect(issuesOf(result)).toContainEqual({
         path: 'startDate',
-        message: 'Invalid date',
+        message: 'errors.validation.invalidDate',
       })
     },
   )
@@ -176,7 +188,7 @@ describe('recurringInputSchema rejects', () => {
     expect(result.success).toBe(false)
     expect(issuesOf(result)).toContainEqual({
       path: 'end',
-      message: "End date can't be before the start date",
+      message: 'errors.validation.endBeforeStart',
     })
   })
 
@@ -188,13 +200,15 @@ describe('recurringInputSchema rejects', () => {
     expect(result.success).toBe(false)
   })
 
-  it.each([0, -2])('afterCount %s with "Must be at least 1"', (count) => {
+  it.each([0, -2])('afterCount %s with the at-least-one key', (count) => {
     const result = recurringInputSchema.safeParse(
       valid({ end: { type: 'afterCount', count } }),
     )
 
     expect(result.success).toBe(false)
-    expect(issuesOf(result).map((i) => i.message)).toContain('Must be at least 1')
+    expect(issuesOf(result).map((i) => i.message)).toContain(
+      'errors.validation.atLeastOne',
+    )
   })
 
   it('a fractional afterCount', () => {
@@ -219,7 +233,7 @@ describe('recurringInputSchemaFor', () => {
     expect(schema.safeParse(valid({ categoryId: 'c2' })).success).toBe(true)
   })
 
-  it('rejects a categoryId that is not in the list with "Category not found" on categoryId', () => {
+  it('rejects a categoryId that is not in the list with the category-not-found key on categoryId', () => {
     const result = recurringInputSchemaFor(['c1', 'c2']).safeParse(
       valid({ categoryId: 'c9' }),
     )
@@ -227,7 +241,7 @@ describe('recurringInputSchemaFor', () => {
     expect(result.success).toBe(false)
     expect(issuesOf(result)).toContainEqual({
       path: 'categoryId',
-      message: 'Category not found',
+      message: 'errors.validation.categoryNotFound',
     })
   })
 
@@ -235,7 +249,9 @@ describe('recurringInputSchemaFor', () => {
     const result = recurringInputSchemaFor([]).safeParse(valid())
 
     expect(result.success).toBe(false)
-    expect(issuesOf(result).map((i) => i.message)).toContain('Category not found')
+    expect(issuesOf(result).map((i) => i.message)).toContain(
+      'errors.validation.categoryNotFound',
+    )
   })
 
   it('still applies the base rules', () => {
@@ -243,5 +259,45 @@ describe('recurringInputSchemaFor', () => {
 
     expect(result.success).toBe(false)
     expect(issuesOf(result).map((i) => i.path)).toContain('amount')
+  })
+})
+
+describe('schema messages become text through validationMessage', () => {
+  function messageAt(path: string, overrides: Record<string, unknown>) {
+    const result = recurringInputSchema.safeParse(valid(overrides))
+    const issue = issuesOf(result).find((i) => i.path === path)
+    if (!issue) throw new Error(`no issue at ${path}`)
+    return issue.message
+  }
+
+  it('shows the English text in English', () => {
+    expect(validationMessage(messageAt('amount', { amount: 0 }))).toBe(
+      'Amount must be greater than 0',
+    )
+    expect(validationMessage(messageAt('categoryId', { categoryId: '' }))).toBe(
+      'Category is required',
+    )
+    expect(validationMessage(messageAt('startDate', { startDate: '2026-02-30' }))).toBe(
+      'Invalid date',
+    )
+    expect(
+      validationMessage(
+        messageAt('end', { end: { type: 'onDate', date: '2026-02-28' } }),
+      ),
+    ).toBe("End date can't be before the start date")
+  })
+
+  it('shows Ukrainian text in Ukrainian', () => {
+    setLang('uk', { persist: false })
+
+    expect(validationMessage(messageAt('amount', { amount: 0 }))).toBe(
+      'Сума має бути більшою за 0',
+    )
+    expect(validationMessage(messageAt('categoryId', { categoryId: '' }))).toMatch(
+      /[Ѐ-ӿ]/,
+    )
+    expect(validationMessage(messageAt('startDate', { startDate: '2026-02-30' }))).toMatch(
+      /[Ѐ-ӿ]/,
+    )
   })
 })

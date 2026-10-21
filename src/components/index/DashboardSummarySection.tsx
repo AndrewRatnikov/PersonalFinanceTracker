@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 
 import type { BudgetStatus, DashboardSummary } from '@/lib/dashboardSummary'
+import { useT } from '@/i18n'
 import BudgetSummaryCard from '@/components/index/BudgetSummaryCard'
 import ConversionPendingNote from '@/components/ConversionPendingNote'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,6 +28,7 @@ export default function DashboardSummarySection({
 }: DashboardSummarySectionProps) {
   const cur = summary.mainCurrency
   const { leftToSpend, dailyAllowance, pace, budgetWatch } = summary
+  const { t } = useT()
 
   return (
     <div className="flex flex-col gap-8" data-testid="dashboard-summary">
@@ -36,7 +38,7 @@ export default function DashboardSummarySection({
             <>
               <CardHeader>
                 <CardTitle className="text-sm text-muted-foreground">
-                  Left to spend
+                  {t('dashboard.leftToSpend')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
@@ -53,7 +55,7 @@ export default function DashboardSummarySection({
                   className="text-sm text-muted-foreground"
                   data-testid="dashboard-daily-allowance"
                 >
-                  {`${formatMoney(dailyAllowance ?? 0, cur)} per day`}
+                  {t('dashboard.perDay', { amount: formatMoney(dailyAllowance ?? 0, cur) })}
                 </p>
               </CardContent>
             </>
@@ -64,7 +66,9 @@ export default function DashboardSummarySection({
             >
               <div className="grid grid-cols-3 gap-3">
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground">Income</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t('dashboard.summary.income')}
+                  </span>
                   <span
                     className="font-semibold tabular-nums break-words"
                     data-testid="dashboard-month-income"
@@ -74,7 +78,7 @@ export default function DashboardSummarySection({
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs text-muted-foreground">
-                    Expenses
+                    {t('dashboard.summary.expenses')}
                   </span>
                   <span
                     className="font-semibold tabular-nums break-words"
@@ -84,7 +88,9 @@ export default function DashboardSummarySection({
                   </span>
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground">Net</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t('dashboard.summary.net')}
+                  </span>
                   <span
                     className={cn(
                       'font-semibold tabular-nums break-words',
@@ -102,7 +108,7 @@ export default function DashboardSummarySection({
                 className="text-sm font-medium text-primary underline-offset-4 hover:underline"
                 data-testid="dashboard-budget-setup-link"
               >
-                Set up a budget in Settings → Budget
+                {t('dashboard.setUpBudget')}
               </Link>
             </CardContent>
           )}
@@ -113,9 +119,10 @@ export default function DashboardSummarySection({
             className="text-sm text-muted-foreground"
             data-testid="dashboard-pace"
           >
-            {`${formatMoney(pace.spentSoFar, cur)} spent, ${Math.abs(
-              Math.round(pace.changePct),
-            )}% ${pace.changePct < 0 ? 'less' : 'more'} than this time last month`}
+            {t(pace.changePct < 0 ? 'dashboard.paceLess' : 'dashboard.paceMore', {
+              amount: formatMoney(pace.spentSoFar, cur),
+              percent: Math.abs(Math.round(pace.changePct)),
+            })}
           </p>
         )}
       </section>
@@ -141,7 +148,7 @@ export default function DashboardSummarySection({
           <Card>
             <CardHeader>
               <CardTitle className="text-lg font-semibold tracking-tight">
-                Budget watch
+                {t('dashboard.budgetWatch')}
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">

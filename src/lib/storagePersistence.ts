@@ -2,6 +2,8 @@
 // report whether it agreed. Every function here is best-effort and never
 // throws; the API is missing in some browsers.
 
+import { t } from '../i18n/core'
+import { formatNumber } from '../i18n/format'
 import { updateAppSettings } from './appSettings'
 
 export interface StorageStatus {
@@ -59,15 +61,17 @@ export async function getStorageStatus(): Promise<StorageStatus> {
   return status
 }
 
-const UNITS = ['KB', 'MB', 'GB'] as const
+const UNITS = ['common.bytes.kb', 'common.bytes.mb', 'common.bytes.gb'] as const
 
+// "512 B", "1.5 KB" (en) / "512 Б", "1,5 КБ" (uk)
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024) return `${bytes} ${t('common.bytes.b')}`
   let value = bytes / 1024
   let unit = 0
   while (value >= 1024 && unit < UNITS.length - 1) {
     value /= 1024
     unit++
   }
-  return `${value.toFixed(1)} ${UNITS[unit]}`
+  const number = formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  return `${number} ${t(UNITS[unit])}`
 }

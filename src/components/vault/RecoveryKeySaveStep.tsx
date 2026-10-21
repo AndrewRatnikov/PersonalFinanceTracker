@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Copy, Download, Printer } from 'lucide-react'
 
+import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,6 +38,7 @@ export function RecoveryKeySaveStep({
   const [group] = useState(() => pickConfirmationGroup())
   const [typedGroup, setTypedGroup] = useState('')
   const [copied, setCopied] = useState(false)
+  const { t } = useT()
 
   const expected = recoveryKey.split('-')[group - 1].toUpperCase()
   const canContinue = saved && typedGroup.trim().toUpperCase() === expected
@@ -52,10 +54,7 @@ export function RecoveryKeySaveStep({
   }
 
   const handleDownload = () => {
-    const text =
-      'MinimaSpend recovery key\n\n' +
-      recoveryKey +
-      '\n\nKeep this key somewhere safe. It opens your data if you forget your password.\n'
+    const text = `${t('vault.recoveryKeyFile.title')}\n\n${recoveryKey}\n\n${t('vault.recoveryKeyFile.body')}\n`
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
@@ -73,10 +72,7 @@ export function RecoveryKeySaveStep({
 
   return (
     <div data-testid="recovery-key-step" className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        This recovery key opens your data if you forget your password. Save it
-        somewhere safe, outside this device. It is shown only now.
-      </p>
+      <p className="text-sm text-muted-foreground">{t('vault.saveKey.intro')}</p>
 
       <div
         data-testid="recovery-key-value"
@@ -98,7 +94,7 @@ export function RecoveryKeySaveStep({
           ) : (
             <Copy className="mr-1 h-4 w-4" />
           )}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t('vault.saveKey.copied') : t('vault.saveKey.copy')}
         </Button>
         <Button
           type="button"
@@ -108,7 +104,7 @@ export function RecoveryKeySaveStep({
           onClick={handleDownload}
         >
           <Download className="mr-1 h-4 w-4" />
-          .txt
+          {t('vault.saveKey.download')}
         </Button>
         <Button
           type="button"
@@ -118,7 +114,7 @@ export function RecoveryKeySaveStep({
           onClick={handlePrint}
         >
           <Printer className="mr-1 h-4 w-4" />
-          Print
+          {t('vault.saveKey.print')}
         </Button>
       </div>
 
@@ -130,7 +126,7 @@ export function RecoveryKeySaveStep({
           checked={saved}
           onChange={(e) => setSaved(e.target.checked)}
         />
-        I&apos;ve saved my recovery key
+        {t('vault.saveKey.savedCheckbox')}
       </label>
 
       <div className="flex flex-col gap-1.5">
@@ -138,7 +134,7 @@ export function RecoveryKeySaveStep({
           data-testid="recovery-key-group-prompt"
           htmlFor="recovery-key-group-input"
         >
-          Type group {group} of your key
+          {t('vault.saveKey.typeGroup', { group })}
         </Label>
         <Input
           id="recovery-key-group-input"
@@ -160,7 +156,7 @@ export function RecoveryKeySaveStep({
           if (canContinue) onConfirmed()
         }}
       >
-        {confirmLabel ?? 'Continue'}
+        {confirmLabel ?? t('common.continue')}
       </Button>
     </div>
   )

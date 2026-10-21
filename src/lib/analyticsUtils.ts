@@ -1,4 +1,6 @@
 import dayjs from 'dayjs'
+
+import { formatDay } from '../i18n/format'
 import type { AnalyticsRangeSummary } from './domain'
 
 export type RangeInput = {
@@ -60,5 +62,5 @@ export function formatRangeLabel(range: AnalyticsRangeSummary): string {
   const to = dayjs(range.to)
   if (!from.isValid() || !to.isValid()) return ''
 
-  return `${from.format('MMM DD')} – ${to.format('MMM DD')}`
+  return `${formatDay(from.toDate())} – ${formatDay(to.toDate())}`
 }

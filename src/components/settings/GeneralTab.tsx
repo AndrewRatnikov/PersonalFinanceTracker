@@ -4,6 +4,9 @@ import { toast } from 'sonner'
 
 import type { ChangeMainCurrencyResult, ConvertProgress } from '@/lib/conversion'
 import type { Currency } from '@/lib/domain'
+import { LANGS, isLang, useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
+import { formatFullDate } from '@/i18n/format'
 import { updateCurrencySettings } from '@/lib/appSettings'
 import {
   CONVERSION_STATUS_QUERY_KEY,
@@ -42,13 +45,14 @@ type ChangeState =
   | { phase: 'confirm' }
   | { phase: 'running'; progress: ConvertProgress | null }
   | { phase: 'done'; result: ChangeMainCurrencyResult }
-  | { phase: 'error'; message: string }
+  | { phase: 'error'; error: unknown }
 
-// Settings → General: the main currency (changed through a confirm dialog that
-// converts budgets and recalculates every entry) and the NBU exchange-rate
-// switch.
+// Settings → General: the UI language, the main currency (changed through a
+// confirm dialog that converts budgets and recalculates every entry) and the
+// NBU exchange-rate switch.
 export function GeneralTab() {
   const queryClient = useQueryClient()
+  const { t, plural, lang, setLang } = useT()
   const settingsQuery = useCurrencySettings()
   const statusQuery = useQuery({
     queryKey: CONVERSION_STATUS_QUERY_KEY,
@@ -102,14 +106,11 @@ export function GeneralTab() {
         return
       }
       if (err instanceof MainCurrencyChangeError) {
-        setChange({ phase: 'error', message: err.message })
+        setChange({ phase: 'error', error: err })
         return
       }
       console.error('Changing the main currency failed:', err)
-      setChange({
-        phase: 'error',
-        message: "Couldn't change the main currency. Try again later.",
-      })
+      setChange({ phase: 'error', error: null })
     }
   }
 
@@ -121,7 +122,7 @@ export function GeneralTab() {
       if (next) void requestConversion()
     } catch (err) {
       console.error('Saving the exchange-rate setting failed:', err)
-      toast.error("Couldn't save the setting")
+      toast.error(t('settings.general.saveSettingFailed'))
     } finally {
       setSavingSwitch(false)
     }
@@ -131,13 +132,41 @@ export function GeneralTab() {
   const statusText = status
     ? status.pendingEntries > 0
       ? pendingLabel(status.pendingEntries)
-      : 'All entries converted'
+      : t('settings.general.allConverted')
     : statusQuery.isError
-      ? "Couldn't read the conversion status"
-      : 'Checking entries…'
+      ? t('settings.general.statusFailed')
+      : t('settings.general.checkingEntries')
 
   return (
     <div data-testid="general-tab" className="flex flex-col gap-4">
+      <Card className="border-border bg-card/40">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <label
+            htmlFor="settings-language"
+            className="text-sm font-medium text-foreground"
+          >
+            {t('settings.language.label')}
+          </label>
+          <select
+            id="settings-language"
+            data-testid="settings-language"
+            value={lang}
+            onChange={(e) => {
+              if (isLang(e.target.value)) setLang(e.target.value)
+            }}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {LANGS.map((option) => (
+              <option key={option} value={option}>
+                {option === 'uk'
+                  ? t('common.languageName.uk')
+                  : t('common.languageName.en')}
+              </option>
+            ))}
+          </select>
+        </CardContent>
+      </Card>
+
       <Card className="border-border bg-card/40">
         <CardContent className="flex flex-col gap-3 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -146,16 +175,16 @@ export function GeneralTab() {
                 htmlFor="settings-main-currency"
                 className="text-sm font-medium text-foreground"
               >
-                Main currency
+                {t('settings.general.mainCurrency')}
               </label>
               <span className="text-xs text-muted-foreground">
-                Totals, budgets and charts are shown in this currency.
+                {t('settings.general.mainCurrencyHint')}
               </span>
             </div>
             <select
               id="settings-main-currency"
               data-testid="settings-main-currency"
-              aria-label="Main currency"
+              aria-label={t('settings.general.mainCurrency')}
               value={mainCurrency}
               disabled={settingsQuery.isLoading || running}
               onChange={(e) => openDialog(e.target.value)}
@@ -181,7 +210,7 @@ export function GeneralTab() {
         <CardContent className="flex flex-col gap-2 px-4 py-4">
           <label className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium text-foreground">
-              Fetch exchange rates from the National Bank of Ukraine
+              {t('settings.general.fetchRates')}
             </span>
             <input
               type="checkbox"
@@ -198,8 +227,7 @@ export function GeneralTab() {
             data-testid="settings-fetch-rates-help"
             className="text-xs text-muted-foreground"
           >
-            Only dates are sent, never amounts. When off, entries in other
-            currencies aren't included in totals.
+            {t('settings.general.fetchRatesHelp')}
           </p>
         </CardContent>
       </Card>
@@ -212,9 +240,11 @@ export function GeneralTab() {
       >
         <AlertDialogContent data-testid="main-currency-confirm-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Change the main currency</AlertDialogTitle>
+            <AlertDialogTitle>{t('settings.general.changeTitle')}</AlertDialogTitle>
             <AlertDialogDescription data-testid="main-currency-confirm-text">
-              {`Recalculate ${status?.totalEntries ?? 0} entries in ${pendingNext ?? ''}. Budgets will be converted at today's NBU rate.`}
+              {plural('settings.general.changeText', status?.totalEntries ?? 0, {
+                currency: pendingNext ?? '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -223,7 +253,10 @@ export function GeneralTab() {
               data-testid="main-currency-progress"
               className="text-sm text-muted-foreground"
             >
-              {`Converting… ${change.progress?.done ?? 0} / ${change.progress?.total ?? 0}`}
+              {t('settings.general.progress', {
+                done: change.progress?.done ?? 0,
+                total: change.progress?.total ?? 0,
+              })}
             </p>
           )}
           {change.phase === 'error' && (
@@ -232,7 +265,9 @@ export function GeneralTab() {
               role="alert"
               className="text-sm text-destructive"
             >
-              {change.message}
+              {change.error === null
+                ? t('settings.general.changeFailed')
+                : errorMessage(change.error)}
             </p>
           )}
           {change.phase === 'done' && (
@@ -241,15 +276,22 @@ export function GeneralTab() {
               className="text-sm text-muted-foreground"
             >
               {change.result.budgetsConverted > 0
-                ? `${change.result.budgetsConverted} budgets converted to ${pendingNext ?? ''} at the NBU rate of ${change.result.rateDate ?? ''}.`
-                : 'No budgets to convert.'}
+                ? plural('settings.general.budgetsConverted', change.result.budgetsConverted, {
+                    currency: pendingNext ?? '',
+                    // English keeps today's YYYY-MM-DD wording.
+                    date:
+                      change.result.rateDate && lang === 'uk'
+                        ? formatFullDate(change.result.rateDate)
+                        : (change.result.rateDate ?? ''),
+                  })
+                : t('settings.general.noBudgets')}
             </p>
           )}
 
           <AlertDialogFooter>
             {change.phase === 'done' ? (
               <Button data-testid="main-currency-done-btn" onClick={closeDialog}>
-                Done
+                {t('common.done')}
               </Button>
             ) : (
               <>
@@ -259,14 +301,14 @@ export function GeneralTab() {
                   disabled={running}
                   onClick={closeDialog}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   data-testid="main-currency-confirm-btn"
                   disabled={running}
                   onClick={() => void confirmChange()}
                 >
-                  {running ? 'Converting…' : 'Confirm'}
+                  {running ? t('settings.general.converting') : t('common.confirm')}
                 </Button>
               </>
             )}

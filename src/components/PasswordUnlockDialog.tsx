@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 
 import type { RestoreSummary } from '@/lib/backup'
 import type { UnlockResult } from '@/lib/vault'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { updateAppSettings } from '@/lib/appSettings'
 import { formatRestoreSummary } from '@/lib/backup'
 import { clearLegacyKeys, getVaultState } from '@/lib/vault'
@@ -63,6 +65,7 @@ export function PasswordUnlockDialog({
   const [erasing, setErasing] = useState(false)
   const [finishing, setFinishing] = useState(false)
   const [restoreOpen, setRestoreOpen] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     let cancelled = false
@@ -132,8 +135,8 @@ export function PasswordUnlockDialog({
     } catch (err) {
       setEraseError(
         err instanceof Error
-          ? `Could not erase local data: ${err.message}`
-          : 'Could not erase local data.',
+          ? t('vault.recovery.eraseFailedWith', { error: errorMessage(err) })
+          : t('vault.recovery.eraseFailed'),
       )
     } finally {
       setErasing(false)
@@ -187,17 +190,14 @@ export function PasswordUnlockDialog({
             <CardHeader>
               <div className="flex items-center gap-2">
                 <KeyRound className="h-4 w-4 text-muted-foreground" />
-                <CardTitle>Save your recovery key</CardTitle>
+                <CardTitle>{t('vault.saveKey.title')}</CardTitle>
               </div>
-              <CardDescription>
-                Your data has been upgraded to the new encryption format. If
-                you forget your password, this key is the only way to open it.
-              </CardDescription>
+              <CardDescription>{t('vault.migrated.description')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               <RecoveryKeySaveStep
                 recoveryKey={mode.recoveryKey}
-                confirmLabel="Continue"
+                confirmLabel={t('common.continue')}
                 onConfirmed={() => {
                   if (!finishing) void handleMigratedKeyConfirmed()
                 }}
@@ -213,12 +213,9 @@ export function PasswordUnlockDialog({
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TriangleAlert className="h-4 w-4 text-destructive" />
-                <CardTitle>Local data can't be opened</CardTitle>
+                <CardTitle>{t('vault.recovery.title')}</CardTitle>
               </div>
-              <CardDescription>
-                This device has saved data, but no password to open it. You can
-                restore your data from a backup, or erase it and start fresh.
-              </CardDescription>
+              <CardDescription>{t('vault.recovery.description')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <Button
@@ -230,10 +227,12 @@ export function PasswordUnlockDialog({
                 onClick={() => setRestoreOpen(true)}
               >
                 <Upload className="mr-2 h-4 w-4" />
-                Restore from backup
+                {t('backup.restoreFromBackup')}
               </Button>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="unlock-erase-input">Type DELETE to confirm</Label>
+                <Label htmlFor="unlock-erase-input">
+                  {t('common.typeToConfirm', { word: ERASE_CONFIRMATION })}
+                </Label>
                 <Input
                   id="unlock-erase-input"
                   data-testid="unlock-erase-input"
@@ -263,7 +262,7 @@ export function PasswordUnlockDialog({
                 onClick={() => void handleErase()}
               >
                 {erasing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Erase local data and start fresh
+                {t('vault.recovery.erase')}
               </Button>
             </CardFooter>
           </Card>
@@ -281,7 +280,7 @@ export function PasswordUnlockDialog({
           <Card className="w-full max-w-sm mx-4" data-testid="unlock-checking">
             <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Checking this device…
+              {t('vault.checking')}
             </CardContent>
           </Card>
         </div>

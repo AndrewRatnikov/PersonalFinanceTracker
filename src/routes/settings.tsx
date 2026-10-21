@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Coins, Database, Shield, Tag, UserRound, Wallet } from 'lucide-react'
 
+import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
 import { getAllCategories } from '@/lib/localDb'
 import { AccountTab } from '@/components/settings/AccountTab'
@@ -43,6 +44,7 @@ export const Route = createFileRoute('/settings')({
 function SettingsPage() {
   const search = Route.useSearch()
   const accountsVisible = useAccountsVisible()
+  const { t } = useT()
   const requestedTab = search.tab ?? 'general'
   const initialTab =
     requestedTab === 'account' && !accountsVisible ? 'general' : requestedTab
@@ -56,7 +58,7 @@ function SettingsPage() {
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          Settings
+          {t('settings.title')}
         </h1>
 
         {/* Remounts when the Account tab appears (the session loads async). */}
@@ -70,28 +72,28 @@ function SettingsPage() {
           >
             <TabsTrigger value="general" data-testid="settings-tab-general">
               <Coins size={16} className="mr-2 hidden sm:block" />
-              General
+              {t('settings.tabs.general')}
             </TabsTrigger>
             <TabsTrigger value="categories">
               <Tag size={16} className="mr-2 hidden sm:block" />
-              Categories
+              {t('settings.tabs.categories')}
             </TabsTrigger>
             <TabsTrigger value="budget">
               <Wallet size={16} className="mr-2 hidden sm:block" />
-              Budget
+              {t('settings.tabs.budget')}
             </TabsTrigger>
             <TabsTrigger value="security">
               <Shield size={16} className="mr-2 hidden sm:block" />
-              Security
+              {t('settings.tabs.security')}
             </TabsTrigger>
             <TabsTrigger value="data">
               <Database size={16} className="mr-2 hidden sm:block" />
-              Data
+              {t('settings.tabs.data')}
             </TabsTrigger>
             {accountsVisible && (
               <TabsTrigger value="account" data-testid="settings-tab-account">
                 <UserRound size={16} className="mr-2 hidden sm:block" />
-                Account
+                  {t('settings.tabs.account')}
               </TabsTrigger>
             )}
           </TabsList>

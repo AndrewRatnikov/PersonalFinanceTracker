@@ -1,14 +1,17 @@
 // No CONTRACT_GAPs: the money helpers are fully specified in the Interface
-// Contract (module: money). Expectations are built with toLocaleString so they
-// hold in any machine locale (this one is uk-UA).
+// Contract (module: money) and plan section 7. The language is pinned in
+// beforeEach; English expectations are built with Intl for 'en-US' and
+// Ukrainian ones for 'uk-UA' (never hard-coded separators).
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { EntryConversion } from '@/lib/domain'
+import { setLang } from '@/i18n/core'
 import {
   formatAmount,
   formatMoney,
   formatRate,
+  formatShortMoney,
   identityConversion,
   isConverted,
   mainAmountOf,
@@ -16,7 +19,13 @@ import {
 } from '@/lib/money'
 
 const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
+  n.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+const fmt2uk = (n: number) =>
+  n.toLocaleString('uk-UA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
@@ -28,6 +37,14 @@ function conv(
 ): EntryConversion {
   return { mainCurrency, rate, mainAmount, rateDate: '2026-10-14', source: 'nbu' }
 }
+
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('formatAmount', () => {
   it('always shows 2 decimals', () => {
@@ -48,6 +65,15 @@ describe('formatAmount', () => {
   it('formats negative numbers', () => {
     expect(formatAmount(-12.5)).toBe(fmt2(-12.5))
   })
+
+  it('follows the UI language, not the device locale', () => {
+    expect(formatAmount(1234.5)).toBe(fmt2(1234.5))
+
+    setLang('uk', { persist: false })
+
+    expect(formatAmount(1234.5)).toBe(fmt2uk(1234.5))
+    expect(formatAmount(1234.5)).not.toBe(fmt2(1234.5))
+  })
 })
 
 describe('formatMoney', () => {
@@ -61,11 +87,30 @@ describe('formatMoney', () => {
     expect(formatMoney(1, 'UAH')).not.toBe(formatMoney(1, 'USD'))
     expect(formatMoney(1, 'UAH')).not.toBe(formatMoney(2, 'UAH'))
   })
+
+  it('in Ukrainian writes грн for the hryvnia and keeps the code for other currencies', () => {
+    setLang('uk', { persist: false })
+
+    expect(formatMoney(830.4, 'UAH')).toBe(`${fmt2uk(830.4)} грн`)
+    expect(formatMoney(20, 'USD')).toBe(`${fmt2uk(20)} USD`)
+    expect(formatMoney(33.333333, 'EUR')).toBe(`${fmt2uk(33.33)} EUR`)
+  })
+})
+
+describe('formatShortMoney', () => {
+  it('shows a whole amount without decimals, in the UI language', () => {
+    expect(formatShortMoney(65, 'UAH')).toBe('65 UAH')
+
+    setLang('uk', { persist: false })
+
+    expect(formatShortMoney(65, 'UAH')).toBe('65 грн')
+    expect(formatShortMoney(12.5, 'USD')).toBe(`${fmt2uk(12.5)} USD`)
+  })
 })
 
 describe('formatRate', () => {
   it('shows up to 4 fraction digits', () => {
-    const expected = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 4 })
+    const expected = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 4 })
     expect(formatRate(41.52)).toBe(expected(41.52))
     expect(formatRate(41.123456)).toBe(expected(41.1235))
     expect(formatRate(0.02217)).toBe(expected(0.0222))
@@ -74,6 +119,15 @@ describe('formatRate', () => {
 
   it('differs for different rates', () => {
     expect(formatRate(41.52)).not.toBe(formatRate(45.1))
+  })
+
+  it('uses the Ukrainian decimal separator in Ukrainian', () => {
+    setLang('uk', { persist: false })
+
+    expect(formatRate(41.123456)).toBe(
+      (41.1235).toLocaleString('uk-UA', { maximumFractionDigits: 4 }),
+    )
+    expect(formatRate(41.52)).not.toBe((41.52).toLocaleString('en-US'))
   })
 })
 
@@ -182,6 +236,15 @@ describe('identityConversion', () => {
     expect(isConverted(entry, 'UAH')).toBe(true)
     expect(isConverted(entry, 'USD')).toBe(false)
   })
+
+  it('stays a machine date whatever the UI language', () => {
+    setLang('uk', { persist: false })
+    const createdAt = new Date(2026, 9, 14, 12, 0, 0).toISOString()
+
+    expect(identityConversion({ amount: 1, createdAt }, 'UAH').rateDate).toBe(
+      '2026-10-14',
+    )
+  })
 })
 
 describe('pendingLabel', () => {
@@ -192,5 +255,18 @@ describe('pendingLabel', () => {
   it('uses the plural otherwise', () => {
     expect(pendingLabel(2)).toBe('2 entries waiting for exchange rates')
     expect(pendingLabel(15)).toBe('15 entries waiting for exchange rates')
+  })
+
+  it('is Ukrainian in Ukrainian and carries the count', () => {
+    setLang('uk', { persist: false })
+
+    for (const count of [1, 2, 5, 21]) {
+      const label = pendingLabel(count)
+      expect(label).toMatch(/[Ѐ-ӿ]/)
+      expect(label).toContain(String(count))
+      expect(label).not.toContain('entry')
+      expect(label).not.toContain('entries')
+    }
+    expect(pendingLabel(1)).not.toBe(pendingLabel(5))
   })
 })

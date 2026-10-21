@@ -9,6 +9,8 @@ import {
   getAppSettings,
   updateAppSettings,
 } from '@/lib/appSettings'
+import { t as translateNow, useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { VaultError, changePassword, regenerateRecoveryKey } from '@/lib/vault'
 import { lockApp } from '@/lib/vaultSession'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
@@ -26,9 +28,9 @@ import { Label } from '@/components/ui/label'
 const MIN_PASSWORD_LENGTH = 8
 
 function messageOf(err: unknown): string {
-  if (err instanceof VaultError) return err.message
+  if (err instanceof VaultError) return errorMessage(err)
   console.error(err)
-  return 'Something went wrong. Please try again.'
+  return translateNow('errors.unexpected')
 }
 
 function ChangePasswordCard() {
@@ -38,17 +40,18 @@ function ChangePasswordCard() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [pending, setPending] = useState(false)
+  const { t } = useT()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSuccess(false)
     if (next.length < MIN_PASSWORD_LENGTH) {
-      setError('New password must be at least 8 characters')
+      setError(t('settings.security.newPasswordTooShort'))
       return
     }
     if (next !== confirm) {
-      setError('New passwords do not match')
+      setError(t('settings.security.newPasswordsDontMatch'))
       return
     }
     setPending(true)
@@ -70,12 +73,9 @@ function ChangePasswordCard() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Lock className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>Change password</CardTitle>
+          <CardTitle>{t('settings.security.changePassword')}</CardTitle>
         </div>
-        <CardDescription>
-          Your data stays as it is; only the key that protects it is updated.
-          Your recovery key keeps working.
-        </CardDescription>
+        <CardDescription>{t('settings.security.changePasswordHint')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form
@@ -83,7 +83,9 @@ function ChangePasswordCard() {
           onSubmit={(e) => void handleSubmit(e)}
         >
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="change-password-current">Current password</Label>
+            <Label htmlFor="change-password-current">
+              {t('settings.security.currentPassword')}
+            </Label>
             <Input
               id="change-password-current"
               data-testid="change-password-current"
@@ -95,7 +97,7 @@ function ChangePasswordCard() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="change-password-new">New password</Label>
+            <Label htmlFor="change-password-new">{t('vault.newPassword')}</Label>
             <Input
               id="change-password-new"
               data-testid="change-password-new"
@@ -107,7 +109,7 @@ function ChangePasswordCard() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="change-password-confirm">Confirm new password</Label>
+            <Label htmlFor="change-password-confirm">{t('vault.confirmNewPassword')}</Label>
             <Input
               id="change-password-confirm"
               data-testid="change-password-confirm"
@@ -131,7 +133,7 @@ function ChangePasswordCard() {
               data-testid="change-password-success"
               className="text-sm text-muted-foreground"
             >
-              Password changed
+              {t('settings.security.passwordChanged')}
             </p>
           )}
           <Button
@@ -140,7 +142,7 @@ function ChangePasswordCard() {
             disabled={pending}
           >
             {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Change password
+            {t('settings.security.changePassword')}
           </Button>
         </form>
       </CardContent>
@@ -159,6 +161,7 @@ function RegenerateKeyCard() {
   const [newKey, setNewKey] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [pending, setPending] = useState(false)
+  const { t } = useT()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -197,11 +200,9 @@ function RegenerateKeyCard() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>Generate new recovery key</CardTitle>
+          <CardTitle>{t('settings.security.regenerate')}</CardTitle>
         </div>
-        <CardDescription>
-          Creates a new recovery key. The old one stops working immediately.
-        </CardDescription>
+        <CardDescription>{t('settings.security.regenerateHint')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {showUnconfirmedWarning && (
@@ -209,14 +210,13 @@ function RegenerateKeyCard() {
             data-testid="regenerate-key-unconfirmed-warning"
             className="text-sm text-destructive"
           >
-            You haven&apos;t saved a recovery key for this device. Generate a
-            new one and save it.
+            {t('settings.security.unconfirmedWarning')}
           </p>
         )}
         {newKey !== null ? (
           <RecoveryKeySaveStep
             recoveryKey={newKey}
-            confirmLabel="Done"
+            confirmLabel={t('common.done')}
             onConfirmed={() => void handleConfirmed()}
           />
         ) : (
@@ -225,7 +225,7 @@ function RegenerateKeyCard() {
             onSubmit={(e) => void handleSubmit(e)}
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="regenerate-key-password">Password</Label>
+              <Label htmlFor="regenerate-key-password">{t('vault.password')}</Label>
               <Input
                 id="regenerate-key-password"
                 data-testid="regenerate-key-password"
@@ -249,7 +249,7 @@ function RegenerateKeyCard() {
                 data-testid="regenerate-key-success"
                 className="text-sm text-muted-foreground"
               >
-                New recovery key saved. The old one no longer works.
+                {t('settings.security.regenerated')}
               </p>
             )}
             <Button
@@ -258,7 +258,7 @@ function RegenerateKeyCard() {
               disabled={pending}
             >
               {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Generate new recovery key
+              {t('settings.security.regenerate')}
             </Button>
           </form>
         )}
@@ -267,15 +267,13 @@ function RegenerateKeyCard() {
   )
 }
 
-const AUTO_LOCK_CHOICES: ReadonlyArray<{
-  value: AutoLockMinutes
-  label: string
-}> = [
-  { value: 0, label: 'Off' },
-  { value: 1, label: '1 minute' },
-  { value: 5, label: '5 minutes' },
-  { value: 15, label: '15 minutes' },
-  { value: 60, label: '60 minutes' },
+// 0 = Off; the others are minutes.
+const AUTO_LOCK_CHOICES: ReadonlyArray<{ value: AutoLockMinutes }> = [
+  { value: 0 },
+  { value: 1 },
+  { value: 5 },
+  { value: 15 },
+  { value: 60 },
 ]
 
 function AutoLockCard() {
@@ -285,6 +283,7 @@ function AutoLockCard() {
     queryFn: getAppSettings,
   })
   const value = data?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES
+  const { t, plural } = useT()
 
   const handleChange = async (next: string) => {
     const minutes = Number(next)
@@ -308,15 +307,12 @@ function AutoLockCard() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Timer className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>Auto-lock</CardTitle>
+          <CardTitle>{t('settings.security.autoLock')}</CardTitle>
         </div>
-        <CardDescription>
-          Lock the app after this long without activity. Time in another tab or
-          app counts too.
-        </CardDescription>
+        <CardDescription>{t('settings.security.autoLockHint')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-1.5">
-        <Label htmlFor="auto-lock-select">Lock after</Label>
+        <Label htmlFor="auto-lock-select">{t('settings.security.lockAfter')}</Label>
         <select
           id="auto-lock-select"
           data-testid="auto-lock-select"
@@ -326,7 +322,9 @@ function AutoLockCard() {
         >
           {AUTO_LOCK_CHOICES.map((choice) => (
             <option key={choice.value} value={String(choice.value)}>
-              {choice.label}
+              {choice.value === 0
+                ? t('settings.security.off')
+                : plural('settings.security.minutes', choice.value)}
             </option>
           ))}
         </select>
@@ -337,18 +335,16 @@ function AutoLockCard() {
 
 function LockNowCard() {
   const queryClient = useQueryClient()
+  const { t } = useT()
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
           <Lock className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>Lock now</CardTitle>
+          <CardTitle>{t('settings.security.lockNow')}</CardTitle>
         </div>
-        <CardDescription>
-          Locks the app on this device. Your data stays; you need your password
-          to open it again.
-        </CardDescription>
+        <CardDescription>{t('settings.security.lockNowHint')}</CardDescription>
       </CardHeader>
       <CardContent>
         <Button
@@ -357,7 +353,7 @@ function LockNowCard() {
           data-testid="lock-now-btn"
           onClick={() => lockApp(queryClient)}
         >
-          Lock now
+          {t('settings.security.lockNow')}
         </Button>
       </CardContent>
     </Card>

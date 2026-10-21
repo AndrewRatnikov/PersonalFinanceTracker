@@ -1,5 +1,6 @@
 import { TriangleAlert } from 'lucide-react'
 
+import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 
 interface QueryErrorStateProps {
@@ -10,10 +11,8 @@ interface QueryErrorStateProps {
 // Inline error block shown in place of a page's data content when one of its
 // queries failed. A DecryptError never needs handling here: the global
 // QueryCache onError swaps the whole app for the Data problem screen.
-export function QueryErrorState({
-  onRetry,
-  message = "Couldn't load your data.",
-}: QueryErrorStateProps) {
+export function QueryErrorState({ onRetry, message }: QueryErrorStateProps) {
+  const { t } = useT()
   return (
     <div
       data-testid="query-error"
@@ -22,7 +21,7 @@ export function QueryErrorState({
     >
       <div className="flex items-center gap-2 text-sm text-destructive">
         <TriangleAlert className="h-4 w-4" />
-        <span>{message}</span>
+        <span>{message ?? t('common.loadFailed')}</span>
       </div>
       <Button
         type="button"
@@ -30,7 +29,7 @@ export function QueryErrorState({
         data-testid="query-error-retry"
         onClick={onRetry}
       >
-        Retry
+        {t('common.retry')}
       </Button>
     </div>
   )

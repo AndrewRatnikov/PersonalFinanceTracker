@@ -11,117 +11,88 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { RestoreSummary } from '@/lib/backup'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
 import { formatRestoreSummary } from '@/lib/backup'
 import { requestCreateVault, setVaultPhase } from '@/lib/vaultSession'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 
-const PROBLEMS = [
-  {
-    title: 'Bank credentials handed over',
-    body: 'To sync automatically, most apps need your login — then store a copy.',
-  },
-  {
-    title: 'Data on third-party servers',
-    body: "Your spending history lives where you can't audit it, delete it, or fully control it.",
-  },
-  {
-    title: 'Business model misalignment',
-    body: 'Free apps monetize through data partnerships, credit card upsells, or targeted offers.',
-  },
+const PROBLEMS: ReadonlyArray<{ title: MessageKey; body: MessageKey }> = [
+  { title: 'landing.problems.credentials.title', body: 'landing.problems.credentials.body' },
+  { title: 'landing.problems.servers.title', body: 'landing.problems.servers.body' },
+  { title: 'landing.problems.business.title', body: 'landing.problems.business.body' },
 ]
 
-const ENCRYPTION_STEPS = [
-  {
-    n: '01',
-    title: 'You enter a password',
-    body: 'Stays in-browser, never transmitted',
-  },
-  {
-    n: '02',
-    title: 'PBKDF2 derives an encryption key',
-    body: '200k iterations, device-scoped salt',
-  },
-  {
-    n: '03',
-    title: 'AES-GCM encrypts your data',
-    body: 'Before writing to IndexedDB',
-  },
-  {
-    n: '04',
-    title: 'Encrypted blobs stored locally',
-    body: 'Unreadable without your password',
-  },
+const ENCRYPTION_STEPS: ReadonlyArray<{ n: string; title: MessageKey; body: MessageKey }> = [
+  { n: '01', title: 'landing.encryption.step1.title', body: 'landing.encryption.step1.body' },
+  { n: '02', title: 'landing.encryption.step2.title', body: 'landing.encryption.step2.body' },
+  { n: '03', title: 'landing.encryption.step3.title', body: 'landing.encryption.step3.body' },
+  { n: '04', title: 'landing.encryption.step4.title', body: 'landing.encryption.step4.body' },
 ]
 
-const PRIVACY_BULLETS = [
-  'Password never stored, never transmitted',
-  'Zero financial data on MinimaSpend servers',
-  'No account needed — nothing to sign up for',
-  'Remove all data from this device in one step',
+const PRIVACY_BULLETS: ReadonlyArray<MessageKey> = [
+  'landing.privacy.bullet1',
+  'landing.privacy.bullet2',
+  'landing.privacy.bullet3',
+  'landing.privacy.bullet4',
 ]
 
-const FEATURES = [
-  {
-    icon: Zap,
-    title: 'Quick Add',
-    body: 'Log an expense in under five seconds. Amount, currency, category — done. Designed for the moment of spending, not after the fact.',
-  },
-  {
-    icon: PieChart,
-    title: 'Analytics',
-    body: 'Category breakdown donut, 12-month spending bars, and budget-vs-actual variance — all filterable by date range.',
-  },
-  {
-    icon: PieChart,
-    title: 'Budgets',
-    body: "Set a monthly limit per category. See at a glance whether you're on track, over, or with headroom to spare.",
-  },
-  {
-    icon: Globe,
-    title: 'Multi-currency',
-    body: 'UAH, USD, EUR on every entry. Freelancers and travelers log in the currency they actually spent.',
-  },
-  {
-    icon: Download,
-    title: 'CSV export & import',
-    body: 'All your expenses, income, budgets, and categories export to CSV. Import anytime. No lock-in, ever.',
-  },
-  {
-    icon: Wifi,
-    title: 'PWA · works offline',
-    body: 'Install it on your home screen. Log expenses on the subway or in a dead-zone — it syncs nothing, needs nothing.',
-  },
-  {
-    icon: PieChart,
-    title: 'Default categories',
-    body: 'Food, Transport, Rent, Coffee, Entertainment, Server Costs — pre-seeded so the first log takes zero setup.',
-  },
-  {
-    icon: Globe,
-    title: 'Income tracking',
-    body: 'Log freelance payments, salary, or any inbound money alongside expenses for a complete picture.',
-  },
+const FEATURES: ReadonlyArray<{ icon: typeof Zap; title: MessageKey; body: MessageKey }> = [
+  { icon: Zap, title: 'landing.features.quickAdd.title', body: 'landing.features.quickAdd.body' },
+  { icon: PieChart, title: 'landing.features.analytics.title', body: 'landing.features.analytics.body' },
+  { icon: PieChart, title: 'landing.features.budgets.title', body: 'landing.features.budgets.body' },
+  { icon: Globe, title: 'landing.features.currency.title', body: 'landing.features.currency.body' },
+  { icon: Download, title: 'landing.features.csv.title', body: 'landing.features.csv.body' },
+  { icon: Wifi, title: 'landing.features.offline.title', body: 'landing.features.offline.body' },
+  { icon: PieChart, title: 'landing.features.categories.title', body: 'landing.features.categories.body' },
+  { icon: Globe, title: 'landing.features.income.title', body: 'landing.features.income.body' },
 ]
 
-const PRICING_ITEMS = [
-  'Unlimited expenses & income entries',
-  'All analytics & charts',
-  'Budget tracking per category',
-  'CSV export & import',
-  'PWA — install on any device',
-  'Encrypted local storage',
+const PRICING_ITEMS: ReadonlyArray<MessageKey> = [
+  'landing.pricing.item1',
+  'landing.pricing.item2',
+  'landing.pricing.item3',
+  'landing.pricing.item4',
+  'landing.pricing.item5',
+  'landing.pricing.item6',
 ]
 
-const CSV_PREVIEW = [
-  'date,amount,currency,category,description',
-  '2024-01-15,4.80,USD,Food,Coffee',
-  '2024-01-15,12.00,USD,Dev,Server Costs',
-  '2024-01-14,420.00,USD,Income,Freelance Jan',
-  '2024-01-14,2.50,USD,Transport,Metro',
-  '2024-01-13,67.40,UAH,Food,Groceries',
-  '2024-01-13,850.00,UAH,Rent,Jan rent',
+const PORTABILITY_FILES: ReadonlyArray<MessageKey> = [
+  'landing.portability.expensesCsv',
+  'landing.portability.incomeCsv',
+  'landing.portability.budgetsCsv',
+  'landing.portability.categoriesCsv',
+]
+
+// A sample CSV file. The header row is the real (untranslated) format; the
+// sample rows hold example user data, so they follow the UI language.
+const CSV_HEADER = 'date,amount,currency,category,description'
+const CSV_PREVIEW_ROWS: ReadonlyArray<MessageKey> = [
+  'landing.csvPreview.row1',
+  'landing.csvPreview.row2',
+  'landing.csvPreview.row3',
+  'landing.csvPreview.row4',
+  'landing.csvPreview.row5',
+  'landing.csvPreview.row6',
+]
+
+const PREVIEW_RECENT: ReadonlyArray<{
+  label: MessageKey
+  time: MessageKey
+  amount: MessageKey
+  positive?: boolean
+}> = [
+  { label: 'landing.preview.coffee', time: 'landing.preview.minutesAgo', amount: 'landing.preview.amountCoffee' },
+  { label: 'landing.preview.serverCosts', time: 'landing.preview.hourAgo', amount: 'landing.preview.amountServer' },
+  {
+    label: 'landing.preview.freelance',
+    time: 'landing.preview.threeHoursAgo',
+    amount: 'landing.preview.amountFreelance',
+    positive: true,
+  },
+  { label: 'landing.preview.transport', time: 'landing.preview.fiveHoursAgo', amount: 'landing.preview.amountTransport' },
 ]
 
 // Opens the create-vault flow (spec §2.2); no account is needed.
@@ -148,6 +119,7 @@ function StartTrackingButton({
 }
 
 function DashboardPreview() {
+  const { t } = useT()
   return (
     <Card className="ring-foreground/10 bg-card/60 backdrop-blur-sm py-0 overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3 border-b border-border">
@@ -160,23 +132,23 @@ function DashboardPreview() {
       <div className="flex flex-col gap-5 px-5 py-5">
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[11px] text-muted-foreground">Income</p>
-            <p className="text-lg font-bold tabular-nums">$3,240</p>
+            <p className="text-[11px] text-muted-foreground">{t('landing.preview.income')}</p>
+            <p className="text-lg font-bold tabular-nums">{t('landing.preview.amountIncome')}</p>
           </div>
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[11px] text-muted-foreground">Expenses</p>
-            <p className="text-lg font-bold tabular-nums">$1,847</p>
+            <p className="text-[11px] text-muted-foreground">{t('landing.preview.expenses')}</p>
+            <p className="text-lg font-bold tabular-nums">{t('landing.preview.amountExpenses')}</p>
           </div>
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[11px] text-muted-foreground">Balance</p>
-            <p className="text-lg font-bold tabular-nums">$1,393</p>
+            <p className="text-[11px] text-muted-foreground">{t('landing.preview.balance')}</p>
+            <p className="text-lg font-bold tabular-nums">{t('landing.preview.amountBalance')}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border p-3">
             <p className="text-[11px] text-muted-foreground mb-2">
-              12-month spending
+              {t('landing.preview.twelveMonths')}
             </p>
             <div className="flex items-end gap-1 h-14">
               {[40, 55, 45, 65, 50, 60, 70, 58, 48, 62, 52, 100].map((h, i) => (
@@ -190,7 +162,7 @@ function DashboardPreview() {
           </div>
           <div className="rounded-lg border border-border p-3">
             <p className="text-[11px] text-muted-foreground mb-2">
-              By category
+              {t('landing.preview.byCategory')}
             </p>
             <div className="flex flex-col gap-1.5">
               {[
@@ -216,45 +188,35 @@ function DashboardPreview() {
         </div>
 
         <div className="rounded-lg border border-border p-3">
-          <p className="text-[11px] text-muted-foreground mb-2">Quick Add</p>
+          <p className="text-[11px] text-muted-foreground mb-2">{t('landing.preview.quickAdd')}</p>
           <div className="flex items-center gap-2">
             <div className="flex-1 rounded-md border border-input px-3 py-2 text-sm font-semibold">
-              $ 24.50
+              {t('landing.preview.amountQuickAdd')}
             </div>
             <div className="rounded-md border border-input px-3 py-2 text-xs text-muted-foreground">
-              Coffee
+              {t('landing.preview.coffee')}
             </div>
             <Button
               size="sm"
               className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
             >
-              Add
+              {t('common.add')}
             </Button>
           </div>
         </div>
 
         <div className="rounded-lg border border-border p-3">
-          <p className="text-[11px] text-muted-foreground mb-2">Recent</p>
+          <p className="text-[11px] text-muted-foreground mb-2">{t('landing.preview.recent')}</p>
           <div className="flex flex-col gap-2.5 text-sm">
-            {[
-              { label: 'Coffee', time: '2m ago', amount: '-$4.80' },
-              { label: 'Server Costs', time: '1h ago', amount: '-$12.00' },
-              {
-                label: 'Freelance',
-                time: '3h ago',
-                amount: '+$420.00',
-                positive: true,
-              },
-              { label: 'Transport', time: '5h ago', amount: '-$2.50' },
-            ].map((row) => (
+            {PREVIEW_RECENT.map((row) => (
               <div
                 key={row.label}
                 className="flex items-center justify-between"
               >
                 <div>
-                  <p className="font-medium">{row.label}</p>
+                  <p className="font-medium">{t(row.label)}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    {row.time}
+                    {t(row.time)}
                   </p>
                 </div>
                 <span
@@ -264,7 +226,7 @@ function DashboardPreview() {
                       : 'font-medium'
                   }
                 >
-                  {row.amount}
+                  {t(row.amount)}
                 </span>
               </div>
             ))}
@@ -277,6 +239,7 @@ function DashboardPreview() {
 
 export default function LandingPage() {
   const [restoreOpen, setRestoreOpen] = useState(false)
+  const { t } = useT()
 
   // A fresh-device restore adopted the backup's vault and unlocked it.
   const handleRestored = (summary: RestoreSummary) => {
@@ -285,30 +248,28 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="bg-background text-foreground">
+    <div className="bg-background text-foreground" data-testid="landing-page">
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-4 md:px-8 pt-16 pb-20 grid md:grid-cols-2 gap-12 items-center">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground mb-6">
             <Lock className="h-3 w-3" />
-            Local-first · Encrypted at rest · No bank linking
+            {t('landing.badge')}
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1] mb-6">
-            Track your money.
+            {t('landing.heroTitle')}
             <br />
-            <span className="text-[#6366f1]">Own your data.</span>
+            <span className="text-[#6366f1]">{t('landing.heroAccent')}</span>
           </h1>
 
           <p className="text-lg text-muted-foreground mb-8 max-w-md">
-            A minimal personal finance tracker that keeps every expense, budget,
-            and income entry encrypted on your device — not on someone else's
-            server.
+            {t('landing.heroBody')}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
             <StartTrackingButton testId="landing-start-tracking">
-              Start tracking
+              {t('landing.startTracking')}
             </StartTrackingButton>
             <Button
               type="button"
@@ -317,7 +278,7 @@ export default function LandingPage() {
               data-testid="landing-restore-backup"
               onClick={() => setRestoreOpen(true)}
             >
-              Restore from backup
+              {t('backup.restoreFromBackup')}
             </Button>
           </div>
           <div className="mb-4">
@@ -332,12 +293,12 @@ export default function LandingPage() {
                   el.scrollIntoView({ behavior: 'smooth' })
                 }}
               >
-                See how it works
+                {t('landing.seeHowItWorks')}
               </a>
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Free to use · No account needed · Your data stays on your device
+            {t('landing.heroFootnote')}
           </p>
           <RestoreBackupDialog
             open={restoreOpen}
@@ -354,18 +315,12 @@ export default function LandingPage() {
       <section className="border-t border-border">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-20">
           <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-3">
-            The problem
+            {t('landing.problems.eyebrow')}
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-6 max-w-2xl">
-            Most budgeting apps ask for your bank login. We think that's
-            backwards.
+            {t('landing.problems.title')}
           </h2>
-          <p className="text-muted-foreground max-w-2xl mb-10">
-            Mint, YNAB, Copilot — they all want read access to your bank
-            accounts and store your complete spending history on their servers.
-            One breach, one acquisition, one pivot to ads, and your financial
-            life is exposed.
-          </p>
+          <p className="text-muted-foreground max-w-2xl mb-10">{t('landing.problems.body')}</p>
 
           <div className="grid sm:grid-cols-3 gap-4">
             {PROBLEMS.map((p) => (
@@ -378,8 +333,8 @@ export default function LandingPage() {
                     <X className="h-4 w-4 text-destructive" />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <h3 className="font-semibold">{p.title}</h3>
-                    <p className="text-sm text-muted-foreground">{p.body}</p>
+                    <h3 className="font-semibold">{t(p.title)}</h3>
+                    <p className="text-sm text-muted-foreground">{t(p.body)}</p>
                   </div>
                 </div>
               </Card>
@@ -396,13 +351,8 @@ export default function LandingPage() {
               <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-[#6366f1]/10">
                 <Lock className="h-5 w-5 text-[#6366f1]" />
               </div>
-              <h3 className="text-lg font-semibold">AES-GCM encryption</h3>
-              <p className="text-sm text-muted-foreground">
-                Your password never leaves your device. It's used to derive a
-                key via PBKDF2 (200,000 iterations) with a device-scoped salt —
-                industry-standard key stretching that makes brute-force attacks
-                impractical.
-              </p>
+              <h3 className="text-lg font-semibold">{t('landing.encryption.title')}</h3>
+              <p className="text-sm text-muted-foreground">{t('landing.encryption.body')}</p>
 
               <div className="flex flex-col gap-4 mt-2">
                 {ENCRYPTION_STEPS.map((step) => (
@@ -411,9 +361,9 @@ export default function LandingPage() {
                       {step.n}
                     </span>
                     <div>
-                      <p className="text-sm font-medium">{step.title}</p>
+                      <p className="text-sm font-medium">{t(step.title)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {step.body}
+                        {t(step.body)}
                       </p>
                     </div>
                   </div>
@@ -424,22 +374,17 @@ export default function LandingPage() {
 
           <div>
             <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-3">
-              Privacy
+              {t('landing.privacy.eyebrow')}
             </p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-6">
-              Your data, encrypted, on your device
+              {t('landing.privacy.title')}
             </h2>
-            <p className="text-muted-foreground mb-4">
-              There is no account to create. Your financial data never touches
-              any server: it lives in your browser's IndexedDB, encrypted before
-              it's written.
-            </p>
+            <p className="text-muted-foreground mb-4">{t('landing.privacy.body')}</p>
             <p
               data-testid="landing-exchange-rates-note"
               className="text-sm text-muted-foreground mb-8"
             >
-              Exchange rates come from the National Bank of Ukraine; only dates
-              are sent, never amounts.
+              {t('landing.privacy.ratesNote')}
             </p>
 
             <div className="flex flex-col gap-3">
@@ -448,7 +393,7 @@ export default function LandingPage() {
                   <span className="flex items-center justify-center h-5 w-5 rounded-full bg-[#6366f1]/10 shrink-0">
                     <Check className="h-3 w-3 text-[#6366f1]" />
                   </span>
-                  <span className="text-sm">{b}</span>
+                  <span className="text-sm">{t(b)}</span>
                 </div>
               ))}
             </div>
@@ -462,26 +407,23 @@ export default function LandingPage() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
             <div>
               <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-3">
-                Features
+                {t('nav.features')}
               </p>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                Everything you need.
+                {t('landing.features.title')}
                 <br />
-                Nothing you don't.
+                {t('landing.features.titleAccent')}
               </h2>
             </div>
-            <p className="text-muted-foreground max-w-sm">
-              No bank linking, no ads, no algorithmic nudges. Just a fast, clear
-              view of where money goes.
-            </p>
+            <p className="text-muted-foreground max-w-sm">{t('landing.features.body')}</p>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-border rounded-xl overflow-hidden">
             {FEATURES.map((f) => (
               <div key={f.title} className="bg-card p-6 flex flex-col gap-3">
                 <f.icon className="h-5 w-5 text-[#6366f1]" />
-                <h3 className="font-semibold">{f.title}</h3>
-                <p className="text-sm text-muted-foreground">{f.body}</p>
+                <h3 className="font-semibold">{t(f.title)}</h3>
+                <p className="text-sm text-muted-foreground">{t(f.body)}</p>
               </div>
             ))}
           </div>
@@ -493,30 +435,21 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-20 grid md:grid-cols-2 gap-12 items-center">
           <div>
             <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-3">
-              Portability
+              {t('landing.portability.eyebrow')}
             </p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-6">
-              Leave anytime. Take everything with you.
+              {t('landing.portability.title')}
             </h2>
-            <p className="text-muted-foreground mb-8">
-              Every record you've created exports to clean, standard CSV files.
-              Import them into Excel, Google Sheets, or a future app. No
-              proprietary format, no export fee, no friction.
-            </p>
+            <p className="text-muted-foreground mb-8">{t('landing.portability.body')}</p>
 
             <div className="grid grid-cols-2 gap-3">
-              {[
-                'Expenses CSV',
-                'Income CSV',
-                'Budgets CSV',
-                'Categories CSV',
-              ].map((label) => (
+              {PORTABILITY_FILES.map((label) => (
                 <div
                   key={label}
                   className="flex items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm"
                 >
                   <Download className="h-4 w-4 text-muted-foreground" />
-                  {label}
+                  {t(label)}
                 </div>
               ))}
             </div>
@@ -525,13 +458,12 @@ export default function LandingPage() {
           <Card className="bg-card/60 backdrop-blur-sm font-mono text-xs">
             <div className="px-6 flex items-center gap-2 text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-[#6366f1]" />
-              expenses_export.csv
+              {'expenses_export.csv'}
             </div>
             <div className="px-6 flex flex-col gap-1 overflow-x-auto">
-              {CSV_PREVIEW.map((line, i) => (
-                <p key={i} className={i === 0 ? 'text-muted-foreground' : ''}>
-                  {line}
-                </p>
+              <p className="text-muted-foreground">{CSV_HEADER}</p>
+              {CSV_PREVIEW_ROWS.map((row) => (
+                <p key={row}>{t(row)}</p>
               ))}
               <p className="text-muted-foreground">...</p>
             </div>
@@ -543,20 +475,17 @@ export default function LandingPage() {
       <section id="pricing" className="border-t border-border scroll-mt-16">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-20 flex flex-col items-center text-center">
           <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase mb-3">
-            Pricing
+            {t('nav.pricing')}
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-            Free. No asterisk.
+            {t('landing.pricing.title')}
           </h2>
-          <p className="text-muted-foreground max-w-md mb-10">
-            MinimaSpend is free to use. There's no premium tier, no feature
-            gating, and no ads — because the model doesn't depend on your data.
-          </p>
+          <p className="text-muted-foreground max-w-md mb-10">{t('landing.pricing.body')}</p>
 
           <Card className="w-full max-w-sm bg-card/60 backdrop-blur-sm">
             <div className="px-6 flex flex-col items-center">
-              <p className="text-4xl font-bold">$0</p>
-              <p className="text-sm text-muted-foreground mb-6">forever</p>
+              <p className="text-4xl font-bold">{t('landing.pricing.price')}</p>
+              <p className="text-sm text-muted-foreground mb-6">{t('landing.pricing.forever')}</p>
 
               <div className="flex flex-col gap-3 w-full mb-6 text-left">
                 {PRICING_ITEMS.map((item) => (
@@ -564,13 +493,13 @@ export default function LandingPage() {
                     <span className="flex items-center justify-center h-5 w-5 rounded-full bg-[#6366f1]/10 shrink-0">
                       <Check className="h-3 w-3 text-[#6366f1]" />
                     </span>
-                    <span className="text-sm">{item}</span>
+                    <span className="text-sm">{t(item)}</span>
                   </div>
                 ))}
               </div>
 
               <StartTrackingButton className="w-full">
-                Start tracking
+                {t('landing.startTracking')}
               </StartTrackingButton>
             </div>
           </Card>
@@ -582,14 +511,11 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-20">
           <div className="rounded-2xl bg-muted/50 px-6 py-16 flex flex-col items-center text-center gap-4">
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
-              Start tracking in 30 seconds.
+              {t('landing.cta.title')}
             </h2>
-            <p className="text-muted-foreground max-w-md">
-              No sign-up, zero bank credentials, and your first expense logged
-              before you forget it.
-            </p>
+            <p className="text-muted-foreground max-w-md">{t('landing.cta.body')}</p>
             <StartTrackingButton className="mt-4">
-              Start tracking
+              {t('landing.startTracking')}
             </StartTrackingButton>
           </div>
         </div>
@@ -598,7 +524,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>No account needed. No financial data is stored on any server.</p>
+          <p>{t('landing.footer')}</p>
           <p>&copy; {new Date().getFullYear()} MinimaSpend</p>
         </div>
       </footer>

@@ -5,6 +5,7 @@ import { Loader2, Mail, User2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { UserProfile } from '@/lib/auth'
+import { useT } from '@/i18n'
 import { ACCOUNT_SESSION_QUERY_KEY, signOutAccount } from '@/lib/accountSession'
 import { getServerUserProfile } from '@/lib/auth'
 import PageShell from '@/components/PageShell'
@@ -23,6 +24,7 @@ function ProfilePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [signingOut, setSigningOut] = useState(false)
+  const { t } = useT()
 
   if (!user) return null
 
@@ -37,7 +39,7 @@ function ProfilePage() {
       void navigate({ to: '/' })
     } catch (err) {
       console.error('Sign out failed:', err)
-      toast.error('Could not sign out. Please try again.')
+      toast.error(t('toasts.signOutRetry'))
       setSigningOut(false)
     }
   }
@@ -50,7 +52,7 @@ function ProfilePage() {
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          Profile
+          {t('nav.profile')}
         </h1>
 
         <Card className="overflow-hidden">
@@ -58,7 +60,7 @@ function ProfilePage() {
             {avatarUrl ? (
               <img
                 src={avatarUrl}
-                alt={`${fullName}'s avatar`}
+                alt={t('profile.avatarAlt', { name: fullName })}
                 className="w-24 h-24 rounded-full border-4 border-muted shadow-sm object-cover"
               />
             ) : (
@@ -84,7 +86,7 @@ function ProfilePage() {
               className="w-full sm:w-auto px-8"
             >
               {signingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign Out
+              {t('profile.signOut')}
             </Button>
           </CardContent>
         </Card>

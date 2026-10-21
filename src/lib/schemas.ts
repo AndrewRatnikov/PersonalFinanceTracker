@@ -2,25 +2,29 @@ import { z } from 'zod'
 
 import { CURRENCIES } from './domain'
 
+// Every message is a catalog key (errors.validation.*), never text: the UI
+// shows it with validationMessage() from src/i18n/errors.ts, in the UI
+// language. Schemas stay pure and import nothing from i18n.
+
 export const createIncomeSchema = z.object({
-  categoryId: z.string().min(1, 'Category is required'),
-  amount: z.number().positive('Amount must be greater than 0'),
+  categoryId: z.string().min(1, 'errors.validation.categoryRequired'),
+  amount: z.number().positive('errors.validation.amountPositive'),
   currency: z.enum(CURRENCIES),
   description: z.string().optional(),
 })
 
 export const createExpenseSchema = z.object({
-  amount: z.number().positive('Amount must be greater than 0'),
+  amount: z.number().positive('errors.validation.amountPositive'),
   currency: z.enum(CURRENCIES),
-  categoryId: z.string().min(1, 'Category is required'),
+  categoryId: z.string().min(1, 'errors.validation.categoryRequired'),
   description: z.string().optional(),
 })
 
 export const updateExpenseSchema = createExpenseSchema.extend({
   createdAt: z
     .string()
-    .min(1, 'Date is required')
-    .refine((s) => !isNaN(new Date(s).getTime()), 'Invalid date'),
+    .min(1, 'errors.validation.dateRequired')
+    .refine((s) => !isNaN(new Date(s).getTime()), 'errors.validation.invalidDate'),
 })
 
 export type UpdateExpenseFormValues = z.infer<typeof updateExpenseSchema>
@@ -44,16 +48,16 @@ function isCalendarDate(value: string): boolean {
   )
 }
 
-const calendarDate = z.string().refine(isCalendarDate, 'Invalid date')
+const calendarDate = z.string().refine(isCalendarDate, 'errors.validation.invalidDate')
 
-const INTERVAL_MESSAGE = 'Interval must be a whole number from 1 to 365'
+const INTERVAL_MESSAGE = 'errors.validation.intervalRange'
 
 export const recurringInputSchema = z
   .object({
     kind: z.enum(['expense', 'income']),
-    amount: z.number().positive('Amount must be greater than 0'),
+    amount: z.number().positive('errors.validation.amountPositive'),
     currency: z.enum(CURRENCIES),
-    categoryId: z.string().min(1, 'Category is required'),
+    categoryId: z.string().min(1, 'errors.validation.categoryRequired'),
     description: z.string().nullable().optional(),
     frequency: z.object({
       unit: z.enum(['day', 'week', 'month', 'year']),
@@ -71,8 +75,8 @@ export const recurringInputSchema = z
         type: z.literal('afterCount'),
         count: z
           .number()
-          .int('Must be a whole number')
-          .min(1, 'Must be at least 1'),
+          .int('errors.validation.wholeNumber')
+          .min(1, 'errors.validation.atLeastOne'),
       }),
     ]),
     mode: z.enum(['auto', 'ask']),
@@ -91,7 +95,7 @@ export const recurringInputSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['end'],
-        message: "End date can't be before the start date",
+        message: 'errors.validation.endBeforeStart',
       })
     }
   })
@@ -111,7 +115,7 @@ export function recurringInputSchemaFor(categoryIds: ReadonlyArray<string>) {
       ctx.addIssue({
         code: 'custom',
         path: ['categoryId'],
-        message: 'Category not found',
+        message: 'errors.validation.categoryNotFound',
       })
     }
   })

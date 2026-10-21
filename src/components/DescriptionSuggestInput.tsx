@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type * as React from 'react'
 
 import type { DescriptionSuggestion, SuggestionEntry } from '@/lib/suggestions'
+import { useT } from '@/i18n'
 import { formatShortMoney } from '@/lib/money'
 import { suggestDescriptions } from '@/lib/suggestions'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ export function DescriptionSuggestInput({
 }: DescriptionSuggestInputProps) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
+  const { t } = useT()
 
   const suggestions = useMemo(
     () =>
@@ -190,7 +192,7 @@ export function DescriptionSuggestInput({
                   type="button"
                   tabIndex={-1}
                   data-testid={`${testIdPrefix}-suggestion-amount`}
-                  aria-label={`Use amount ${money}`}
+                  aria-label={t('common.suggestion.useAmount', { money })}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -198,7 +200,7 @@ export function DescriptionSuggestInput({
                   }}
                   className="shrink-0 rounded-full border border-border bg-muted px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
                 >
-                  last: {money}
+                  {t('common.suggestion.last', { money })}
                 </button>
               </li>
             )

@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   deleteIncome,
@@ -25,6 +27,7 @@ function IncomePage() {
   const [pageIndex, setPageIndex] = useState(0)
   const pageSize = 15
   const queryClient = useQueryClient()
+  const { t } = useT()
   // No loading gate: amounts fall back to the default main currency.
   const mainCurrency =
     useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
@@ -63,10 +66,10 @@ function IncomePage() {
     mutationFn: (id: string) => deleteIncome(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['income'] })
-      toast.success('Income deleted')
+      toast.success(t('toasts.incomeDeleted'))
     },
-    onError: (error: any) => {
-      toast.error(`Failed to delete: ${error.message}`)
+    onError: (error: unknown) => {
+      toast.error(t('toasts.deleteFailedWith', { error: errorMessage(error) }))
     },
   })
 
@@ -82,11 +85,9 @@ function IncomePage() {
       >
         <div className="space-y-1 mb-8">
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
-            Income
+            {t('income.title')}
           </h2>
-          <p className="text-muted-foreground">
-            Track your income sources and history.
-          </p>
+          <p className="text-muted-foreground">{t('income.subtitle')}</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

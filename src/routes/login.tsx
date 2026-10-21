@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useT } from '@/i18n'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { GoogleIcon } from '@/components/icons/GoogleIcon'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const supabase = createBrowserSupabaseClient()
+  const { t } = useT()
 
   // Extract the redirect path from the search params, default to '/'
   const search: { redirect?: string } = Route.useSearch()
@@ -43,7 +45,7 @@ function Login() {
         console.error('Error logging in with Google:', error.message)
       }
     } catch (err: any) {
-      setAuthError(err.message || 'An unexpected error occurred.')
+      setAuthError(err.message || t('login.unexpected'))
       console.error('Unexpected error during login:', err)
     } finally {
       setIsLoading(false)
@@ -57,9 +59,7 @@ function Login() {
           <CardTitle className="text-3xl font-bold tracking-tight">
             MinimaSpend
           </CardTitle>
-          <CardDescription>
-            Sign in to manage your core expenses instantly.
-          </CardDescription>
+          <CardDescription>{t('login.description')}</CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
           {authError && (
@@ -81,11 +81,11 @@ function Login() {
             ) : (
               <GoogleIcon className="h-5 w-5" />
             )}
-            <span>Continue with Google</span>
+            <span>{t('login.google')}</span>
           </Button>
 
           <p className="mt-8 text-center text-xs text-muted-foreground">
-            By signing in, you agree to our Terms and Privacy Policy.
+            {t('login.terms')}
           </p>
         </CardContent>
       </Card>

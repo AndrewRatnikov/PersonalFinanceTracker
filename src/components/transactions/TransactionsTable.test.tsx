@@ -5,18 +5,22 @@
 // The inline row editor is gone: the edit button now calls onEdit(tx), and the
 // tests of the old editor (prefill, validation, Escape, Enter, failed save) live
 // in ExpenseDrawer.test.tsx.
+//
+// i18n: the UI language is pinned in beforeEach; amounts and dates are built
+// with the @/i18n/format helpers and an explicit language. The Ukrainian
+// wording of the edit / delete buttons is the Coder's, so those cases assert
+// "Ukrainian, not English".
 
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Category, Currency, EntryConversion, Expense } from '@/lib/domain'
+import { setLang } from '@/i18n/core'
+import { formatAmount, formatFullDate } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { TransactionsTable } from '@/components/transactions/TransactionsTable'
 
-const fmt2 = (n: number) =>
-  n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+const fmt2 = (n: number) => formatAmount(n, 'en')
 
 const categories: Array<Category> = [
   { id: 'cat-food', name: 'Food', icon: '🍔' },
@@ -79,6 +83,14 @@ function conversion(overrides: Partial<EntryConversion> = {}): EntryConversion {
   }
 }
 
+beforeEach(() => {
+  setLang('en', { persist: false })
+})
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
+
 describe('TransactionsTable amount cell', () => {
   it('shows a main-currency expense as the plain amount with 2 decimals', () => {
     renderTable([txFood])
@@ -133,6 +145,19 @@ describe('TransactionsTable amount cell', () => {
     const text = screen.getAllByTestId('transaction-row')[0].textContent
     expect(text).not.toContain('₴')
     expect(screen.getAllByTestId('transaction-row')[1].textContent).not.toContain('$')
+  })
+})
+
+describe('TransactionsTable date cell', () => {
+  it('shows the full date with the English month', () => {
+    renderTable([txFood, txTransport])
+
+    const rows = screen.getAllByTestId('transaction-row')
+    expect(rows[0].textContent).toContain(formatFullDate(txFood.createdAt, 'en'))
+    expect(rows[1].textContent).toContain(formatFullDate(txTransport.createdAt, 'en'))
+    expect(formatFullDate(txFood.createdAt, 'en')).not.toBe(
+      formatFullDate(txTransport.createdAt, 'en'),
+    )
   })
 })
 
@@ -225,5 +250,62 @@ describe('TransactionsTable edit button', () => {
     expect(
       screen.getByTestId<HTMLButtonElement>('transaction-edit-button').disabled,
     ).toBe(false)
+  })
+})
+
+describe('TransactionsTable in Ukrainian', () => {
+  function renderUk(transactions: Array<Expense>) {
+    return render(
+      <I18nProvider initialLang="uk">
+        <TransactionsTable
+          transactions={transactions}
+          categories={categories}
+          isLoading={false}
+          isError={false}
+          isDeleting={false}
+          mainCurrency="UAH"
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+  }
+
+  it('shows amounts with грн and Ukrainian separators', () => {
+    renderUk([txFood, { ...txTransport, conversion: conversion() }])
+
+    const amounts = screen.getAllByTestId('entry-amount').map((el) => el.textContent)
+    expect(amounts[0]).toBe('12,50 грн')
+    expect(amounts[1]).toMatch(/^40,00 USD ≈ 1\s660,80 грн$/u)
+  })
+
+  it('shows the date with the Ukrainian month', () => {
+    renderUk([txFood, txTransport])
+
+    const rows = screen.getAllByTestId('transaction-row')
+    expect(rows[0].textContent).toContain(formatFullDate(txFood.createdAt, 'uk'))
+    expect(rows[0].textContent).toContain('бер.')
+    expect(rows[0].textContent).not.toContain(formatFullDate(txFood.createdAt, 'en'))
+    expect(rows[1].textContent).toContain('квіт.')
+  })
+
+  it('translates the edit and delete buttons', () => {
+    renderUk([txFood])
+
+    const edit = screen.getByTestId('transaction-edit-button').getAttribute('aria-label') ?? ''
+    const remove =
+      screen.getByTestId('transaction-delete-button').getAttribute('aria-label') ?? ''
+    expect(edit).toMatch(/[Ѐ-ӿ]/)
+    expect(edit).not.toBe('Edit transaction')
+    expect(remove).toMatch(/[Ѐ-ӿ]/)
+    expect(remove).not.toBe(edit)
+  })
+
+  it('keeps the user data as typed', () => {
+    renderUk([txFood])
+
+    const row = screen.getByTestId('transaction-row').textContent
+    expect(row).toContain('Food')
+    expect(row).toContain('Lunch')
   })
 })

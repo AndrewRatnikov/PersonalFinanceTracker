@@ -10,6 +10,10 @@ import type {
   RecurringKind,
   RecurringMode,
 } from '@/lib/domain'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
+import { validationMessage } from '@/i18n/errors'
+import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { recurringInputSchemaFor } from '@/lib/schemas'
@@ -40,22 +44,22 @@ type EndType = 'never' | 'onDate' | 'afterCount'
 // The fields that show an error, keyed by the top-level schema path.
 type ErrorField = 'amount' | 'categoryId' | 'interval' | 'startDate' | 'end'
 
-const UNIT_OPTIONS: ReadonlyArray<{ value: RecurrenceUnit; label: string }> = [
-  { value: 'day', label: 'Days' },
-  { value: 'week', label: 'Weeks' },
-  { value: 'month', label: 'Months' },
-  { value: 'year', label: 'Years' },
+const UNIT_OPTIONS: ReadonlyArray<{ value: RecurrenceUnit; label: MessageKey }> = [
+  { value: 'day', label: 'recurring.form.units.day' },
+  { value: 'week', label: 'recurring.form.units.week' },
+  { value: 'month', label: 'recurring.form.units.month' },
+  { value: 'year', label: 'recurring.form.units.year' },
 ]
 
-const END_OPTIONS: ReadonlyArray<{ value: EndType; label: string }> = [
-  { value: 'never', label: 'Never' },
-  { value: 'onDate', label: 'On date' },
-  { value: 'afterCount', label: 'After N times' },
+const END_OPTIONS: ReadonlyArray<{ value: EndType; label: MessageKey }> = [
+  { value: 'never', label: 'recurring.form.endNever' },
+  { value: 'onDate', label: 'recurring.form.endOnDate' },
+  { value: 'afterCount', label: 'recurring.form.endAfterCount' },
 ]
 
-const MODE_OPTIONS: ReadonlyArray<{ value: RecurringMode; label: string }> = [
-  { value: 'auto', label: 'Add automatically' },
-  { value: 'ask', label: 'Ask me first' },
+const MODE_OPTIONS: ReadonlyArray<{ value: RecurringMode; label: MessageKey }> = [
+  { value: 'auto', label: 'recurring.form.modeAuto' },
+  { value: 'ask', label: 'recurring.form.modeAsk' },
 ]
 
 // Native selects (not Radix): they can be driven in jsdom and work well on
@@ -94,7 +98,7 @@ function FieldError({
       data-testid={`recurring-form-error-${field}`}
       className="text-xs text-destructive"
     >
-      {message}
+      {validationMessage(message)}
     </p>
   )
 }
@@ -110,6 +114,7 @@ export default function RecurringForm({
   onCancel,
 }: RecurringFormProps) {
   const isEdit = initial !== undefined
+  const { t } = useT()
   const [kind, setKind] = useState<RecurringKind>(initial?.kind ?? 'expense')
   const [amount, setAmount] = useState(
     initial ? String(initial.amount) : '',
@@ -228,7 +233,7 @@ export default function RecurringForm({
               onClick={() => changeKind('expense')}
               disabled={isPending}
             >
-              Expense
+              {t('recurring.form.kindExpense')}
             </Button>
             <Button
               type="button"
@@ -238,14 +243,14 @@ export default function RecurringForm({
               onClick={() => changeKind('income')}
               disabled={isPending}
             >
-              Income
+              {t('recurring.form.kindIncome')}
             </Button>
           </div>
 
           {/* Amount + currency */}
           <div className="space-y-2">
             <Label htmlFor="recurring-amount" className={LABEL_CLASS}>
-              Amount
+              {t('common.amount')}
             </Label>
             <div className="flex gap-2">
               <Input
@@ -255,14 +260,14 @@ export default function RecurringForm({
                 step="0.01"
                 min="0.01"
                 inputMode="decimal"
-                placeholder="0.00"
+                placeholder={formatAmount(0)}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={isPending}
                 className={`h-10 flex-1 ${errors.amount ? 'border-destructive' : ''}`}
               />
               <select
-                aria-label="Currency"
+                aria-label={t('common.currency')}
                 data-testid="recurring-form-currency"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as Currency)}
@@ -282,7 +287,7 @@ export default function RecurringForm({
           {/* Category */}
           <div className="space-y-2">
             <Label htmlFor="recurring-category" className={LABEL_CLASS}>
-              Category
+              {t('common.category')}
             </Label>
             <select
               id="recurring-category"
@@ -294,7 +299,7 @@ export default function RecurringForm({
             >
               {!categoryKnown && (
                 <option value="" disabled>
-                  Choose a category
+                  {t('recurring.form.chooseCategory')}
                 </option>
               )}
               {categories.map((c) => (
@@ -309,9 +314,9 @@ export default function RecurringForm({
           {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="recurring-description" className={LABEL_CLASS}>
-              Description{' '}
+              {t('common.description')}{' '}
               <span className="normal-case font-normal opacity-50">
-                (optional)
+                {t('common.optional')}
               </span>
             </Label>
             <Input
@@ -320,7 +325,7 @@ export default function RecurringForm({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Netflix"
+              placeholder={t('recurring.form.descriptionPlaceholder')}
               maxLength={120}
               disabled={isPending}
               className="h-10"
@@ -330,7 +335,7 @@ export default function RecurringForm({
           {/* Frequency */}
           <div className="space-y-2">
             <Label htmlFor="recurring-interval" className={LABEL_CLASS}>
-              Every
+              {t('recurring.form.every')}
             </Label>
             <div className="flex gap-2">
               <Input
@@ -346,7 +351,7 @@ export default function RecurringForm({
                 className={`h-10 w-24 ${errors.interval ? 'border-destructive' : ''}`}
               />
               <select
-                aria-label="Unit"
+                aria-label={t('recurring.form.unit')}
                 data-testid="recurring-form-unit"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value as RecurrenceUnit)}
@@ -355,7 +360,7 @@ export default function RecurringForm({
               >
                 {UNIT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
-                    {o.label}
+                    {t(o.label)}
                   </option>
                 ))}
               </select>
@@ -366,7 +371,7 @@ export default function RecurringForm({
           {/* Start date */}
           <div className="space-y-2">
             <Label htmlFor="recurring-start" className={LABEL_CLASS}>
-              Starts on
+              {t('recurring.form.startsOn')}
             </Label>
             <Input
               id="recurring-start"
@@ -383,7 +388,7 @@ export default function RecurringForm({
           {/* End */}
           <div className="space-y-2">
             <Label htmlFor="recurring-end-type" className={LABEL_CLASS}>
-              Ends
+              {t('recurring.form.ends')}
             </Label>
             <div className="flex gap-2">
               <select
@@ -396,13 +401,13 @@ export default function RecurringForm({
               >
                 {END_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
-                    {o.label}
+                    {t(o.label)}
                   </option>
                 ))}
               </select>
               {endType === 'onDate' && (
                 <Input
-                  aria-label="End date"
+                  aria-label={t('recurring.form.endDate')}
                   data-testid="recurring-form-end-date"
                   type="date"
                   value={endDate}
@@ -413,7 +418,7 @@ export default function RecurringForm({
               )}
               {endType === 'afterCount' && (
                 <Input
-                  aria-label="Number of times"
+                  aria-label={t('recurring.form.endCount')}
                   data-testid="recurring-form-end-count"
                   type="number"
                   min="1"
@@ -431,7 +436,7 @@ export default function RecurringForm({
           {/* Mode */}
           <div className="space-y-2">
             <Label htmlFor="recurring-mode" className={LABEL_CLASS}>
-              When due
+              {t('recurring.form.whenDue')}
             </Label>
             <select
               id="recurring-mode"
@@ -443,7 +448,7 @@ export default function RecurringForm({
             >
               {MODE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.label}
+                  {t(o.label)}
                 </option>
               ))}
             </select>
@@ -459,7 +464,7 @@ export default function RecurringForm({
                 disabled={isPending}
                 className="h-4 w-4"
               />
-              Also add occurrences up to today
+              {t('recurring.form.backfill')}
             </label>
           )}
 
@@ -471,7 +476,7 @@ export default function RecurringForm({
               onClick={onCancel}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -479,7 +484,11 @@ export default function RecurringForm({
               disabled={isPending}
               className="flex-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
             >
-              {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Add'}
+              {isPending
+                ? t('common.saving')
+                : isEdit
+                  ? t('common.saveChanges')
+                  : t('common.add')}
             </Button>
           </div>
         </CardContent>

@@ -8,6 +8,8 @@ import {
 } from 'recharts'
 
 import type { Currency, MonthlyExpenseSummary } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { currencyLabel, formatNumber } from '@/i18n/format'
 import { formatAmount, formatMoney } from '@/lib/money'
 import {
   Card,
@@ -26,6 +28,7 @@ export default function DashboardStats({
   data,
   currency,
 }: DashboardStatsProps) {
+  const { t } = useT()
   // If no data, return nothing or empty skeleton
   if (data.length === 0) return null
 
@@ -37,14 +40,14 @@ export default function DashboardStats({
     <Card className="w-full overflow-hidden border-border bg-card/50 backdrop-blur-sm">
       <CardHeader className="text-center pb-6">
         <CardDescription className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-          Spent This Month ({currentMonthData.name})
+          {t('analytics.spentThisMonth', { month: currentMonthData.name })}
         </CardDescription>
         <CardTitle
           data-testid="dashboard-stats-total"
           className="mt-2 text-6xl font-black tracking-tighter text-foreground"
         >
           {formatAmount(currentTotal)}{' '}
-          <span className="text-2xl text-primary font-bold">{currency}</span>
+          <span className="text-2xl text-primary font-bold">{currencyLabel(currency)}</span>
         </CardTitle>
       </CardHeader>
 
@@ -69,7 +72,7 @@ export default function DashboardStats({
               fontSize={12}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => `${value}`}
+              tickFormatter={(value: number) => formatNumber(Number(value))}
             />
             <Tooltip
               cursor={{ fill: 'var(--muted)', opacity: 0.3 }}
@@ -87,7 +90,7 @@ export default function DashboardStats({
               }}
               formatter={(value: any) => [
                 formatMoney(Number(value), currency),
-                'Spent',
+                t('analytics.spent'),
               ]}
             />
             <Bar

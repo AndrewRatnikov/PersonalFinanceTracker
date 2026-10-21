@@ -7,6 +7,7 @@ import type {
   Expense,
   IncomeEntry,
 } from '@/lib/domain'
+import { t } from '@/i18n/core'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { mainAmountOf } from '@/lib/money'
 
@@ -156,7 +157,8 @@ export function computeDashboardSummary(
         const spent = spentByCategory.get(categoryId) ?? 0
         const ratio = limit > 0 ? spent / limit : spent > 0 ? Infinity : 0
         const name =
-          categories.find((c) => c.id === categoryId)?.name ?? 'Uncategorized'
+          categories.find((c) => c.id === categoryId)?.name ??
+          t('common.uncategorized')
         return {
           categoryId,
           name,

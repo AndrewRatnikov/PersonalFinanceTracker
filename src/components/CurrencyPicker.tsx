@@ -1,4 +1,5 @@
 import type { Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
 import { CURRENCIES } from '@/lib/domain'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -23,10 +24,11 @@ export function CurrencyPicker({
   label,
   className,
 }: CurrencyPickerProps) {
+  const { t } = useT()
   return (
     <div
       role="group"
-      aria-label={label ?? 'Currency'}
+      aria-label={label ?? t('common.currency')}
       data-testid={`${testIdPrefix}-currency`}
       className={cn('flex flex-wrap gap-2', className)}
     >

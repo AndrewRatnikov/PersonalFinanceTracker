@@ -3,6 +3,11 @@
 // (component: ExpenseDrawer) and plan section 4. The tests of the removed inline
 // row editor (prefill, validation, Enter / Escape, patch values, unchanged date
 // keeps the original timestamp) are moved here and adapted to the drawer.
+//
+// i18n: the UI language is pinned to English in beforeEach; the conversion line
+// ends with formatDay (e.g. "Oct 14"). The Ukrainian block asserts the texts of
+// the plan's key table exactly and the other Ukrainian wording as "Cyrillic and
+// not the English text", because that wording is the Coder's.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -11,7 +16,11 @@ import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Category, Expense } from '@/lib/domain'
+import type { Lang } from '@/i18n/lang'
 import type { ExpenseDrawerProps } from '@/components/transactions/ExpenseDrawer'
+import { setLang, translate } from '@/i18n/core'
+import { formatDay, formatMoney, formatShortMoney } from '@/i18n/format'
+import { I18nProvider } from '@/i18n/react'
 import { ExpenseDrawer } from '@/components/transactions/ExpenseDrawer'
 import {
   addExpense,
@@ -19,7 +28,6 @@ import {
   deleteExpense,
   updateExpense,
 } from '@/lib/localDb'
-import { formatMoney } from '@/lib/money'
 
 vi.mock('@/lib/localDb', () => ({
   addExpense: vi.fn(),
@@ -70,7 +78,7 @@ function deferred<T>() {
 
 type OpenChange = (open: boolean) => void
 
-function renderDrawer(props: Partial<ExpenseDrawerProps> = {}) {
+function renderDrawer(props: Partial<ExpenseDrawerProps> = {}, lang: Lang = 'en') {
   const { onOpenChange = vi.fn<OpenChange>(), ...rest } = props
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -78,15 +86,17 @@ function renderDrawer(props: Partial<ExpenseDrawerProps> = {}) {
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   const view = render(
     <QueryClientProvider client={client}>
-      <ExpenseDrawer
-        mode="add"
-        open
-        onOpenChange={onOpenChange}
-        categories={CATEGORIES}
-        mainCurrency="UAH"
-        entries={[]}
-        {...rest}
-      />
+      <I18nProvider initialLang={lang}>
+        <ExpenseDrawer
+          mode="add"
+          open
+          onOpenChange={onOpenChange}
+          categories={CATEGORIES}
+          mainCurrency="UAH"
+          entries={[]}
+          {...rest}
+        />
+      </I18nProvider>
     </QueryClientProvider>,
   )
   return { onOpenChange, invalidate, ...view }
@@ -125,6 +135,7 @@ function addCall() {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  setLang('en', { persist: false })
   vi.mocked(addExpense).mockResolvedValue(saved())
   vi.mocked(addRepeatingExpense).mockResolvedValue(saved())
   vi.mocked(updateExpense).mockResolvedValue(makeExpense())
@@ -133,6 +144,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Reflect.deleteProperty(window, 'matchMedia')
+  setLang('en', { persist: false })
 })
 
 describe('ExpenseDrawer: shell', () => {
@@ -1279,7 +1291,7 @@ describe('ExpenseDrawer: edit mode information', () => {
     renderDrawer({ mode: 'edit', expense: usd() })
 
     expect(screen.getByTestId('drawer-conversion-info').textContent).toBe(
-      `≈ ${formatMoney(1660.8, 'UAH')} · NBU · 14 Oct`,
+      `≈ ${formatMoney(1660.8, 'UAH', 'en')} · NBU · ${formatDay('2026-10-14', 'en')}`,
     )
   })
 
@@ -1297,7 +1309,7 @@ describe('ExpenseDrawer: edit mode information', () => {
       }),
     })
     expect(screen.getByTestId('drawer-conversion-info').textContent).toBe(
-      `≈ ${formatMoney(1600, 'UAH')} · Manual rate · 2 Oct`,
+      `≈ ${formatMoney(1600, 'UAH', 'en')} · Manual rate · ${formatDay('2026-10-02', 'en')}`,
     )
     manual.unmount()
 
@@ -1433,6 +1445,183 @@ describe('ExpenseDrawer: delete', () => {
     })
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(toast.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('ExpenseDrawer: Ukrainian', () => {
+  const CYRILLIC = /[Ѐ-ӿ]/
+
+  it('translates the title, the buttons and the repeat options', () => {
+    renderDrawer({}, 'uk')
+
+    const title = screen.getByTestId('expense-drawer-title').textContent
+    expect(title).toMatch(CYRILLIC)
+    expect(title).not.toBe('Add transaction')
+    for (const id of ['drawer-save', 'drawer-save-another', 'drawer-cancel']) {
+      expect(screen.getByTestId(id).textContent, id).toMatch(CYRILLIC)
+    }
+    const options = Array.from(repeatSelect().options).map((o) => o.textContent)
+    expect(options).toHaveLength(4)
+    for (const option of options) expect(option).toMatch(CYRILLIC)
+    expect(options).not.toContain('Weekly')
+  })
+
+  it('translates the category group label and keeps the category names as typed', () => {
+    renderDrawer({}, 'uk')
+
+    const group = screen.getByTestId('drawer-category-group')
+    expect(group.getAttribute('aria-label')).toMatch(CYRILLIC)
+    expect(group.getAttribute('aria-label')).not.toBe('Category')
+    expect(chip('cat-food').textContent).toContain('Food')
+    expect(chip('cat-coffee').textContent).toContain('Coffee')
+  })
+
+  it('shows the amount error in Ukrainian', () => {
+    renderDrawer({}, 'uk')
+    setAmount('0')
+
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    expect(screen.getByTestId('drawer-error-amount').textContent).toBe(
+      'Сума має бути більшою за 0',
+    )
+    expect(addExpense).not.toHaveBeenCalled()
+  })
+
+  it('shows the category error in Ukrainian', () => {
+    renderDrawer({ categories: [] }, 'uk')
+    setAmount('5')
+
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    expect(screen.getByTestId('drawer-error-categoryId').textContent).toBe(
+      translate('uk', 'errors.validation.categoryRequired'),
+    )
+    expect(screen.getByTestId('drawer-error-categoryId').textContent).toMatch(CYRILLIC)
+    expect(addExpense).not.toHaveBeenCalled()
+  })
+
+  it('shows the empty-date error in Ukrainian', () => {
+    renderDrawer({}, 'uk')
+    setAmount('5')
+    setDate('')
+
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    expect(screen.getByTestId('drawer-error-createdAt').textContent).toBe(
+      translate('uk', 'errors.validation.dateRequired'),
+    )
+  })
+
+  it('still accepts both "," and "." as the decimal separator', async () => {
+    renderDrawer({}, 'uk')
+    setAmount('12,5')
+
+    fireEvent.click(screen.getByTestId('drawer-save-another'))
+
+    await waitFor(() => expect(addExpense).toHaveBeenCalledTimes(1))
+    expect(addCall().amount).toBe(12.5)
+    setAmount('7.25')
+    fireEvent.click(screen.getByTestId('drawer-save-another'))
+    await waitFor(() => expect(addExpense).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(addExpense).mock.calls[1][0].amount).toBe(7.25)
+  })
+
+  it('reports a saved expense in Ukrainian', async () => {
+    renderDrawer({}, 'uk')
+    setAmount('65')
+
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    const message = String(vi.mocked(toast.success).mock.calls[0][0])
+    expect(message).toMatch(CYRILLIC)
+    expect(message).not.toBe('Expense saved')
+  })
+
+  it('reports a failed save in Ukrainian, with the error', async () => {
+    vi.mocked(addExpense).mockRejectedValue(new Error('disk full'))
+    renderDrawer({}, 'uk')
+    setAmount('65')
+
+    fireEvent.click(screen.getByTestId('drawer-save'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
+    const message = String(vi.mocked(toast.error).mock.calls[0][0])
+    expect(message).toContain('disk full')
+    expect(message).toMatch(CYRILLIC)
+    expect(message).not.toContain('Failed')
+  })
+
+  it('shows the stored conversion with грн and the Ukrainian day', () => {
+    renderDrawer(
+      {
+        mode: 'edit',
+        expense: makeExpense({
+          amount: 40,
+          currency: 'USD',
+          conversion: {
+            mainCurrency: 'UAH',
+            rate: 41.52,
+            mainAmount: 1660.8,
+            rateDate: '2026-10-14',
+            source: 'nbu',
+          },
+        }),
+      },
+      'uk',
+    )
+
+    const text = screen.getByTestId('drawer-conversion-info').textContent
+    expect(text).toContain(`≈ ${formatMoney(1660.8, 'UAH', 'uk')} · `)
+    expect(text).toMatch(/^≈ 1\s660,80 грн · /u)
+    expect(text.endsWith(formatDay('2026-10-14', 'uk'))).toBe(true)
+    expect(text).toContain('14 жовт.')
+    expect(text).not.toContain('Oct')
+  })
+
+  it('translates the suggestion hint and formats its amount for the language', () => {
+    const entries = [
+      saved({
+        id: 's1',
+        description: 'Coffee',
+        categoryId: 'cat-coffee',
+        amount: 65,
+        currency: 'EUR',
+      }),
+    ]
+    renderDrawer({ entries }, 'uk')
+
+    fireEvent.focus(descriptionInput())
+
+    const hint = screen.getByTestId('drawer-suggestion-amount').textContent
+    expect(hint).toContain(formatShortMoney(65, 'EUR', 'uk'))
+    expect(hint).toMatch(CYRILLIC)
+    expect(hint).not.toContain('last')
+  })
+
+  it('translates the delete confirmation and the recurring note', () => {
+    renderDrawer({ mode: 'edit', expense: makeExpense({ recurringId: 'r1' }) }, 'uk')
+
+    expect(screen.getByTestId('drawer-recurring-note').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('drawer-recurring-note').textContent).not.toContain(
+      'recurring',
+    )
+    fireEvent.click(screen.getByTestId('drawer-delete'))
+
+    expect(screen.getByTestId('drawer-delete-confirm').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('drawer-delete-confirm').textContent).not.toBe('Delete')
+    expect(screen.getByTestId('drawer-delete-cancel').textContent).toMatch(CYRILLIC)
+  })
+
+  it('translates the future-date hint', () => {
+    renderDrawer({}, 'uk')
+
+    setDate(dayjs().add(3, 'day').format('YYYY-MM-DD'))
+
+    const hint = screen.getByTestId('drawer-future-hint').textContent
+    expect(hint).toMatch(CYRILLIC)
+    expect(hint).not.toBe('Future date')
   })
 })
 

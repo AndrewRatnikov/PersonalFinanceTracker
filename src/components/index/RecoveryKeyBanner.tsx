@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { KeyRound } from 'lucide-react'
 
+import { useT } from '@/i18n'
 import { APP_SETTINGS_QUERY_KEY, getAppSettings } from '@/lib/appSettings'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,6 +16,7 @@ export function RecoveryKeyBanner() {
     queryKey: APP_SETTINGS_QUERY_KEY,
     queryFn: getAppSettings,
   })
+  const { t } = useT()
 
   if (data?.recoveryKeyConfirmed !== false) return null
 
@@ -27,7 +29,7 @@ export function RecoveryKeyBanner() {
         <div className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 shrink-0 text-destructive" />
           <p data-testid="recovery-key-unconfirmed-text" className="text-sm">
-            You haven&apos;t saved a recovery key for this device
+            {t('dashboard.recoveryKey.text')}
           </p>
         </div>
         <Link
@@ -36,7 +38,7 @@ export function RecoveryKeyBanner() {
           className={buttonVariants({ size: 'sm' })}
           data-testid="recovery-key-unconfirmed-action"
         >
-          Create a new recovery key
+          {t('dashboard.recoveryKey.action')}
         </Link>
       </CardContent>
     </Card>

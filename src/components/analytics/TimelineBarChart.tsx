@@ -8,6 +8,8 @@ import {
   YAxis,
 } from 'recharts'
 import type { AnalyticsTimelinePoint, Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatNumber, formatShortMonth } from '@/i18n/format'
 import { formatMoney } from '@/lib/money'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -16,11 +18,9 @@ interface Props {
   currency: Currency
 }
 
-/** Abbreviate large numbers for the Y-axis: 70000 → 70k, 1500000 → 1.5M */
+/** Abbreviate large numbers for the Y-axis in the UI language: 70K / 70 тис. */
 function formatYAxis(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}k`
-  return String(value)
+  return formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 })
 }
 
 /**
@@ -36,7 +36,7 @@ function maybeGroupByMonth(
   for (const point of data) {
     const d = dayjs(point.date)
     const key = d.format('YYYY-MM')
-    const label = d.format("MMM 'YY")
+    const label = formatShortMonth(d.toDate())
     const existing = monthMap.get(key)
     if (existing) {
       existing.total += point.total
@@ -53,11 +53,12 @@ function maybeGroupByMonth(
 }
 
 export default function TimelineBarChart({ data, currency }: Props) {
+  const { t } = useT()
   if (data.length === 0) {
     return (
       <Card className="border-dashed bg-transparent h-56 flex items-center justify-center">
         <CardContent className="text-muted-foreground text-sm">
-          No data found.
+          {t('analytics.noData')}
         </CardContent>
       </Card>
     )
@@ -107,7 +108,7 @@ export default function TimelineBarChart({ data, currency }: Props) {
             }}
             formatter={(value) => [
               formatMoney(Number(value ?? 0), currency),
-              'Spent',
+              t('analytics.spent'),
             ]}
           />
           <Bar

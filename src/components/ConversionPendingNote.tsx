@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
+import { useT } from '@/i18n'
 import { pendingLabel } from '@/lib/money'
 
 export interface ConversionPendingNoteProps {
@@ -10,12 +11,6 @@ export interface ConversionPendingNoteProps {
   fetchExchangeRates: boolean
 }
 
-function budgetsLabel(n: number): string {
-  return n === 1
-    ? "1 budget in another currency isn't compared until today's exchange rate is available"
-    : `${n} budgets in another currency aren't compared until today's exchange rate is available`
-}
-
 // Explains what the totals above leave out. Renders nothing when nothing is
 // left out.
 function ConversionPendingNote({
@@ -23,6 +18,7 @@ function ConversionPendingNote({
   budgetsExcluded = 0,
   fetchExchangeRates,
 }: ConversionPendingNoteProps) {
+  const { t, plural } = useT()
   if (count <= 0 && budgetsExcluded <= 0) return null
   return (
     <div className="space-y-1 text-sm text-muted-foreground">
@@ -36,14 +32,14 @@ function ConversionPendingNote({
               data-testid="conversion-pending-settings-link"
               className="underline underline-offset-2 hover:text-foreground"
             >
-              Turn on exchange rates in Settings → General
+              {t('common.turnOnRatesLink')}
             </Link>
           )}
         </div>
       )}
       {budgetsExcluded > 0 && (
         <p data-testid="budget-conversion-pending-note">
-          {budgetsLabel(budgetsExcluded)}
+          {plural('common.budgetsPending', budgetsExcluded)}
         </p>
       )}
     </div>

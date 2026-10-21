@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import type { Category, Expense } from '@/lib/domain'
 import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
 import type { RepeatCandidate } from '@/lib/repeatLast'
+import { useT } from '@/i18n'
 import { addExpense, deleteExpense } from '@/lib/localDb'
 import {
   repeatLastCandidates,
@@ -43,6 +44,7 @@ export function RepeatLastChips({
   onCustomize,
 }: RepeatLastChipsProps) {
   const queryClient = useQueryClient()
+  const { t } = useT()
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Set when a long press fired, so the click that follows doesn't add.
   const longPressed = useRef(false)
@@ -71,9 +73,9 @@ export function RepeatLastChips({
     try {
       await deleteExpense(saved.id, saved.createdAt)
       invalidate()
-      toast.success('Removed')
+      toast.success(t('toasts.removed'))
     } catch {
-      toast.error('Failed to remove expense')
+      toast.error(t('toasts.expenseRemoveFailed'))
     }
   }
 
@@ -87,17 +89,17 @@ export function RepeatLastChips({
         description: candidate.description || undefined,
       })
       invalidate()
-      toast.success(`Added ${repeatLastText(candidate, category)}`, {
+      toast.success(t('toasts.addedItem', { item: repeatLastText(candidate, category) }), {
         duration: UNDO_MS,
         action: {
-          label: 'Undo',
+          label: t('toasts.undo'),
           onClick: () => {
             void undo(saved)
           },
         },
       })
     } catch {
-      toast.error('Failed to add expense')
+      toast.error(t('toasts.expenseAddFailed'))
     }
   }
 
@@ -123,7 +125,7 @@ export function RepeatLastChips({
   return (
     <div
       role="group"
-      aria-label="Repeat last"
+      aria-label={t('dashboard.repeatLast')}
       data-testid="repeat-last-row"
       className="flex flex-wrap gap-2"
     >
@@ -154,7 +156,9 @@ export function RepeatLastChips({
           <button
             type="button"
             data-testid="repeat-last-more"
-            aria-label={`Edit before adding ${repeatLastText(candidate, category)}`}
+            aria-label={t('dashboard.editBeforeAdding', {
+              item: repeatLastText(candidate, category),
+            })}
             onClick={() => onCustomize(initialFor(candidate))}
             className="min-h-11 min-w-11 border-l border-border px-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:min-h-9 sm:min-w-9"
           >

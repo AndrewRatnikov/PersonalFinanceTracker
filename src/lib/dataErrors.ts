@@ -1,5 +1,8 @@
-// Errors and key helpers for the encrypted local store. This module has no
-// dependencies so UI code can use it without pulling in localDb.
+// Errors and key helpers for the encrypted local store. This module depends
+// only on the i18n core, so UI code can use it without pulling in localDb.
+
+import { t } from '../i18n/core'
+import type { MessageKey } from '../i18n/core'
 
 export class DecryptError extends Error {
   readonly storageKey: string
@@ -21,12 +24,12 @@ export function isDecryptError(err: unknown): err is DecryptError {
 
 const EXPENSE_CHUNK_RE = /^expenses_(\d{4})_(\d{2})$/
 
-const SINGLE_KEY_LABELS: Record<string, string> = {
-  categories: 'Categories',
-  income: 'Income',
-  budgets: 'Budgets',
-  incomeCategories: 'Income categories',
-  recurring: 'Recurring',
+const SINGLE_KEY_LABELS: Record<string, MessageKey> = {
+  categories: 'common.storageKeys.categories',
+  income: 'common.storageKeys.income',
+  budgets: 'common.storageKeys.budgets',
+  incomeCategories: 'common.storageKeys.incomeCategories',
+  recurring: 'common.storageKeys.recurring',
 }
 
 // True for the keys that hold user data in the current (v1) format.
@@ -39,11 +42,14 @@ export function isDataStorageKey(key: string): boolean {
 }
 
 // 'expenses_2026_03' -> 'Expenses · 2026-03', 'categories' -> 'Categories', ...
+// (in the UI language; the YYYY-MM month stays a machine format)
 export function storageKeyLabel(key: string): string {
   const match = EXPENSE_CHUNK_RE.exec(key)
-  if (match) return `Expenses · ${match[1]}-${match[2]}`
+  if (match) {
+    return t('common.storageKeys.expensesMonth', { month: `${match[1]}-${match[2]}` })
+  }
   if (Object.prototype.hasOwnProperty.call(SINGLE_KEY_LABELS, key)) {
-    return SINGLE_KEY_LABELS[key]
+    return t(SINGLE_KEY_LABELS[key])
   }
   return key
 }
