@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import dayjs from 'dayjs'
 import { toast } from 'sonner'
 
 import type { Category, RecurringItem } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
+import { currencyLabel, formatFullDate } from '@/i18n/format'
 import {
   confirmRecurringOccurrence,
   getAllCategories,
@@ -29,7 +31,7 @@ const RECURRING_QUERY_KEYS = [
 ]
 
 function formatDate(date: string): string {
-  return dayjs(date).format('MMM D, YYYY')
+  return formatFullDate(date)
 }
 
 function occurrenceKey(itemId: string, date: string): string {
@@ -45,6 +47,7 @@ export default function RecurringDashboardSection({
   today: string
 }) {
   const queryClient = useQueryClient()
+  const { t } = useT()
   // Amount inputs per due occurrence, as typed.
   const [amounts, setAmounts] = useState<Partial<Record<string, string>>>(
     {},
@@ -78,7 +81,7 @@ export default function RecurringDashboardSection({
     }
   }
   const onFailed = (error: Error) => {
-    toast.error(error.message)
+    toast.error(errorMessage(error))
   }
 
   const confirmMutation = useMutation({
@@ -124,7 +127,7 @@ export default function RecurringDashboardSection({
   const nameOf = (item: RecurringItem) =>
     item.description ||
     categoryMaps[item.kind].get(item.categoryId)?.name ||
-    'Unknown category'
+    t('recurring.unknownCategory')
 
   const busy = confirmMutation.isPending || skipMutation.isPending
 
@@ -132,7 +135,7 @@ export default function RecurringDashboardSection({
     const text = amounts[occurrenceKey(item.id, date)]
     const amount = text === undefined ? item.amount : Number(text)
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('Amount must be greater than 0')
+      toast.error(t('errors.validation.amountPositive'))
       return
     }
     confirmMutation.mutate({ item, date, amount })
@@ -143,7 +146,7 @@ export default function RecurringDashboardSection({
       {due.length > 0 && (
         <Card data-testid="recurring-due" className="border-border bg-card/50">
           <CardHeader>
-            <CardTitle className="text-lg">Due</CardTitle>
+            <CardTitle className="text-lg">{t('recurring.due')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {due.map(({ item, occurrenceDate }) => {
@@ -162,7 +165,7 @@ export default function RecurringDashboardSection({
                   </div>
                   <div className="flex items-center gap-1">
                     <input
-                      aria-label="Amount"
+                      aria-label={t('common.amount')}
                       data-testid="recurring-due-amount"
                       type="number"
                       step="0.01"
@@ -178,7 +181,7 @@ export default function RecurringDashboardSection({
                       className="h-9 w-24 rounded-md border border-input bg-background px-2 text-sm"
                     />
                     <span className="text-xs text-muted-foreground">
-                      {item.currency}
+                      {currencyLabel(item.currency)}
                     </span>
                   </div>
                   <div className="flex gap-1">
@@ -189,7 +192,7 @@ export default function RecurringDashboardSection({
                       onClick={() => handleAdd(item, occurrenceDate)}
                       disabled={busy}
                     >
-                      Add
+                      {t('common.add')}
                     </Button>
                     <Button
                       type="button"
@@ -201,7 +204,7 @@ export default function RecurringDashboardSection({
                       }
                       disabled={busy}
                     >
-                      Skip
+                      {t('recurring.skip')}
                     </Button>
                   </div>
                 </div>
@@ -216,12 +219,12 @@ export default function RecurringDashboardSection({
         className="border-border bg-card/50"
       >
         <CardHeader>
-          <CardTitle className="text-lg">Upcoming</CardTitle>
+          <CardTitle className="text-lg">{t('recurring.upcoming')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {upcoming.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing in the next 7 days
+              {t('recurring.nothingUpcoming')}
             </p>
           ) : (
             upcoming.map(({ item, occurrenceDate }) => (
@@ -245,7 +248,7 @@ export default function RecurringDashboardSection({
             data-testid="recurring-upcoming-link"
             className="text-sm text-primary underline-offset-4 hover:underline self-start"
           >
-            All recurring
+            {t('recurring.allRecurring')}
           </Link>
         </CardContent>
       </Card>
