@@ -19,7 +19,7 @@ import { setLang, translate } from '@/i18n/core'
 import { errorMessage, validationMessage } from '@/i18n/errors'
 import { getCurrencySettings } from '@/lib/appSettings'
 import { AppError, isAppError } from '@/lib/appErrors'
-import { changeMainCurrency, getConversionStatus } from '@/lib/conversion'
+import { MainCurrencyChangeError, changeMainCurrency, getConversionStatus } from '@/lib/conversion'
 import { recurringInputSchema } from '@/lib/schemas'
 import { unlockWithPassword } from '@/lib/vault'
 import { GeneralTab } from '@/components/settings/GeneralTab'
@@ -472,17 +472,15 @@ async function openMainCurrencyDialog(lang: 'uk' | 'en') {
 }
 
 describe('GeneralTab shows an offline main-currency change in the UI language', () => {
-  const OfflineError = class extends Error {
-    readonly code = 'offline'
-    constructor(message: string) {
-      super(message)
-      this.name = 'MainCurrencyChangeError'
-    }
-  }
+  const RefusalError = MainCurrencyChangeError as unknown as new (
+    code: string,
+    message: string,
+  ) => Error
 
   it('Ukrainian', async () => {
     vi.mocked(changeMainCurrency).mockRejectedValue(
-      new OfflineError(
+      new RefusalError(
+        'offline',
         "You're offline. Connect to the internet to change the main currency.",
       ),
     )
@@ -498,7 +496,8 @@ describe('GeneralTab shows an offline main-currency change in the UI language', 
 
   it('English', async () => {
     vi.mocked(changeMainCurrency).mockRejectedValue(
-      new OfflineError(
+      new RefusalError(
+        'offline',
         "You're offline. Connect to the internet to change the main currency.",
       ),
     )
