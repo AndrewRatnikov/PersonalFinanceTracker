@@ -1,7 +1,8 @@
-import dayjs from 'dayjs'
 import { Loader2, Repeat, Search, Trash2 } from 'lucide-react'
 
 import type { Currency, IncomeEntry } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatFullDate } from '@/i18n/format'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
 import EntryAmount from '@/components/EntryAmount'
 
@@ -44,18 +45,19 @@ export function IncomeTable({
   mainCurrency,
   onDelete,
 }: IncomeTableProps) {
+  const { t } = useT()
   return (
     <Table>
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
-          <TableHead className="pl-6 font-semibold">Date</TableHead>
-          <TableHead className="font-semibold">Category</TableHead>
+          <TableHead className="pl-6 font-semibold">{t('common.date')}</TableHead>
+          <TableHead className="font-semibold">{t('common.category')}</TableHead>
           <TableHead className="hidden md:table-cell font-semibold">
-            Description
+            {t('common.description')}
           </TableHead>
-          <TableHead className="text-right font-semibold">Amount</TableHead>
+          <TableHead className="text-right font-semibold">{t('common.amount')}</TableHead>
           <TableHead className="pr-6 text-right font-semibold">
-            Actions
+            {t('common.actions')}
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -75,7 +77,7 @@ export function IncomeTable({
               colSpan={5}
               className="p-12 text-center text-destructive"
             >
-              Failed to load income. Please try again later.
+              {t('income.loadFailed')}
             </TableCell>
           </TableRow>
         ) : income.length === 0 ? (
@@ -89,12 +91,8 @@ export function IncomeTable({
                   <Search className="w-8 h-8 text-muted-foreground opacity-50" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-medium text-foreground">
-                    No income recorded yet
-                  </p>
-                  <p className="text-sm">
-                    Add your first income entry using the form.
-                  </p>
+                  <p className="font-medium text-foreground">{t('income.emptyTitle')}</p>
+                  <p className="text-sm">{t('income.emptyHint')}</p>
                 </div>
               </div>
             </TableCell>
@@ -107,7 +105,7 @@ export function IncomeTable({
               className="hover:bg-muted/30 transition-colors group"
             >
               <TableCell className="pl-6 text-sm text-muted-foreground">
-                {dayjs(entry.createdAt).format('MMM D, YYYY')}
+                {formatFullDate(entry.createdAt)}
               </TableCell>
               <TableCell
                 data-testid="income-row-category"
@@ -119,7 +117,7 @@ export function IncomeTable({
                 <span>{incomeSourceLabel(entry)}</span>
                 {entry.recurringId && (
                   <span
-                    title="From a recurring item"
+                    title={t('transactions.fromRecurring')}
                     data-testid="income-recurring-icon"
                     className="ml-1.5 inline-flex align-middle text-muted-foreground"
                   >
@@ -142,28 +140,26 @@ export function IncomeTable({
                         size="icon"
                         disabled={isDeleting}
                         className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        title="Delete income"
+                        aria-label={t('income.delete')}
+                        title={t('income.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Are you absolutely sure?
-                        </AlertDialogTitle>
+                        <AlertDialogTitle>{t('transactions.deleteTitle')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently delete this income entry. This
-                          action cannot be undone.
+                          {t('income.deleteDescription')}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() => onDelete(entry.id)}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          Delete
+                          {t('common.delete')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
