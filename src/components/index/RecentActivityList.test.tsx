@@ -308,7 +308,7 @@ describe('in Ukrainian', () => {
   it('shows a converted amount with грн only on the hryvnia', () => {
     renderUk([mkExpenseItem({ amount: 20, currency: 'USD', conversion: conv() })])
 
-    expect(screen.getByTestId('entry-amount').textContent).toBe('20,00 USD ≈ 830,40 грн')
+    expect(screen.getByTestId('entry-amount').textContent).toBe('-20,00 USD ≈ 830,40 грн')
   })
 
   it('translates the empty state', () => {

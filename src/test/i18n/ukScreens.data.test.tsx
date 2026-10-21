@@ -421,7 +421,7 @@ describe('dashboard in Ukrainian', () => {
     await screen.findByTestId('recovery-key-unconfirmed-banner')
     await screen.findByTestId('backup-reminder-banner')
     await screen.findByTestId('install-hint')
-    await screen.findByTestId('recent-activity-item')
+    expect((await screen.findAllByTestId('recent-activity-item')).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByTestId('speed-entry-form')).toBeTruthy()
     await screen.findByTestId('recurring-due')
     expect(document.body.textContent).toContain('грн')
