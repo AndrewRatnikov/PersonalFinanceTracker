@@ -12,6 +12,8 @@ import PageShell from '../components/PageShell'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
 import { QueryErrorState } from '../components/QueryErrorState'
 import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { formatShortMonth } from '@/i18n/format'
 import ConversionPendingNote from '@/components/ConversionPendingNote'
 import DashboardStats from '@/components/index/DashboardStats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,23 +42,22 @@ function computeMonthlyStats(
   now: dayjs.Dayjs,
   mainCurrency: Currency,
 ): Array<MonthlyExpenseSummary> {
+  // Keyed by the machine month (YYYY-MM); `name` is the display label.
   const monthlyMap: Record<string, number> = {}
   for (let i = 11; i >= 0; i--) {
     const d = now.subtract(i, 'month')
-    const key = `${d.year()}-${d.format('MMM')}`
-    monthlyMap[key] = 0
+    monthlyMap[d.format('YYYY-MM')] = 0
   }
   for (const e of expenses) {
     // Pending entries (no rate yet) are left out, never mixed in.
     const main = mainAmountOf(e, mainCurrency)
     if (main === null) continue
-    const d = dayjs(e.createdAt)
-    const key = `${d.year()}-${d.format('MMM')}`
+    const key = dayjs(e.createdAt).format('YYYY-MM')
     if (key in monthlyMap) monthlyMap[key] += main
   }
   return Object.entries(monthlyMap).map(([key, total]) => {
     const [year, month] = key.split('-')
-    return { month, year, name: month, total }
+    return { month, year, name: formatShortMonth(`${key}-01`), total }
   })
 }
 
@@ -77,6 +78,7 @@ function StatCard({ title, value }: { title: string; value: string }) {
 
 function AnalyticsPage() {
   const search = Route.useSearch()
+  const { t, lang } = useT()
   const settingsQuery = useCurrencySettings()
   // getCurrencySettings never throws, so this only waits for the first read.
   const settingsReady = !settingsQuery.isLoading
@@ -84,7 +86,8 @@ function AnalyticsPage() {
   const fetchExchangeRates = settingsQuery.data?.fetchExchangeRates ?? true
 
   const analyticsQuery = useQuery({
-    queryKey: ['analytics', search.from, search.to, mainCurrency],
+    // The language is in the key: the timeline labels are formatted in it.
+    queryKey: ['analytics', search.from, search.to, mainCurrency, lang],
     queryFn: () =>
       computeRangeAnalytics({ from: search.from, to: search.to }, mainCurrency),
     enabled: settingsReady,
@@ -114,7 +117,8 @@ function AnalyticsPage() {
 
   const monthlyStats = useMemo(
     () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), mainCurrency),
-    [monthlyExpenses, todayStr, mainCurrency],
+    // lang re-labels the months.
+    [monthlyExpenses, todayStr, mainCurrency, lang],
   )
 
   // Check for errors before the spinner: a failed query must never spin forever.
@@ -165,13 +169,13 @@ function AnalyticsPage() {
         <div className="grid grid-cols-2 gap-4">
           <div data-testid="analytics-total-spent">
             <StatCard
-              title="Total Spent"
+              title={t('analytics.totalSpent')}
               value={formatMoney(totalSpent, mainCurrency)}
             />
           </div>
           <div data-testid="analytics-total-income">
             <StatCard
-              title="Total Income"
+              title={t('analytics.totalIncome')}
               value={formatMoney(analytics.totalIncome, mainCurrency)}
             />
           </div>
@@ -186,35 +190,33 @@ function AnalyticsPage() {
         {hasData ? (
           <>
             <section data-testid="analytics-category-donut">
-              <h2 className="text-sm font-semibold mb-2">By Category</h2>
+              <h2 className="text-sm font-semibold mb-2">{t('analytics.byCategory')}</h2>
               <CategoryDonutChart
                 data={analytics.categoryBreakdown}
                 currency={mainCurrency}
-                ariaLabel="Spending by category"
+                ariaLabel={t('analytics.spendingByCategory')}
               />
             </section>
 
             <section data-testid="analytics-income-donut">
-              <h2 className="text-sm font-semibold mb-2">
-                Where your money comes from
-              </h2>
+              <h2 className="text-sm font-semibold mb-2">{t('analytics.incomeSources')}</h2>
               <CategoryDonutChart
                 data={analytics.incomeBreakdown}
                 currency={mainCurrency}
-                emptyText="No income in this period."
-                ariaLabel="Income by category"
+                emptyText={t('analytics.noIncome')}
+                ariaLabel={t('analytics.incomeByCategory')}
               />
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold mb-2">Over Time</h2>
+              <h2 className="text-sm font-semibold mb-2">{t('analytics.overTime')}</h2>
               <TimelineBarChart data={analytics.timeline} currency={mainCurrency} />
             </section>
 
             {analytics.budgetVariance.length > 0 && (
               <section>
                 <h2 className="text-sm font-semibold mb-2">
-                  Budget vs. Actual
+                  {t('analytics.budgetVsActual')}
                 </h2>
                 <BudgetVarianceBarChart
                   data={analytics.budgetVariance}
@@ -227,7 +229,7 @@ function AnalyticsPage() {
           <section data-testid="analytics-no-data" className="mt-4">
             <Card className="border-dashed bg-transparent">
               <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
-                No data found for this period. Try expanding the range.
+                {t('analytics.noDataForPeriod')}
               </CardContent>
             </Card>
           </section>
