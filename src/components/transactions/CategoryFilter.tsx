@@ -1,4 +1,5 @@
 import type { Category } from '@/lib/domain'
+import { useT } from '@/i18n'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -19,20 +20,21 @@ export function CategoryFilter({
   value,
   onChange,
 }: CategoryFilterProps) {
+  const { t } = useT()
   return (
     <div className="flex items-center gap-3">
       <Label
         htmlFor="category-filter"
         className="text-sm font-medium text-muted-foreground whitespace-nowrap"
       >
-        Filter by:
+        {t('transactions.filterBy')}
       </Label>
       <Select value={value || 'all'} onValueChange={onChange}>
         <SelectTrigger id="category-filter" className="w-[180px] h-9">
-          <SelectValue placeholder="All Categories" />
+          <SelectValue placeholder={t('transactions.allCategories')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Categories</SelectItem>
+          <SelectItem value="all">{t('transactions.allCategories')}</SelectItem>
           {categories.map((cat) => (
             <SelectItem key={cat.id} value={cat.id}>
               <div className="flex items-center gap-2">
