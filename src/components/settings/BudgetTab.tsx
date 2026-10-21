@@ -4,6 +4,9 @@ import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { BudgetEntry, Category, Currency } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
+import { currencyLabel } from '@/i18n/format'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { deleteBudget, getAllBudgets, upsertBudget } from '@/lib/localDb'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
@@ -41,6 +44,7 @@ function BudgetRow({
   settingsReady,
 }: BudgetRowProps) {
   const queryClient = useQueryClient()
+  const { t } = useT()
   const [limit, setLimit] = useState(
     existingBudget ? String(existingBudget.monthlyLimit) : '',
   )
@@ -54,10 +58,10 @@ function BudgetRow({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
-      toast.success('Budget saved')
+      toast.success(t('toasts.budgetSaved'))
     },
-    onError: (error: any) => {
-      toast.error(`Failed to save budget: ${error.message}`)
+    onError: (error: unknown) => {
+      toast.error(t('toasts.budgetSaveFailed', { error: errorMessage(error) }))
     },
   })
 
@@ -66,10 +70,10 @@ function BudgetRow({
     onSuccess: () => {
       setLimit('')
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
-      toast.success('Budget removed')
+      toast.success(t('toasts.budgetRemoved'))
     },
-    onError: (error: any) => {
-      toast.error(`Failed to remove budget: ${error.message}`)
+    onError: (error: unknown) => {
+      toast.error(t('toasts.budgetRemoveFailed', { error: errorMessage(error) }))
     },
   })
 
@@ -94,7 +98,10 @@ function BudgetRow({
           </span>
           {storedElsewhere && (
             <span className="text-xs text-muted-foreground">
-              {`Saved in ${existingBudget.currency}; converted to ${mainCurrency} when today's rate is available`}
+              {t('settings.budget.savedElsewhere', {
+                from: existingBudget.currency,
+                to: mainCurrency,
+              })}
             </span>
           )}
         </div>
@@ -104,7 +111,7 @@ function BudgetRow({
             type="number"
             min="0.01"
             step="0.01"
-            placeholder="Limit"
+            placeholder={t('settings.budget.limit')}
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
             disabled={isPending}
@@ -114,7 +121,7 @@ function BudgetRow({
             data-testid="budget-row-currency"
             className="w-10 text-xs font-medium text-muted-foreground"
           >
-            {mainCurrency}
+            {currencyLabel(mainCurrency)}
           </span>
 
           <Button
@@ -123,7 +130,7 @@ function BudgetRow({
             disabled={!canSave}
             className="h-8 px-3 text-xs"
           >
-            {saveMutation.isPending ? 'Saving…' : 'Save'}
+            {saveMutation.isPending ? t('common.saving') : t('common.save')}
           </Button>
 
           {existingBudget && (
@@ -134,27 +141,25 @@ function BudgetRow({
                   size="icon"
                   disabled={isPending}
                   className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
-                  aria-label="Remove budget"
+                  aria-label={t('settings.budget.remove')}
                 >
                   <Trash2 size={14} />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Remove Budget</AlertDialogTitle>
+                  <AlertDialogTitle>{t('settings.budget.removeTitle')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Remove the monthly limit for{' '}
-                    <strong>{category.name}</strong>? This will stop tracking
-                    budget vs. actual for this category.
+                    {t('settings.budget.removeQuestion', { name: category.name })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={() => deleteMutation.mutate()}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    Remove
+                    {t('settings.budget.removeConfirm')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -171,6 +176,7 @@ interface BudgetTabProps {
 }
 
 export function BudgetTab({ categories }: BudgetTabProps) {
+  const { t } = useT()
   const budgetsQuery = useQuery({
     queryKey: ['budgets'],
     queryFn: () => getAllBudgets(),
@@ -190,7 +196,7 @@ export function BudgetTab({ categories }: BudgetTabProps) {
   if (budgetsQuery.isLoading) {
     return (
       <p className="text-muted-foreground text-sm text-center py-10 italic">
-        Loading budgets…
+        {t('settings.budget.loading')}
       </p>
     )
   }
@@ -201,7 +207,7 @@ export function BudgetTab({ categories }: BudgetTabProps) {
         data-testid="budget-tab"
         className="text-muted-foreground text-sm text-center py-10 italic"
       >
-        No categories yet. Add some in the Categories tab first.
+        {t('settings.budget.noCategories')}
       </p>
     )
   }
