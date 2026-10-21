@@ -11,13 +11,31 @@ import {
   getAllIncomeCategories,
   upsertBudget,
 } from './localDb'
+import { AppError } from './appErrors'
 import { CURRENCIES } from './domain'
 import type { Category, Currency } from './domain'
+
+// A row that was skipped, as a code the UI words in the UI language. `row` is
+// numbered like the "Row N" errors (record index + 2); `value` is the raw cell.
+export interface ImportRowError {
+  row: number
+  code:
+    | 'missing-name'
+    | 'missing-source'
+    | 'invalid-amount'
+    | 'invalid-currency'
+    | 'unknown-category'
+    | 'invalid-date'
+    | 'invalid-limit'
+  value?: string
+}
 
 export interface ImportResult {
   inserted: number
   skipped: number
+  // English "Row N: …" texts (logs, existing callers); the UI uses rowErrors.
   errors: Array<string>
+  rowErrors: Array<ImportRowError>
   // Rows not inserted because they matched an existing record (spec §8).
   duplicates: number
   // Their row numbers, numbered like the "Row N" errors (record index + 2).
@@ -205,7 +223,25 @@ export function incomeFingerprint(i: {
 }
 
 function emptyResult(): ImportResult {
-  return { inserted: 0, skipped: 0, errors: [], duplicates: 0, duplicateRows: [] }
+  return {
+    inserted: 0,
+    skipped: 0,
+    errors: [],
+    rowErrors: [],
+    duplicates: 0,
+    duplicateRows: [],
+  }
+}
+
+// Records a skipped row: the English text and its code.
+function skipRow(
+  result: ImportResult,
+  text: string,
+  rowError: ImportRowError,
+): void {
+  result.errors.push(text)
+  result.rowErrors.push(rowError)
+  result.skipped++
 }
 
 function wantsRow(options: ImportOptions, rowNumber: number): boolean {
@@ -229,8 +265,10 @@ export async function importCategoriesFromCSV(
     const { icon } = rows[i]
     const name = (rows[i].name || '').trim()
     if (!name) {
-      result.errors.push(`Row ${i + 2}: missing name`)
-      result.skipped++
+      skipRow(result, `Row ${i + 2}: missing name`, {
+        row: i + 2,
+        code: 'missing-name',
+      })
       continue
     }
     if (existingNames.has(name.toLowerCase())) {
@@ -251,7 +289,8 @@ export async function importExpensesFromCSV(
 ): Promise<ImportResult> {
   const categories = await getAllCategories()
   if (categories.length === 0) {
-    throw new Error(
+    throw new AppError(
+      'import-needs-categories',
       'Import categories.csv first so expense/budget rows can be matched to categories.',
     )
   }
@@ -293,30 +332,40 @@ export async function importExpensesFromCSV(
 
     const amount = parseAmount(amountStr || '')
     if (!Number.isFinite(amount) || amount <= 0) {
-      result.errors.push(`Row ${rowNumber}: invalid amount "${amountStr}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid amount "${amountStr}"`, {
+        row: rowNumber,
+        code: 'invalid-amount',
+        value: amountStr,
+      })
       continue
     }
 
     if (!CURRENCIES.includes(currency as Currency)) {
-      result.errors.push(`Row ${rowNumber}: invalid currency "${currency}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid currency "${currency}"`, {
+        row: rowNumber,
+        code: 'invalid-currency',
+        value: currency,
+      })
       continue
     }
 
     const category = categoryMap.get((categoryName || '').trim().toLowerCase())
     if (!category) {
-      result.errors.push(
-        `Row ${rowNumber}: unknown category "${categoryName}"`,
-      )
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: unknown category "${categoryName}"`, {
+        row: rowNumber,
+        code: 'unknown-category',
+        value: categoryName,
+      })
       continue
     }
 
     const createdAt = parseDate(date)
     if (!createdAt) {
-      result.errors.push(`Row ${rowNumber}: invalid date "${date}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid date "${date}"`, {
+        row: rowNumber,
+        code: 'invalid-date',
+        value: date,
+      })
       continue
     }
 
@@ -383,28 +432,39 @@ export async function importIncomeFromCSV(
     const { date, source, amount: amountStr, currency, description } = rows[i]
 
     if (!source || !source.trim()) {
-      result.errors.push(`Row ${rowNumber}: missing source`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: missing source`, {
+        row: rowNumber,
+        code: 'missing-source',
+      })
       continue
     }
 
     const amount = parseAmount(amountStr || '')
     if (!Number.isFinite(amount) || amount <= 0) {
-      result.errors.push(`Row ${rowNumber}: invalid amount "${amountStr}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid amount "${amountStr}"`, {
+        row: rowNumber,
+        code: 'invalid-amount',
+        value: amountStr,
+      })
       continue
     }
 
     if (!CURRENCIES.includes(currency as Currency)) {
-      result.errors.push(`Row ${rowNumber}: invalid currency "${currency}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid currency "${currency}"`, {
+        row: rowNumber,
+        code: 'invalid-currency',
+        value: currency,
+      })
       continue
     }
 
     const createdAt = parseDate(date)
     if (!createdAt) {
-      result.errors.push(`Row ${rowNumber}: invalid date "${date}"`)
-      result.skipped++
+      skipRow(result, `Row ${rowNumber}: invalid date "${date}"`, {
+        row: rowNumber,
+        code: 'invalid-date',
+        value: date,
+      })
       continue
     }
 
@@ -452,7 +512,8 @@ export async function importIncomeFromCSV(
 export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
   const categories = await getAllCategories()
   if (categories.length === 0) {
-    throw new Error(
+    throw new AppError(
+      'import-needs-categories',
       'Import categories.csv first so expense/budget rows can be matched to categories.',
     )
   }
@@ -472,21 +533,30 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
 
     const categoryId = categoryMap.get((categoryName || '').trim().toLowerCase())
     if (!categoryId) {
-      result.errors.push(`Row ${i + 2}: unknown category "${categoryName}"`)
-      result.skipped++
+      skipRow(result, `Row ${i + 2}: unknown category "${categoryName}"`, {
+        row: i + 2,
+        code: 'unknown-category',
+        value: categoryName,
+      })
       continue
     }
 
     const monthlyLimit = parseAmount(limitStr || '')
     if (!Number.isFinite(monthlyLimit) || monthlyLimit <= 0) {
-      result.errors.push(`Row ${i + 2}: invalid monthly_limit "${limitStr}"`)
-      result.skipped++
+      skipRow(result, `Row ${i + 2}: invalid monthly_limit "${limitStr}"`, {
+        row: i + 2,
+        code: 'invalid-limit',
+        value: limitStr,
+      })
       continue
     }
 
     if (!CURRENCIES.includes(currency as Currency)) {
-      result.errors.push(`Row ${i + 2}: invalid currency "${currency}"`)
-      result.skipped++
+      skipRow(result, `Row ${i + 2}: invalid currency "${currency}"`, {
+        row: i + 2,
+        code: 'invalid-currency',
+        value: currency,
+      })
       continue
     }
 
@@ -527,8 +597,10 @@ export async function importLocalDataFile(
   // Header-sniff fallback
   const rows = parseCSV(text)
   if (rows.length === 0) {
-    throw new Error(
+    throw new AppError(
+      'import-empty-file',
       `Cannot detect file type for "${file.name}": file is empty or has no data rows`,
+      { file: file.name },
     )
   }
   const headers = Object.keys(rows[0])
@@ -549,7 +621,9 @@ export async function importLocalDataFile(
     return { type: 'categories', result: await importCategoriesFromCSV(text) }
   }
 
-  throw new Error(
+  throw new AppError(
+    'import-unknown-columns',
     `Cannot detect file type for "${file.name}": unrecognised columns [${headers.join(', ')}]`,
+    { file: file.name, columns: headers.join(', ') },
   )
 }
