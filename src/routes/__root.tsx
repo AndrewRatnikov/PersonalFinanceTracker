@@ -12,6 +12,9 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 
+import { getLang, translate } from '../i18n/core'
+import { I18nProvider, LangHtml, useT } from '../i18n/react'
+import { getRequestLang } from '../i18n/server'
 import {
   APP_SETTINGS_QUERY_KEY,
   DEFAULT_AUTO_LOCK_MINUTES,
@@ -44,6 +47,7 @@ import { RecurringScheduler } from '../components/RecurringScheduler'
 import { ConversionRunner } from '../components/ConversionRunner'
 
 import appCss from '../styles.css?url'
+import type { Lang } from '../i18n/lang'
 import type { VaultState } from '../lib/vault'
 
 // DecryptErrors from any query or mutation switch the app to the Data problem
@@ -66,7 +70,12 @@ export const Route = createRootRoute({
     }
     if (state === 'none') throw redirect({ to: '/' })
   },
-  head: () => ({
+  // The language of this request (cookie, then Accept-Language), so the server
+  // renders it with no flash; null for the prerendered offline shell, which
+  // resolves it on the client before first paint. Loader data is dehydrated,
+  // so hydration uses exactly the server's language.
+  loader: async (): Promise<{ lang: Lang | null }> => ({ lang: await getRequestLang() }),
+  head: ({ loaderData }) => ({
     meta: [
       {
         charSet: 'utf-8',
@@ -76,7 +85,11 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'MinimaSpend',
+        title: translate(loaderData?.lang ?? 'en', 'landing.metaTitle'),
+      },
+      {
+        name: 'description',
+        content: translate(loaderData?.lang ?? 'en', 'landing.metaDescription'),
       },
     ],
     links: [
@@ -118,7 +131,18 @@ function AutoLock({ unlocked }: { unlocked: boolean }) {
   return null
 }
 
+// The <body>, hidden only while the offline shell resolves its language (the
+// server shell and the client's first render agree; a layout effect reveals it
+// in the right language before paint).
+function AppBody({ children }: { children: React.ReactNode }) {
+  const { pending } = useT()
+  return <body style={pending ? { visibility: 'hidden' } : undefined}>{children}</body>
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Undefined only before the root loader has run.
+  const loaderData: { lang: Lang | null } | undefined = Route.useLoaderData()
+  const initialLang = loaderData?.lang ?? null
   const [mounted, setMounted] = useState(false)
   const { phase, createRequested } = useVaultSession()
   const router = useRouter()
@@ -170,7 +194,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // Data problem screen; unreadable data is never overwritten.
   const handleUnlocked = async ({ isNewVault }: { isNewVault: boolean }) => {
     try {
-      const { recurringCreated } = await prepareUnlockedVault({ isNewVault })
+      // A new vault gets its default categories in the current UI language.
+      const { recurringCreated } = await prepareUnlockedVault({
+        isNewVault,
+        lang: getLang(),
+      })
       if (recurringCreated > 0) {
         toast.success(recurringCreatedMessage(recurringCreated))
       }
@@ -195,11 +223,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   })
 
   return (
-    <html lang="en" className="scroll-smooth">
+    <I18nProvider initialLang={initialLang}>
+      <LangHtml className="scroll-smooth">
       <head>
         <HeadContent />
       </head>
-      <body>
+      <AppBody>
         <QueryClientProvider client={queryClient}>
           <Header />
           <OfflineBanner />
@@ -227,7 +256,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           ]}
         />
         <Scripts />
-      </body>
-    </html>
+      </AppBody>
+      </LangHtml>
+    </I18nProvider>
   )
 }
