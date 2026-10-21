@@ -2,6 +2,7 @@
 // the data is gone even if the database deletion stays blocked by the open
 // idb-keyval connection; the caller then reloads, which closes it.
 
+import { clearStoredLang } from '../i18n/resolve'
 import { clearLocalDb } from './localDb'
 import { postWiped } from './syncChannel'
 import { lockVault } from './vault'
@@ -33,6 +34,8 @@ export async function wipeLocalData(): Promise<void> {
   lockVault()
   await clearLocalDb()
   removeMinimaLocalStorageKeys()
+  // The language cookie too, so the language goes back to automatic detection.
+  clearStoredLang()
   postWiped()
   requestDatabaseDeletion()
 }
