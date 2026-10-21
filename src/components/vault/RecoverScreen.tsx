@@ -6,6 +6,9 @@ import {
   resetPasswordWithRecoveryKey,
   unlockWithRecoveryKey,
 } from '@/lib/vault'
+import { t as translateNow, useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
+import { LanguageToggle } from '@/components/LanguageToggle'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -30,9 +33,9 @@ type Step = 'key' | 'password'
 const MIN_PASSWORD_LENGTH = 8
 
 function messageOf(err: unknown): string {
-  if (err instanceof VaultError) return err.message
+  if (err instanceof VaultError) return errorMessage(err)
   console.error(err)
-  return 'Something went wrong. Please try again.'
+  return translateNow('errors.unexpected')
 }
 
 // Forgot-password flow (§2.3): the recovery key unlocks the vault, then the
@@ -48,6 +51,7 @@ export function RecoverScreen({
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const { t } = useT()
 
   const handleKeySubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,11 +71,11 @@ export function RecoverScreen({
     e.preventDefault()
     setError(null)
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError('Password must be at least 8 characters')
+      setError(t('vault.passwordTooShort'))
       return
     }
     if (password !== confirm) {
-      setError('Passwords do not match')
+      setError(t('vault.passwordsDontMatch'))
       return
     }
     setPending(true)
@@ -98,13 +102,14 @@ export function RecoverScreen({
           <div className="flex items-center gap-2">
             <KeyRound className="h-4 w-4 text-muted-foreground" />
             <CardTitle>
-              {step === 'key' ? 'Use your recovery key' : 'Set a new password'}
+              {step === 'key' ? t('vault.recover.keyTitle') : t('vault.recover.passwordTitle')}
             </CardTitle>
+            <LanguageToggle testId="recover-language" className="ml-auto" />
           </div>
           <CardDescription>
             {step === 'key'
-              ? 'Enter the recovery key you saved when you created your password. Case, spaces and dashes don’t matter.'
-              : 'Your recovery key stays the same. If you think it has been exposed, generate a new one in Settings → Security.'}
+              ? t('vault.recover.keyDescription')
+              : t('vault.recover.passwordDescription')}
           </CardDescription>
         </CardHeader>
 
@@ -112,7 +117,7 @@ export function RecoverScreen({
           <form onSubmit={(e) => void handleKeySubmit(e)}>
             <CardContent className="flex flex-col gap-4 mb-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="recovery-key">Recovery key</Label>
+                <Label htmlFor="recovery-key">{t('vault.recoveryKey')}</Label>
                 <Input
                   id="recovery-key"
                   data-testid="recover-key-input"
@@ -136,7 +141,7 @@ export function RecoverScreen({
                 disabled={pending}
               >
                 {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Continue
+                {t('common.continue')}
               </Button>
               <Button
                 type="button"
@@ -146,7 +151,7 @@ export function RecoverScreen({
                 onClick={onCancel}
                 disabled={pending}
               >
-                Back to password
+                {t('vault.recover.backToPassword')}
               </Button>
               {onLostBoth && (
                 <Button
@@ -157,7 +162,7 @@ export function RecoverScreen({
                   onClick={onLostBoth}
                   disabled={pending}
                 >
-                  I&apos;ve lost both, erase this device and start over
+                  {t('vault.recover.lostBoth')}
                 </Button>
               )}
             </CardFooter>
@@ -166,7 +171,7 @@ export function RecoverScreen({
           <form onSubmit={(e) => void handlePasswordSubmit(e)}>
             <CardContent className="flex flex-col gap-4 mb-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="new-password">New password</Label>
+                <Label htmlFor="new-password">{t('vault.newPassword')}</Label>
                 <Input
                   id="new-password"
                   data-testid="recover-password-input"
@@ -179,7 +184,7 @@ export function RecoverScreen({
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                <Label htmlFor="confirm-new-password">{t('vault.confirmNewPassword')}</Label>
                 <Input
                   id="confirm-new-password"
                   data-testid="recover-confirm-input"
@@ -200,7 +205,7 @@ export function RecoverScreen({
                 disabled={pending}
               >
                 {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Set new password
+                {t('vault.recover.submitPassword')}
               </Button>
             </CardFooter>
           </form>
