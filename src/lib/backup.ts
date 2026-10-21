@@ -30,6 +30,7 @@
 
 import dayjs from 'dayjs'
 import { get, keys, setMany } from 'idb-keyval'
+import { t as translateMessage } from '../i18n/core'
 
 import { getAppSettings, getCurrencySettings } from './appSettings'
 import { getBackupSettings, recordBackupCompleted } from './backupReminder'
@@ -139,11 +140,15 @@ export type BackupErrorCode =
 
 export class BackupError extends Error {
   readonly code: BackupErrorCode
+  // Tells "this browser can't decompress" apart from a plain invalid file
+  // (the UI words them differently); the code stays 'invalid-file'.
+  readonly reason?: 'compression'
 
-  constructor(code: BackupErrorCode, message: string) {
+  constructor(code: BackupErrorCode, message: string, reason?: 'compression') {
     super(message)
     this.name = 'BackupError'
     this.code = code
+    if (reason !== undefined) this.reason = reason
   }
 }
 
@@ -427,6 +432,7 @@ async function decryptPayload(
     throw new BackupError(
       'invalid-file',
       'This browser cannot open compressed backups',
+      'compression',
     )
   }
   let parsed: unknown
@@ -936,8 +942,17 @@ export async function restoreBackup(
   return result.summary
 }
 
+// "12 expenses, 3 income, … restored (4 updated, 1 conflicts)", in the UI
+// language.
 export function formatRestoreSummary(s: RestoreSummary): string {
-  return `${s.expenses} expenses, ${s.income} income, ${s.categories} categories, ${s.budgets} budgets restored (${s.updated} updated, ${s.conflicts} conflicts)`
+  return translateMessage('backup.restoreSummary', {
+    expenses: s.expenses,
+    income: s.income,
+    categories: s.categories,
+    budgets: s.budgets,
+    updated: s.updated,
+    conflicts: s.conflicts,
+  })
 }
 
 // ── Download ──────────────────────────────────────────────────────────────────
