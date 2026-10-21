@@ -1,5 +1,6 @@
 import dayjs from 'dayjs'
 
+import { formatDay } from '../i18n/format'
 import { getAllBudgets, getAllIncome, getExpensesForRange } from './localDb'
 import { normalizeRange } from './analyticsUtils'
 import { DEFAULT_MAIN_CURRENCY } from './domain'
@@ -106,7 +107,7 @@ export async function computeRangeAnalytics(
     .sort()
     .map((key) => ({
       date: key,
-      label: dayjs(key).format('MMM DD'),
+      label: formatDay(key),
       total: timelineMap.get(key) ?? 0,
     }))
 
