@@ -10,7 +10,10 @@ import {
   User2,
 } from 'lucide-react'
 import { BrandIcon } from './BrandIcon'
+import { LanguageToggle } from './LanguageToggle'
 import { LockButton } from './LockButton'
+import type { MessageKey } from '@/i18n'
+import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
 import { requestCreateVault, useVaultSession } from '@/lib/vaultSession'
 import {
@@ -26,22 +29,22 @@ import { Button } from '@/components/ui/button'
 interface NavLink {
   to: '/' | '/analytics' | '/transactions' | '/income' | '/recurring' | '/settings'
   icon: typeof Home
-  label: string
+  label: MessageKey
   testId?: string
 }
 
 const NAV_LINKS: ReadonlyArray<NavLink> = [
-  { to: '/', icon: Home, label: 'Home' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/transactions', icon: List, label: 'Transactions' },
-  { to: '/income', icon: TrendingUp, label: 'Income' },
+  { to: '/', icon: Home, label: 'nav.home' },
+  { to: '/analytics', icon: BarChart3, label: 'nav.analytics' },
+  { to: '/transactions', icon: List, label: 'nav.transactions' },
+  { to: '/income', icon: TrendingUp, label: 'nav.income' },
   {
     to: '/recurring',
     icon: Repeat,
-    label: 'Recurring',
+    label: 'nav.recurring',
     testId: 'nav-link-recurring',
   },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/settings', icon: Settings, label: 'nav.settings' },
 ]
 
 const NAV_LINK_CLASS =
@@ -49,11 +52,11 @@ const NAV_LINK_CLASS =
 const NAV_LINK_ACTIVE_CLASS =
   'flex items-center gap-3 p-3 rounded-md bg-primary text-primary-foreground font-medium'
 
-const MARKETING_LINKS = [
-  { hash: 'features', label: 'Features' },
-  { hash: 'privacy', label: 'Privacy' },
-  { hash: 'pricing', label: 'Pricing' },
-] as const
+const MARKETING_LINKS: ReadonlyArray<{ hash: string; label: MessageKey }> = [
+  { hash: 'features', label: 'nav.features' },
+  { hash: 'privacy', label: 'nav.privacy' },
+  { hash: 'pricing', label: 'nav.pricing' },
+]
 
 function scrollToHash(hash: string) {
   return (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -69,6 +72,7 @@ function scrollToHash(hash: string) {
 export default function Header() {
   const { phase } = useVaultSession()
   const accountsVisible = useAccountsVisible()
+  const { t } = useT()
 
   if (phase !== 'unlocked') {
     return (
@@ -90,16 +94,18 @@ export default function Header() {
                 onClick={scrollToHash(hash)}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                {label}
+                {t(label)}
               </a>
             ))}
           </nav>
 
+          <div className="flex items-center gap-3">
+          <LanguageToggle testId="landing-language" />
           <div className="hidden md:flex items-center gap-3">
             {accountsVisible && (
               <Button asChild variant="outline" size="sm">
                 <Link to="/login" data-testid="header-sign-in">
-                  Sign in
+                  {t('nav.signIn')}
                 </Link>
               </Button>
             )}
@@ -110,7 +116,7 @@ export default function Header() {
               data-testid="header-start-tracking"
               onClick={requestCreateVault}
             >
-              Start tracking
+              {t('landing.startTracking')}
             </Button>
           </div>
 
@@ -120,7 +126,7 @@ export default function Header() {
                 variant="ghost"
                 size="icon"
                 className="md:hidden text-muted-foreground hover:bg-accent"
-                aria-label="Open menu"
+                aria-label={t('nav.openMenu')}
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -141,7 +147,7 @@ export default function Header() {
                       onClick={scrollToHash(hash)}
                       className="p-3 rounded-md hover:bg-accent transition-colors text-foreground"
                     >
-                      {label}
+                      {t(label)}
                     </a>
                   </SheetClose>
                 ))}
@@ -154,19 +160,20 @@ export default function Header() {
                     className="w-full bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
                     onClick={requestCreateVault}
                   >
-                    Start tracking
+                    {t('landing.startTracking')}
                   </Button>
                 </SheetClose>
                 {accountsVisible && (
                   <SheetClose asChild>
                     <Button asChild variant="outline" className="w-full">
-                      <Link to="/login">Sign in</Link>
+                      <Link to="/login">{t('nav.signIn')}</Link>
                     </Button>
                   </SheetClose>
                 )}
               </div>
             </SheetContent>
           </Sheet>
+          </div>
         </div>
       </header>
     )
@@ -181,7 +188,7 @@ export default function Header() {
               variant="ghost"
               size="icon"
               className="mr-2 h-9 w-9 text-muted-foreground hover:bg-accent"
-              aria-label="Open menu"
+              aria-label={t('nav.openMenu')}
               data-testid="header-menu-btn"
             >
               <Menu className="h-5 w-5" />
@@ -189,7 +196,7 @@ export default function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="w-80 flex flex-col p-0">
             <SheetHeader className="p-6 border-b">
-              <SheetTitle className="text-xl font-bold">Navigation</SheetTitle>
+              <SheetTitle className="text-xl font-bold">{t('nav.navigation')}</SheetTitle>
             </SheetHeader>
 
             <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
@@ -202,7 +209,7 @@ export default function Header() {
                     activeProps={{ className: NAV_LINK_ACTIVE_CLASS }}
                   >
                     <Icon className="h-5 w-5" />
-                    <span>{label}</span>
+                    <span>{t(label)}</span>
                   </Link>
                 </SheetClose>
               ))}
@@ -215,7 +222,7 @@ export default function Header() {
                     activeProps={{ className: NAV_LINK_ACTIVE_CLASS }}
                   >
                     <User2 className="h-5 w-5" />
-                    <span>Profile</span>
+                    <span>{t('nav.profile')}</span>
                   </Link>
                 </SheetClose>
               )}
