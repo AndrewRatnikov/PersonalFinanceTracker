@@ -5,6 +5,8 @@ import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { CreateRecurringInput, RecurringItem } from '@/lib/domain'
+import { useT } from '@/i18n'
+import { errorMessage } from '@/i18n/errors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import {
   addRecurring,
@@ -49,12 +51,9 @@ const RECURRING_QUERY_KEYS = [
 
 type FormState = { mode: 'create' } | { mode: 'edit'; item: RecurringItem }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 function RecurringPage() {
   const queryClient = useQueryClient()
+  const { t } = useT()
   const [form, setForm] = useState<FormState | null>(null)
   const today = toLocalDateString()
 
@@ -165,7 +164,7 @@ function RecurringPage() {
     onSuccess: () => {
       setForm(null)
       invalidateAll()
-      toast.success('Recurring item saved')
+      toast.success(t('toasts.recurringSaved'))
     },
     onError: (error) => {
       toast.error(errorMessage(error))
@@ -187,7 +186,7 @@ function RecurringPage() {
     mutationFn: (item: RecurringItem) => deleteRecurring(item.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recurring'] })
-      toast.success('Recurring item deleted')
+      toast.success(t('toasts.recurringDeleted'))
     },
     onError: (error) => {
       toast.error(errorMessage(error))
@@ -228,11 +227,11 @@ function RecurringPage() {
         >
           <CardContent className="py-4 flex flex-col gap-2">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Committed per month
+              {t('recurring.committedPerMonth')}
             </h3>
             {totals.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Nothing committed yet
+                {t('recurring.nothingCommitted')}
               </p>
             ) : mainTotals !== null ? (
               <ul className="flex flex-col gap-1">
@@ -243,7 +242,7 @@ function RecurringPage() {
                     className="flex items-baseline justify-between gap-4 text-sm"
                   >
                     <span className="text-muted-foreground">
-                      {kind === 'expense' ? 'Expenses' : 'Income'}
+                      {kind === 'expense' ? t('recurring.expenses') : t('recurring.income')}
                     </span>
                     <span
                       className={`font-semibold ${kind === 'income' ? 'text-emerald-600' : 'text-foreground'}`}
@@ -262,7 +261,7 @@ function RecurringPage() {
                     className="flex items-baseline justify-between gap-4 text-sm"
                   >
                     <span className="text-muted-foreground">
-                      {kind === 'expense' ? 'Expenses' : 'Income'}
+                      {kind === 'expense' ? t('recurring.expenses') : t('recurring.income')}
                     </span>
                     <span
                       className={`font-semibold ${kind === 'income' ? 'text-emerald-600' : 'text-foreground'}`}
@@ -278,7 +277,7 @@ function RecurringPage() {
                 data-testid="recurring-rates-unavailable"
                 className="text-xs text-muted-foreground"
               >
-                Exchange rates unavailable
+                {t('recurring.ratesUnavailable')}
               </p>
             )}
           </CardContent>
@@ -304,7 +303,7 @@ function RecurringPage() {
               data-testid="recurring-empty"
               className="flex items-center justify-center py-10 text-muted-foreground"
             >
-              No recurring items yet
+              {t('recurring.empty')}
             </CardContent>
           </Card>
         ) : (
@@ -335,11 +334,9 @@ function RecurringPage() {
         <div className="flex items-start justify-between gap-4 mb-8">
           <div className="space-y-1">
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              Recurring
+              {t('recurring.title')}
             </h2>
-            <p className="text-muted-foreground">
-              Subscriptions, rent, salary: added for you when they're due.
-            </p>
+            <p className="text-muted-foreground">{t('recurring.subtitle')}</p>
           </div>
           <Button
             type="button"
@@ -348,7 +345,7 @@ function RecurringPage() {
             className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
           >
             <Plus size={16} />
-            Add
+            {t('common.add')}
           </Button>
         </div>
 
