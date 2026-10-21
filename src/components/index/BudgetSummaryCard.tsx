@@ -1,5 +1,6 @@
 import type { Currency } from '@/lib/domain'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { useT } from '@/i18n'
 import { formatMoney } from '@/lib/money'
 import {
   Card,
@@ -22,6 +23,7 @@ export default function BudgetSummaryCard({
   currency = DEFAULT_MAIN_CURRENCY,
 }: BudgetSummaryCardProps) {
   const netBalance = income - expenses
+  const { t } = useT()
 
   return (
     <div
@@ -31,7 +33,7 @@ export default function BudgetSummaryCard({
       <Card className="w-1/3 gap-1">
         <CardHeader>
           <CardTitle className="text-sm text-muted-foreground">
-            Income
+            {t('dashboard.summary.income')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -46,7 +48,7 @@ export default function BudgetSummaryCard({
       <Card className="w-1/3 gap-1">
         <CardHeader>
           <CardTitle className="text-sm text-muted-foreground">
-            Expenses
+            {t('dashboard.summary.expenses')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -61,7 +63,7 @@ export default function BudgetSummaryCard({
       <Card className="w-1/3 gap-1">
         <CardHeader>
           <CardTitle className="text-sm text-muted-foreground">
-            Balance
+            {t('dashboard.summary.balance')}
           </CardTitle>
         </CardHeader>
         <CardContent>
