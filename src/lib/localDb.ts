@@ -1,7 +1,10 @@
 import { clear, createStore, del, get, keys, set, setMany } from 'idb-keyval'
 
+import { isMessageKey, translate } from '../i18n/core'
+import { AppError } from './appErrors'
 import { decryptValue, encryptValue } from './crypto'
 import { DecryptError, isDataStorageKey } from './dataErrors'
+import { defaultExpenseCategories } from './defaultCategories'
 import { DEFAULT_MAIN_CURRENCY, isCurrency } from './domain'
 import { convertIncomeSources } from './incomeCategories'
 import { identityConversion, isConverted } from './money'
@@ -19,6 +22,7 @@ import { recurringInputSchema, recurringInputSchemaFor } from './schemas'
 import { postChanged } from './syncChannel'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
+import type { Lang } from '../i18n/lang'
 import type {
   BudgetEntry,
   Category,
@@ -554,13 +558,15 @@ async function addCategoryIn(
   const entry = await withWriteLock(key, async () => {
     const categories = (await readStore(key)) ?? []
     const name = input.name.trim()
-    if (!name) throw new Error('Category name is required')
+    if (!name) throw new AppError('category-name-required', 'Category name is required')
     if (
       categories.some(
         (c) => c.name.trim().toLowerCase() === name.toLowerCase(),
       )
     ) {
-      throw new Error(`Category "${name}" already exists`)
+      throw new AppError('category-exists', `Category "${name}" already exists`, {
+        name,
+      })
     }
     const created: Category = {
       id: crypto.randomUUID(),
@@ -582,7 +588,7 @@ async function updateCategoryIn(
   const result = await withWriteLock(key, async () => {
     const categories = (await readStore(key)) ?? []
     const name = input.name.trim()
-    if (!name) throw new Error('Category name is required')
+    if (!name) throw new AppError('category-name-required', 'Category name is required')
     if (
       categories.some(
         (c) =>
@@ -590,7 +596,9 @@ async function updateCategoryIn(
           c.name.trim().toLowerCase() === name.toLowerCase(),
       )
     ) {
-      throw new Error(`Category "${name}" already exists`)
+      throw new AppError('category-exists', `Category "${name}" already exists`, {
+        name,
+      })
     }
     // defaultCurrency: undefined keeps the stored value (a rename keeps it),
     // null removes the key (never stored as null), a currency sets it.
@@ -600,7 +608,7 @@ async function updateCategoryIn(
       nextCurrency !== null &&
       !isCurrency(nextCurrency)
     ) {
-      throw new Error('Invalid currency')
+      throw new AppError('invalid-currency', 'Invalid currency')
     }
     const updatedAt = new Date().toISOString()
     const updated = categories.map((c) => {
@@ -612,7 +620,11 @@ async function updateCategoryIn(
     })
     await writeStore(key, updated)
     const found = updated.find((c) => c.id === input.id)
-    if (!found) throw new Error(`Category not found: ${input.id}`)
+    if (!found) {
+      throw new AppError('category-not-found', `Category not found: ${input.id}`, {
+        id: input.id,
+      })
+    }
     return found
   })
   await afterCommit([key])
@@ -641,8 +653,10 @@ async function assertNoRecurringUses(
     (i) => i.kind === kind && i.categoryId === categoryId,
   ).length
   if (using > 0) {
-    throw new Error(
+    throw new AppError(
+      'category-used-by-recurring',
       `Used by ${using} recurring item${using === 1 ? '' : 's'}`,
+      { count: using },
     )
   }
 }
@@ -657,8 +671,10 @@ export async function deleteCategory(id: string): Promise<void> {
       const chunks = await Promise.all(chunkKeys.map(readChunk))
       const using = chunks.flat().filter((e) => e.categoryId === id).length
       if (using > 0) {
-        throw new Error(
+        throw new AppError(
+          'category-used-by-expenses',
           `${using} expense${using === 1 ? '' : 's'} use this category`,
+          { count: using },
         )
       }
       await assertNoRecurringUses('expense', id)
@@ -682,24 +698,17 @@ export async function deleteCategory(id: string): Promise<void> {
   )
 }
 
-const DEFAULT_CATEGORIES: Array<Omit<Category, 'id'>> = [
-  { name: 'Food', icon: '🍔' },
-  { name: 'Transport', icon: '🚌' },
-  { name: 'Rent', icon: '🏠' },
-  { name: 'Coffee', icon: '☕' },
-  { name: 'Entertainment', icon: '🎬' },
-  { name: 'Server Costs', icon: '🖥️' },
-]
-
-export async function provisionDefaultCategories(): Promise<void> {
+// Writes the default expense categories in `lang` when there are none yet.
+// Existing categories are user data and are never renamed.
+export async function provisionDefaultCategories(lang: Lang = 'en'): Promise<void> {
   const wrote = await withWriteLock('categories', async () => {
     const categories = (await readStore('categories')) ?? []
     if (categories.length > 0) return false
     const updatedAt = new Date().toISOString()
-    const defaults: Array<Category> = DEFAULT_CATEGORIES.map((c) => ({
+    const defaults: Array<Category> = defaultExpenseCategories(lang).map((c) => ({
       id: crypto.randomUUID(),
       name: c.name,
-      icon: c.icon ?? null,
+      icon: c.icon,
       updatedAt,
     }))
     await writeStore('categories', defaults)
@@ -731,10 +740,12 @@ export async function deleteIncomeCategory(id: string): Promise<void> {
     const income = (await readStore('income')) ?? []
     const using = income.filter((e) => e.categoryId === id).length
     if (using > 0) {
-      throw new Error(
+      throw new AppError(
+        'category-used-by-income',
         using === 1
           ? '1 income entry uses this category'
           : `${using} income entries use this category`,
+        { count: using },
       )
     }
     await assertNoRecurringUses('income', id)
@@ -752,14 +763,15 @@ export async function deleteIncomeCategory(id: string): Promise<void> {
 // exists (even as an unreadable blob) it does nothing. Both keys are written
 // in one transaction. A DecryptError on `income` propagates and nothing is
 // written. Returns true when it wrote.
-export async function ensureIncomeCategories(): Promise<boolean> {
+// `lang` is the language of the defaults and of the "Other" fallback.
+export async function ensureIncomeCategories(lang: Lang = 'en'): Promise<boolean> {
   const s = store
   if (!_key || !s) return false
   const wrote = await withWriteLock(['income', 'incomeCategories'], async () => {
     const existing = await get<unknown>('incomeCategories', s)
     if (existing !== undefined) return false
     const income = (await readStore('income')) ?? []
-    const converted = convertIncomeSources(income, [], { addDefaults: true })
+    const converted = convertIncomeSources(income, [], { addDefaults: true, lang })
     await writeStoreMany({
       incomeCategories: converted.incomeCategories,
       income: converted.income,
@@ -773,14 +785,17 @@ export async function ensureIncomeCategories(): Promise<boolean> {
 // Runs after every unlock: default expense categories for a new vault, then
 // the income categories (defaults and legacy conversion), then the due
 // recurring occurrences. Errors, including DecryptError, propagate to the
-// caller. Returns how many recurring records were created.
+// caller. Returns how many recurring records were created. `lang` is the
+// language of the default categories (only used when they are written).
 export async function prepareUnlockedVault({
   isNewVault,
+  lang = 'en',
 }: {
   isNewVault: boolean
+  lang?: Lang
 }): Promise<{ recurringCreated: number }> {
-  if (isNewVault) await provisionDefaultCategories()
-  await ensureIncomeCategories()
+  if (isNewVault) await provisionDefaultCategories(lang)
+  await ensureIncomeCategories(lang)
   const { created } = await processDueRecurring()
   // Convert whatever is pending (old records, the records just generated).
   // Not awaited: the conversion runs in the background.
@@ -1099,17 +1114,32 @@ async function categoryIdsFor(kind: RecurringKind): Promise<Array<string>> {
   return ((await readStore(categoryKeyFor(kind))) ?? []).map((c) => c.id)
 }
 
+// A zod issue message is a catalog key (errors.validation.*): the error keeps
+// the key for the UI and today's English text as its message.
+function validationError(key: string): AppError {
+  const message = isMessageKey(key) ? translate('en', key) : key
+  return new AppError('validation', message, { key })
+}
+
+function recurringNotFound(id: string): AppError {
+  return new AppError('recurring-not-found', `Recurring item not found: ${id}`, { id })
+}
+
+function occurrenceNotDue(): AppError {
+  return new AppError('occurrence-not-due', 'Occurrence is not due')
+}
+
 // Validates with recurringInputSchemaFor (the categories of the input's kind)
-// and throws the first issue's message.
+// and throws the first issue (an AppError 'validation').
 async function validateRecurringInput(
   input: CreateRecurringInput,
 ): Promise<CreateRecurringInput> {
   const base = recurringInputSchema.safeParse(input)
-  if (!base.success) throw new Error(base.error.issues[0].message)
+  if (!base.success) throw validationError(base.error.issues[0].message)
   const checked = recurringInputSchemaFor(
     await categoryIdsFor(base.data.kind),
   ).safeParse(input)
-  if (!checked.success) throw new Error(checked.error.issues[0].message)
+  if (!checked.success) throw validationError(checked.error.issues[0].message)
   return checked.data
 }
 
@@ -1307,7 +1337,7 @@ export async function addRecurring(
   // Validate the shape before planning, so the schedule maths only sees a
   // valid schedule. The category is checked again under the lock.
   const base = recurringInputSchema.safeParse(input)
-  if (!base.success) throw new Error(base.error.issues[0].message)
+  if (!base.success) throw validationError(base.error.issues[0].message)
   const through = occurrencesBetween(base.data, null, today)
   const createNow =
     options.createThroughToday && base.data.mode === 'auto' && through.length > 0
@@ -1360,7 +1390,7 @@ export async function updateRecurring(
   const result = await withWriteLock('recurring', async () => {
     const items = (await readStore('recurring')) ?? []
     const index = items.findIndex((i) => i.id === id)
-    if (index === -1) throw new Error(`Recurring item not found: ${id}`)
+    if (index === -1) throw recurringNotFound(id)
     const existing = items[index]
     const defined = Object.fromEntries(
       Object.entries(patch as Record<string, unknown>).filter(
@@ -1414,7 +1444,7 @@ export async function setRecurringPaused(
   const result = await withWriteLock('recurring', async () => {
     const items = (await readStore('recurring')) ?? []
     const index = items.findIndex((i) => i.id === id)
-    if (index === -1) throw new Error(`Recurring item not found: ${id}`)
+    if (index === -1) throw recurringNotFound(id)
     const existing = items[index]
     let updated: RecurringItem = {
       ...existing,
@@ -1472,7 +1502,7 @@ export async function confirmRecurringOccurrence(
   date: string,
   overrides?: OccurrenceOverrides,
 ): Promise<void> {
-  if (!DATE_STRING_RE.test(date)) throw new Error('Occurrence is not due')
+  if (!DATE_STRING_RE.test(date)) throw occurrenceNotDue()
   // The target is `income` or the chunk of this date, depending on the
   // item's kind; locking both avoids reading the item before the lock.
   const lockKeys = [
@@ -1483,13 +1513,13 @@ export async function confirmRecurringOccurrence(
   const written = await withWriteLock(lockKeys, async () => {
     const items = (await readStore('recurring')) ?? []
     const index = items.findIndex((i) => i.id === itemId)
-    if (index === -1) throw new Error(`Recurring item not found: ${itemId}`)
+    if (index === -1) throw recurringNotFound(itemId)
     const item = items[index]
     if (!isUnhandledOccurrence(item, date)) {
-      throw new Error('Occurrence is not due')
+      throw occurrenceNotDue()
     }
     if (!(await categoryIdsFor(item.kind)).includes(item.categoryId)) {
-      throw new Error('Category not found')
+      throw new AppError('category-not-found', 'Category not found')
     }
     const plan = await planOccurrenceWrites(item, [date], overrides)
     const next = [...items]
@@ -1512,10 +1542,10 @@ export async function skipRecurringOccurrence(
   await withWriteLock('recurring', async () => {
     const items = (await readStore('recurring')) ?? []
     const index = items.findIndex((i) => i.id === itemId)
-    if (index === -1) throw new Error(`Recurring item not found: ${itemId}`)
+    if (index === -1) throw recurringNotFound(itemId)
     const item = items[index]
     if (!isUnhandledOccurrence(item, date)) {
-      throw new Error('Occurrence is not due')
+      throw occurrenceNotDue()
     }
     const next = [...items]
     next[index] = {
