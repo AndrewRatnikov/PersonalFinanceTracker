@@ -5,6 +5,7 @@
 
 import { get, set } from 'idb-keyval'
 
+import { plural, t } from '../i18n/core'
 import {
   getAllBudgets,
   getAllCategories,
@@ -203,7 +204,8 @@ export async function getBackupReminderStatus(
   }
 }
 
+// "No backup yet." / "Last backup: 19 days ago.", in the UI language.
 export function backupReminderText(daysSince: number | null): string {
-  if (daysSince === null) return 'No backup yet.'
-  return `Last backup: ${daysSince} days ago.`
+  if (daysSince === null) return t('backup.reminder.never')
+  return plural('backup.reminder.lastBackup', daysSince)
 }
