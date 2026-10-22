@@ -1,11 +1,15 @@
 // No CONTRACT_GAPs: identity conversion on save, updateExpense keep/clear rules,
 // onConversionNeeded / requestEntryConversion, readEntriesForConversion,
 // applyEntryConversions and convertBudgets are fully specified in the
-// Interface Contract (module: localDb additions) and plan section 4.
+// Interface Contract (module: localDb additions) and plan sections 4 and 7.
 //
 // Integration style (as localDb.concurrency.test.ts): real crypto and real
 // localDb with idb-keyval backed by a Map. Records are seeded encrypted with
 // the same key the test unlocks the db with.
+//
+// The main currency now lives in the encrypted `syncedSettings` record.
+// Seeding `meta:settings.mainCurrency` still works (the legacy fallback), and
+// convertBudgets writes `syncedSettings` + meta:sync instead of meta:settings.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,10 +37,12 @@ import {
   getAllBudgets,
   getAllExpenses,
   getAllIncome,
+  getLocalRev,
   onConversionNeeded,
   prepareUnlockedVault,
   processDueRecurring,
   readEntriesForConversion,
+  readSyncedSettings,
   requestEntryConversion,
   unlockLocalDb,
   updateExpense,
@@ -46,7 +52,10 @@ import { setSyncChannel } from '@/lib/syncChannel'
 
 const { mockStore, ctl } = vi.hoisted(() => ({
   mockStore: new Map<string, unknown>(),
-  ctl: { setManyCalls: [] as Array<Array<string>> },
+  ctl: {
+    setManyCalls: [] as Array<Array<string>>,
+    failSetMany: false,
+  },
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -58,6 +67,7 @@ vi.mock('idb-keyval', () => ({
   },
   setMany: (entries: Array<[string, unknown]>) => {
     ctl.setManyCalls.push(entries.map(([key]) => key))
+    if (ctl.failSetMany) return Promise.reject(new Error('transaction aborted'))
     for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
@@ -160,6 +170,13 @@ async function readRaw<T>(storageKey: string): Promise<Array<T>> {
   return (await decryptValue(dek, raw)) as Array<T>
 }
 
+async function readSyncedRaw(): Promise<Record<string, unknown>> {
+  const raw = mockStore.get('syncedSettings')
+  if (!(raw instanceof Uint8Array)) throw new Error('no syncedSettings')
+  return (await decryptValue(dek, raw)) as Record<string, unknown>
+}
+
+// Seeds the legacy plaintext fields (a store that has not been migrated).
 function setSettings(settings: Record<string, unknown>) {
   mockStore.set('meta:settings', settings)
 }
@@ -167,6 +184,7 @@ function setSettings(settings: Record<string, unknown>) {
 beforeEach(async () => {
   mockStore.clear()
   ctl.setManyCalls.length = 0
+  ctl.failSetMany = false
   unsubscribers = []
   dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
     'encrypt',
@@ -236,6 +254,58 @@ describe('saving stores the identity conversion for entries in the main currency
     expect(usd.conversion?.source).toBe('identity')
     expect(usd.conversion?.mainAmount).toBe(20)
     expect(uah.conversion).toBeUndefined()
+  })
+
+  it('follows a main currency stored in syncedSettings too', async () => {
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'EUR',
+      fetchExchangeRates: true,
+      updatedAt: OLD,
+    })
+
+    const eur = await addExpense({
+      amount: 20,
+      currency: 'EUR',
+      categoryId: 'c1',
+      createdAt: OCT_14,
+    })
+    const uah = await addExpense({
+      amount: 100,
+      currency: 'UAH',
+      categoryId: 'c1',
+      createdAt: OCT_14,
+    })
+
+    expect(eur.conversion?.mainCurrency).toBe('EUR')
+    expect(eur.conversion?.source).toBe('identity')
+    expect(uah.conversion).toBeUndefined()
+  })
+
+  it('the syncedSettings record wins over the legacy meta:settings field', async () => {
+    setSettings({ mainCurrency: 'USD' })
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'EUR',
+      fetchExchangeRates: true,
+      updatedAt: OLD,
+    })
+
+    const eur = await addExpense({
+      amount: 20,
+      currency: 'EUR',
+      categoryId: 'c1',
+      createdAt: OCT_14,
+    })
+    const usd = await addExpense({
+      amount: 20,
+      currency: 'USD',
+      categoryId: 'c1',
+      createdAt: OCT_14,
+    })
+
+    expect(eur.conversion?.source).toBe('identity')
+    expect(usd.conversion).toBeUndefined()
   })
 
   it('falls back to UAH when the stored main currency is not a known currency', async () => {
@@ -645,6 +715,7 @@ describe('onConversionNeeded / requestEntryConversion', () => {
       },
     ])
     await convertBudgets('UAH', () => 41.52, { setMainCurrency: false })
+    await convertBudgets('UAH', () => 41.52, { setMainCurrency: true })
 
     expect(listener).not.toHaveBeenCalled()
   })
@@ -739,6 +810,17 @@ describe('readEntriesForConversion', () => {
     expect(groups[0].records[0].conversion).toEqual(conv('UAH', 20, 41.52))
   })
 
+  it('stays raw: tombstones are returned too (its callers filter them)', async () => {
+    await seed(OCT_CHUNK, [
+      makeExpense({ id: 'live' }),
+      makeExpense({ id: 'dead', deletedAt: OLD }),
+    ])
+
+    const groups = await readEntriesForConversion()
+
+    expect(groups[0].records.map((r) => r.id)).toEqual(['live', 'dead'])
+  })
+
   it('propagates a DecryptError for an unreadable chunk', async () => {
     mockStore.set(OCT_CHUNK, new Uint8Array(40))
 
@@ -773,6 +855,17 @@ describe('applyEntryConversions', () => {
     expect(stored[1]).toEqual(makeExpense({ id: 'e2', amount: 3 }))
   })
 
+  it('is a derived write: no rev is stamped and the change counter stays', async () => {
+    await seed(OCT_CHUNK, [makeExpense()])
+
+    await applyEntryConversions(OCT_CHUNK, 'UAH', [update()])
+
+    const [stored] = await readRaw<Expense>(OCT_CHUNK)
+    expect('rev' in stored).toBe(false)
+    expect(await getLocalRev()).toBe(0)
+    expect(mockStore.has('meta:sync')).toBe(false)
+  })
+
   it('stores the conversion unrounded', async () => {
     await seed(OCT_CHUNK, [makeExpense({ amount: 1 })])
     const exact = { ...conv('UAH', 1, 1), rate: 33.333333333, mainAmount: 33.333333333 }
@@ -796,6 +889,23 @@ describe('applyEntryConversions', () => {
     const [stored] = await readRaw<IncomeEntry>('income')
     expect(stored.conversion?.mainAmount).toBe(500 * 41)
     expect(stored.updatedAt).toBe(OLD)
+  })
+
+  it('never converts a deleted record', async () => {
+    await seed(OCT_CHUNK, [
+      makeExpense({ id: 'dead', deletedAt: OLD }),
+      makeExpense({ id: 'live' }),
+    ])
+
+    const written = await applyEntryConversions(OCT_CHUNK, 'UAH', [
+      update({ id: 'dead' }),
+      update({ id: 'live' }),
+    ])
+
+    expect(written).toBe(1)
+    const stored = await readRaw<Expense>(OCT_CHUNK)
+    expect(stored.find((e) => e.id === 'dead')?.conversion).toBeUndefined()
+    expect(stored.find((e) => e.id === 'live')?.conversion).toBeDefined()
   })
 
   it('skips a record whose amount changed since the rates were fetched', async () => {
@@ -950,6 +1060,23 @@ describe('convertBudgets', () => {
     expect(stored.find((b) => b.id === 'b-uah')?.updatedAt).toBe(OLD)
   })
 
+  it('the one-time fix pass stamps a rev on each converted budget (and only those) in the same setMany as meta:sync', async () => {
+    await seedBudgets()
+    ctl.setManyCalls.length = 0
+
+    await convertBudgets('UAH', rateFor, { setMainCurrency: false })
+
+    expect(ctl.setManyCalls).toHaveLength(1)
+    expect([...ctl.setManyCalls[0]].sort()).toEqual(['budgets', 'meta:sync'])
+    const stored = await readRaw<BudgetEntry & { rev?: number }>('budgets')
+    const revs = ['b-usd', 'b-eur'].map((id) => stored.find((b) => b.id === id)?.rev)
+    expect([...revs].sort()).toEqual([1, 2])
+    expect(stored.find((b) => b.id === 'b-uah')?.rev).toBeUndefined()
+    expect(await getLocalRev()).toBe(2)
+    expect(mockStore.has('syncedSettings')).toBe(false)
+    expect(mockStore.has('meta:settings')).toBe(false)
+  })
+
   it('asks for rates only for budgets that need converting', async () => {
     await seedBudgets()
     const rateSpy = vi.fn(rateFor)
@@ -957,6 +1084,33 @@ describe('convertBudgets', () => {
     await convertBudgets('UAH', rateSpy, { setMainCurrency: false })
 
     expect(rateSpy.mock.calls.map((c) => c[0]).sort()).toEqual(['EUR', 'USD'])
+  })
+
+  it('converts live budgets only: a deleted budget in another currency stays as it was', async () => {
+    await seed('budgets', [
+      ...budgets(),
+      {
+        id: 'b-dead',
+        categoryId: 'c4',
+        monthlyLimit: 7,
+        currency: 'USD',
+        updatedAt: OLD,
+        deletedAt: OLD,
+      },
+    ])
+
+    const converted = await convertBudgets('UAH', rateFor, { setMainCurrency: false })
+
+    expect(converted).toBe(2)
+    const stored = await readRaw<BudgetEntry>('budgets')
+    expect(stored.find((b) => b.id === 'b-dead')).toEqual({
+      id: 'b-dead',
+      categoryId: 'c4',
+      monthlyLimit: 7,
+      currency: 'USD',
+      updatedAt: OLD,
+      deletedAt: OLD,
+    })
   })
 
   it('returns 0 and writes nothing when the stored main currency is not the target and setMainCurrency is false', async () => {
@@ -968,9 +1122,26 @@ describe('convertBudgets', () => {
 
     expect(converted).toBe(0)
     expect(mockStore.get('budgets')).toBe(before)
+    expect(ctl.setManyCalls).toHaveLength(0)
   })
 
-  it('with setMainCurrency writes the converted budgets and the new main currency in one transaction, keeping other settings', async () => {
+  it('reads the stored main currency from syncedSettings for that check too', async () => {
+    await seedBudgets()
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'EUR',
+      fetchExchangeRates: true,
+      updatedAt: OLD,
+    })
+    const before = mockStore.get('budgets')
+
+    const converted = await convertBudgets('UAH', rateFor, { setMainCurrency: false })
+
+    expect(converted).toBe(0)
+    expect(mockStore.get('budgets')).toBe(before)
+  })
+
+  it('with setMainCurrency writes the converted budgets, the new main currency and meta:sync in one transaction, keeping other settings', async () => {
     await seedBudgets()
     setSettings({ mainCurrency: 'UAH', autoLockMinutes: 5, fetchExchangeRates: true })
     ctl.setManyCalls.length = 0
@@ -983,11 +1154,21 @@ describe('convertBudgets', () => {
 
     expect(converted).toBe(2)
     expect(ctl.setManyCalls).toHaveLength(1)
-    expect([...ctl.setManyCalls[0]].sort()).toEqual(['budgets', 'meta:settings'])
-    const settings = mockStore.get('meta:settings') as Record<string, unknown>
+    expect([...ctl.setManyCalls[0]].sort()).toEqual([
+      'budgets',
+      'meta:settings',
+      'meta:sync',
+      'syncedSettings',
+    ])
+    const settings = await readSyncedRaw()
+    expect(settings.id).toBe('settings')
     expect(settings.mainCurrency).toBe('EUR')
-    expect(settings.autoLockMinutes).toBe(5)
     expect(settings.fetchExchangeRates).toBe(true)
+    // The legacy plaintext fields are gone; the per-device ones stay.
+    const plain = mockStore.get('meta:settings') as Record<string, unknown>
+    expect('mainCurrency' in plain).toBe(false)
+    expect('fetchExchangeRates' in plain).toBe(false)
+    expect(plain.autoLockMinutes).toBe(5)
     const stored = await readRaw<BudgetEntry>('budgets')
     expect(stored.every((b) => b.currency === 'EUR')).toBe(true)
     expect(stored.find((b) => b.id === 'b-uah')?.monthlyLimit).toBe(1000 * 0.02)
@@ -995,7 +1176,28 @@ describe('convertBudgets', () => {
     expect(stored.find((b) => b.id === 'b-eur')?.monthlyLimit).toBe(50)
   })
 
-  it('with setMainCurrency and no budgets still sets the main currency and announces only meta:settings', async () => {
+  it('with setMainCurrency stamps updatedAt and a distinct rev on the settings record and on every converted budget', async () => {
+    await seedBudgets()
+    ctl.setManyCalls.length = 0
+
+    await convertBudgets('EUR', () => 2, { setMainCurrency: true })
+
+    const settings = await readSyncedRaw()
+    const stored = await readRaw<BudgetEntry & { rev?: number }>('budgets')
+    const budgetRevs = stored
+      .filter((b) => b.id !== 'b-eur')
+      .map((b) => b.rev)
+    expect(budgetRevs).toHaveLength(2)
+    expect(typeof settings.rev).toBe('number')
+    expect(typeof settings.updatedAt).toBe('string')
+    expect(settings.updatedAt).not.toBe(OLD)
+    const allRevs = [...budgetRevs, settings.rev as number].sort()
+    expect(allRevs).toEqual([1, 2, 3])
+    expect(await getLocalRev()).toBe(3)
+    expect(stored.find((b) => b.id === 'b-eur')?.rev).toBeUndefined()
+  })
+
+  it('with setMainCurrency and no budgets still sets the main currency and announces syncedSettings, not budgets', async () => {
     setSettings({ mainCurrency: 'UAH' })
     const channel = fakeChannel()
     setSyncChannel(channel)
@@ -1003,14 +1205,13 @@ describe('convertBudgets', () => {
     const converted = await convertBudgets('USD', rateFor, { setMainCurrency: true })
 
     expect(converted).toBe(0)
-    expect((mockStore.get('meta:settings') as Record<string, unknown>).mainCurrency).toBe(
-      'USD',
-    )
-    expect(postedKeys(channel)).toContain('meta:settings')
+    expect((await readSyncedRaw()).mainCurrency).toBe('USD')
+    expect((await readSyncedSettings()).mainCurrency).toBe('USD')
+    expect(postedKeys(channel)).toContain('syncedSettings')
     expect(postedKeys(channel)).not.toContain('budgets')
   })
 
-  it('announces budgets and meta:settings after a full change', async () => {
+  it('announces budgets and syncedSettings after a full change', async () => {
     await seedBudgets()
     const channel = fakeChannel()
     setSyncChannel(channel)
@@ -1018,7 +1219,7 @@ describe('convertBudgets', () => {
     await convertBudgets('UAH', rateFor, { setMainCurrency: true })
 
     expect(postedKeys(channel)).toEqual(
-      expect.arrayContaining(['budgets', 'meta:settings']),
+      expect.arrayContaining(['budgets', 'syncedSettings']),
     )
   })
 
@@ -1026,6 +1227,7 @@ describe('convertBudgets', () => {
     await seedBudgets()
     setSettings({ mainCurrency: 'UAH' })
     const budgetsBefore = mockStore.get('budgets')
+    const settingsBefore = mockStore.get('meta:settings')
 
     await expect(
       convertBudgets(
@@ -1038,9 +1240,29 @@ describe('convertBudgets', () => {
     ).rejects.toThrow('no rate')
 
     expect(mockStore.get('budgets')).toBe(budgetsBefore)
+    expect(mockStore.get('meta:settings')).toBe(settingsBefore)
     expect((mockStore.get('meta:settings') as Record<string, unknown>).mainCurrency).toBe(
       'UAH',
     )
+    expect(mockStore.has('syncedSettings')).toBe(false)
+    expect(mockStore.has('meta:sync')).toBe(false)
+  })
+
+  it('a failed transaction leaves budgets, settings and meta:sync as they were', async () => {
+    await seedBudgets()
+    setSettings({ mainCurrency: 'UAH', autoLockMinutes: 5 })
+    const budgetsBefore = mockStore.get('budgets')
+    const settingsBefore = mockStore.get('meta:settings')
+    ctl.failSetMany = true
+
+    await expect(
+      convertBudgets('EUR', () => 2, { setMainCurrency: true }),
+    ).rejects.toThrow('transaction aborted')
+
+    expect(mockStore.get('budgets')).toBe(budgetsBefore)
+    expect(mockStore.get('meta:settings')).toBe(settingsBefore)
+    expect(mockStore.has('syncedSettings')).toBe(false)
+    expect(mockStore.has('meta:sync')).toBe(false)
   })
 
   it('getAllBudgets reads the converted budgets back', async () => {
@@ -1051,6 +1273,7 @@ describe('convertBudgets', () => {
     const read = await getAllBudgets()
     expect(read.map((b) => b.currency)).toEqual(['UAH', 'UAH', 'UAH'])
     expect(read.find((b) => b.categoryName === 'Fun')?.monthlyLimit).toBe(33 * 41.123456)
+    expect(read.every((b) => !('rev' in b))).toBe(true)
   })
 })
 

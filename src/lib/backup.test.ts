@@ -24,6 +24,13 @@
 // payloads are tested in backup.conversion.test.ts). Seeded UAH records now
 // carry their identity conversion, which every round-trip case below keeps
 // comparing unchanged.
+//
+// Sync-ready data run: deletes are tombstones, so a merge of an older backup no
+// longer brings back a record that was deleted later (the tombstone is newer),
+// and a replace keeps local-only records as tombstones. The cases that need "a
+// record this device does not have" therefore remove it from the stored list
+// directly (dropLocal) instead of deleting it. The tombstone, tie-break and
+// syncedSettings cases live in backup.sync.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -49,6 +56,7 @@ import {
   bytesToBase64,
   decryptValue,
   encodeRecoveryKey,
+  encryptValue,
 } from '@/lib/crypto'
 import { DecryptError } from '@/lib/dataErrors'
 import { saveFile } from '@/lib/fileDownload'
@@ -259,6 +267,22 @@ async function readRaw(key: string): Promise<unknown> {
     throw new Error(`cannot read ${key}`)
   }
   return decryptValue(dek, raw)
+}
+
+// Removes a record from the stored list as if this device never had it. A
+// delete would leave a tombstone, which is a different case (see
+// backup.sync.test.ts).
+async function dropLocal(key: string, id: string) {
+  const dek = getLocalDbKey()
+  if (!dek) throw new Error('expected an unlocked vault')
+  const list = (await readRaw(key)) as Array<{ id: string }>
+  mockStore.set(
+    key,
+    await encryptValue(
+      dek,
+      list.filter((r) => r.id !== id),
+    ),
+  )
 }
 
 function storedSettings() {
@@ -1599,12 +1623,12 @@ describe('restoreBackup replace on an existing device', () => {
       createdAt: '2026-03-10T10:00:00.000Z',
     })
     await updateCategory({ id: s.food.id, name: 'Meals' })
-    await deleteExpense(s.lunch.id, s.lunch.createdAt)
-    await deleteIncome(s.salary.id)
 
     const summary = await restoreBackup(text, PW, 'replace')
 
+    // The expense added after the backup is no longer visible.
     expect(await snapshot()).toEqual(before)
+    // Every backup record exists locally, so all 8 count as updated.
     expect(summary).toEqual({
       mode: 'replace',
       expenses: 3,
@@ -1612,8 +1636,8 @@ describe('restoreBackup replace on an existing device', () => {
       categories: 2,
       incomeCategories: 1,
       budgets: 1,
-      added: 2,
-      updated: 6,
+      added: 0,
+      updated: 8,
       conflicts: 0,
       skipped: [],
       adoptedVault: false,
@@ -1621,7 +1645,36 @@ describe('restoreBackup replace on an existing device', () => {
     expect(await getVaultHeader()).toEqual(header)
   })
 
-  it('overwrites local keys the backup does not cover with an encrypted empty list', async () => {
+  it('brings back records that were deleted after the backup', async () => {
+    await setupDevice()
+    const s = await seed()
+    const before = await snapshot()
+    const text = serializeBackup(await createBackup())
+    setNow(T2)
+    await deleteExpense(s.lunch.id, s.lunch.createdAt)
+    await deleteIncome(s.salary.id)
+    expect((await getAllExpenses()).map((e) => e.id)).not.toContain(s.lunch.id)
+
+    const summary = await restoreBackup(text, PW, 'replace')
+
+    expect(await snapshot()).toEqual(before)
+    expect(summary).toMatchObject({
+      mode: 'replace',
+      expenses: 3,
+      income: 1,
+      categories: 2,
+      incomeCategories: 1,
+      budgets: 1,
+      conflicts: 0,
+    })
+    // Every backup record is accounted for, whether or not a tombstone of it
+    // was still on the device.
+    expect(summary.added + summary.updated).toBe(8)
+    const raw = (await readRaw('expenses_2026_01')) as Array<Record<string, unknown>>
+    expect(raw.find((e) => e.id === s.lunch.id)?.deletedAt).toBeUndefined()
+  })
+
+  it('keeps a local expense the backup does not cover only as a tombstone in its own chunk', async () => {
     await setupDevice()
     const s = await seed()
     const text = serializeBackup(await createBackup())
@@ -1636,7 +1689,10 @@ describe('restoreBackup replace on an existing device', () => {
     await restoreBackup(text, PW, 'replace')
 
     expect(mockStore.get('expenses_2026_03')).toBeInstanceOf(Uint8Array)
-    expect(await readRaw('expenses_2026_03')).toEqual([])
+    const raw = (await readRaw('expenses_2026_03')) as Array<Record<string, unknown>>
+    expect(raw).toHaveLength(1)
+    expect(raw[0].createdAt).toBe('2026-03-10T10:00:00.000Z')
+    expect(typeof raw[0].deletedAt).toBe('string')
     expect((await getAllExpenses()).map((e) => e.createdAt)).not.toContain(
       '2026-03-10T10:00:00.000Z',
     )
@@ -1654,6 +1710,7 @@ describe('restoreBackup replace on an existing device', () => {
     expect(ctl.setManyCalls).toHaveLength(1)
     expect(ctl.setManyCalls[0]).toContain(META_SETTINGS_KEY)
     expect(ctl.setManyCalls[0]).toContain('incomeCategories')
+    expect(ctl.setManyCalls[0]).toContain('meta:sync')
     expect(ctl.setManyCalls[0]).not.toContain(META_VAULT_KEY)
   })
 
@@ -1854,8 +1911,8 @@ describe('restoreBackup merge', () => {
     const s = await seed()
     const before = await snapshot()
     const text = serializeBackup(await createBackup())
-    await deleteExpense(s.ride.id, s.ride.createdAt)
-    await deleteIncome(s.salary.id)
+    await dropLocal('expenses_2026_02', s.ride.id)
+    await dropLocal('income', s.salary.id)
     setNow(T2)
 
     const summary = await restoreBackup(text, PW, 'merge')
@@ -1875,6 +1932,22 @@ describe('restoreBackup merge', () => {
     expect(storedSettings()?.lastDataChangeAt).toBe(T2)
   })
 
+  it('does not bring back a record that was deleted after the backup: the tombstone is newer', async () => {
+    await setupDevice()
+    const s = await seed()
+    const text = serializeBackup(await createBackup())
+    setNow(T2)
+    await deleteExpense(s.ride.id, s.ride.createdAt)
+    ctl.setManyCalls.length = 0
+    setNow(T3)
+
+    const summary = await restoreBackup(text, PW, 'merge')
+
+    expect(summary).toMatchObject({ added: 0, updated: 0, conflicts: 0 })
+    expect((await getAllExpenses()).map((e) => e.id)).not.toContain(s.ride.id)
+    expect(ctl.setManyCalls).toHaveLength(0)
+  })
+
   it('upserts an income category the backup has and the device lacks', async () => {
     await setupDevice()
     const s = await seed()
@@ -1892,7 +1965,7 @@ describe('restoreBackup merge', () => {
     expect(ids).toEqual([own.id, s.incomeCat.id].sort())
   })
 
-  it('counts equal timestamps with different content as a conflict and keeps local', async () => {
+  it('counts equal timestamps with different content as a conflict', async () => {
     await setupDevice()
     const s = await seed()
     const older = cloneStore()
@@ -1905,6 +1978,9 @@ describe('restoreBackup merge', () => {
 
     const summary = await restoreBackup(text, PW, 'merge')
 
+    // The tie is decided by the larger canonical JSON: 60 beats 50, so the
+    // local record stays and nothing is written. (The backup winning a tie is
+    // tested in backup.sync.test.ts.)
     expect(summary).toMatchObject({ added: 0, updated: 0, conflicts: 1 })
     expect(
       (await getAllExpenses()).find((e) => e.id === s.ride.id)?.amount,
@@ -1942,7 +2018,7 @@ describe('restoreBackup merge', () => {
     const text = serializeBackup(await createBackup())
     await updateAppSettings({ autoLockMinutes: 60 })
     await updateBackupSettings({ backupReminderDays: 7 })
-    await deleteExpense(s.ride.id, s.ride.createdAt)
+    await dropLocal('expenses_2026_02', s.ride.id)
 
     const summary = await restoreBackup(text, PW, 'merge')
 
@@ -1955,7 +2031,7 @@ describe('restoreBackup merge', () => {
     await setupDevice()
     const s = await seed()
     const text = serializeBackup(await createBackup())
-    await deleteExpense(s.ride.id, s.ride.createdAt)
+    await dropLocal('expenses_2026_02', s.ride.id)
     expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
 
     await restoreBackup(text, PW, 'merge')
@@ -1963,18 +2039,18 @@ describe('restoreBackup merge', () => {
     expect(storedSettings()?.recoveryKeyConfirmed).toBe(false)
   })
 
-  it('writes the data and the settings in one transaction', async () => {
+  it('writes the data, meta:sync and the settings in one transaction', async () => {
     await setupDevice()
     const s = await seed()
     const text = serializeBackup(await createBackup())
-    await deleteExpense(s.ride.id, s.ride.createdAt)
+    await dropLocal('expenses_2026_02', s.ride.id)
     ctl.setManyCalls.length = 0
 
     await restoreBackup(text, PW, 'merge')
 
     expect(ctl.setManyCalls).toHaveLength(1)
     expect(ctl.setManyCalls[0]).toEqual(
-      expect.arrayContaining(['expenses_2026_02', META_SETTINGS_KEY]),
+      expect.arrayContaining(['expenses_2026_02', 'meta:sync', META_SETTINGS_KEY]),
     )
   })
 
@@ -1982,7 +2058,7 @@ describe('restoreBackup merge', () => {
     await setupDevice()
     const s = await seed()
     const text = serializeBackup(await createBackup())
-    await deleteExpense(s.ride.id, s.ride.createdAt)
+    await dropLocal('expenses_2026_02', s.ride.id)
     const before = cloneStore()
     ctl.failSetMany = true
 
@@ -2101,7 +2177,7 @@ describe('a backup made before a password change', () => {
     const s = await seed()
     const old = serializeBackup(await createBackup())
     await changePassword(PW, PW2)
-    await deleteExpense(s.ride.id, s.ride.createdAt)
+    await dropLocal('expenses_2026_02', s.ride.id)
     const header = await getVaultHeader()
 
     const summary = await restoreBackup(old, PW, 'merge')

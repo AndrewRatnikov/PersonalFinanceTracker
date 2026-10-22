@@ -1,6 +1,12 @@
 // No CONTRACT_GAPs: getCurrencySettings / updateCurrencySettings,
 // CURRENCY_SETTINGS_QUERY_KEY and DEFAULT_FETCH_EXCHANGE_RATES are fully
-// specified in the Interface Contract (module: settings).
+// specified in the Interface Contract (module: appSettings).
+//
+// The currency settings live in the encrypted `syncedSettings` record now.
+// getCurrencySettings reads it through localDb.readSyncedSettings and
+// updateCurrencySettings delegates to localDb.updateSyncedSettings, so localDb
+// is mocked here. The real read/write behaviour (legacy fallback, migration,
+// rev) is tested with the real localDb in localDb.syncedSettings.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,29 +17,36 @@ import {
   getCurrencySettings,
   updateCurrencySettings,
 } from '@/lib/appSettings'
+import { DecryptError } from '@/lib/dataErrors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { setSyncChannel } from '@/lib/syncChannel'
 
-const { mockStore, getLocalStore, idbGet, idbSet } = vi.hoisted(() => {
-  const store = new Map<string, unknown>()
-  return {
-    mockStore: store,
-    getLocalStore: vi.fn(),
-    idbGet: vi.fn((key: string) => Promise.resolve(store.get(key))),
-    idbSet: vi.fn((key: string, value: unknown) => {
-      store.set(key, value)
-      return Promise.resolve()
-    }),
-  }
-})
+const { mockStore, getLocalStore, readSyncedSettings, updateSyncedSettings, idbSet } =
+  vi.hoisted(() => {
+    const store = new Map<string, unknown>()
+    return {
+      mockStore: store,
+      getLocalStore: vi.fn(),
+      readSyncedSettings: vi.fn(),
+      updateSyncedSettings: vi.fn(),
+      idbSet: vi.fn((key: string, value: unknown) => {
+        store.set(key, value)
+        return Promise.resolve()
+      }),
+    }
+  })
 
 vi.mock('idb-keyval', () => ({
   createStore: () => 'mock-store',
-  get: idbGet,
+  get: (key: string) => Promise.resolve(mockStore.get(key)),
   set: idbSet,
 }))
 
-vi.mock('@/lib/localDb', () => ({ getLocalStore }))
+vi.mock('@/lib/localDb', () => ({
+  getLocalStore,
+  readSyncedSettings,
+  updateSyncedSettings,
+}))
 
 vi.mock('@/lib/vault', () => ({ META_SETTINGS_KEY: 'meta:settings' }))
 
@@ -46,11 +59,22 @@ function fakeChannel() {
   }
 }
 
+function record(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'settings',
+    mainCurrency: 'UAH',
+    fetchExchangeRates: true,
+    updatedAt: '2026-03-01T10:00:00.000Z',
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   mockStore.clear()
-  idbGet.mockClear()
   idbSet.mockClear()
   getLocalStore.mockReset().mockReturnValue('mock-store')
+  readSyncedSettings.mockReset().mockResolvedValue(record())
+  updateSyncedSettings.mockReset().mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -66,18 +90,10 @@ describe('constants', () => {
 })
 
 describe('getCurrencySettings', () => {
-  it('returns the defaults for an empty store', async () => {
-    expect(await getCurrencySettings()).toEqual({
-      mainCurrency: 'UAH',
-      fetchExchangeRates: true,
-    })
-  })
-
-  it('returns stored valid values', async () => {
-    mockStore.set('meta:settings', {
-      mainCurrency: 'EUR',
-      fetchExchangeRates: false,
-    })
+  it('returns the two currency fields of the synced settings record, and nothing else', async () => {
+    readSyncedSettings.mockResolvedValue(
+      record({ mainCurrency: 'EUR', fetchExchangeRates: false, rev: 9 }),
+    )
 
     expect(await getCurrencySettings()).toEqual({
       mainCurrency: 'EUR',
@@ -85,24 +101,45 @@ describe('getCurrencySettings', () => {
     })
   })
 
-  it('reads each field independently: a missing field means its default', async () => {
-    mockStore.set('meta:settings', { mainCurrency: 'USD' })
+  it('follows the record: other values give other results', async () => {
+    readSyncedSettings.mockResolvedValue(
+      record({ mainCurrency: 'USD', fetchExchangeRates: true }),
+    )
     expect(await getCurrencySettings()).toEqual({
       mainCurrency: 'USD',
       fetchExchangeRates: true,
     })
 
-    mockStore.set('meta:settings', { fetchExchangeRates: false })
+    readSyncedSettings.mockResolvedValue(
+      record({ mainCurrency: 'UAH', fetchExchangeRates: false }),
+    )
     expect(await getCurrencySettings()).toEqual({
       mainCurrency: 'UAH',
       fetchExchangeRates: false,
     })
   })
 
-  it('falls back to the defaults for an unknown currency and a non-boolean flag', async () => {
-    mockStore.set('meta:settings', {
-      mainCurrency: 'GBP',
-      fetchExchangeRates: 'no',
+  it('does not read the legacy meta:settings fields itself', async () => {
+    mockStore.set('meta:settings', { mainCurrency: 'EUR', fetchExchangeRates: false })
+
+    expect(await getCurrencySettings()).toEqual({
+      mainCurrency: 'UAH',
+      fetchExchangeRates: true,
+    })
+  })
+
+  it('returns the defaults when the read fails for a reason other than decryption', async () => {
+    readSyncedSettings.mockRejectedValue(new Error('idb broke'))
+
+    expect(await getCurrencySettings()).toEqual({
+      mainCurrency: 'UAH',
+      fetchExchangeRates: true,
+    })
+  })
+
+  it('returns the defaults when localDb is mocked without the new export (it throws synchronously)', async () => {
+    readSyncedSettings.mockImplementation(() => {
+      throw new Error('No "readSyncedSettings" export is defined on the mock')
     })
 
     expect(await getCurrencySettings()).toEqual({
@@ -111,103 +148,72 @@ describe('getCurrencySettings', () => {
     })
   })
 
-  it('ignores the unrelated fields stored next to them', async () => {
-    mockStore.set('meta:settings', {
-      autoLockMinutes: 5,
-      failedUnlockAttempts: 2,
-      mainCurrency: 'USD',
-    })
+  it('lets a DecryptError through: an unreadable record must not read as UAH', async () => {
+    const error = new DecryptError('syncedSettings')
+    readSyncedSettings.mockRejectedValue(error)
 
-    expect(await getCurrencySettings()).toEqual({
-      mainCurrency: 'USD',
-      fetchExchangeRates: true,
-    })
+    await expect(getCurrencySettings()).rejects.toBe(error)
   })
 
-  it('returns the defaults without a store', async () => {
-    getLocalStore.mockReturnValue(null)
-    mockStore.set('meta:settings', { mainCurrency: 'EUR' })
-
-    expect(await getCurrencySettings()).toEqual({
-      mainCurrency: 'UAH',
-      fetchExchangeRates: true,
+  it('lets a DecryptError from another module copy through too', async () => {
+    const error = Object.assign(new Error('Could not decrypt'), {
+      name: 'DecryptError',
+      storageKey: 'syncedSettings',
     })
-  })
+    readSyncedSettings.mockRejectedValue(error)
 
-  it('never throws: returns the defaults when the read rejects', async () => {
-    idbGet.mockRejectedValueOnce(new Error('idb broke'))
-
-    expect(await getCurrencySettings()).toEqual({
-      mainCurrency: 'UAH',
-      fetchExchangeRates: true,
-    })
-  })
-
-  it('never throws when the local store accessor itself throws (mocked localDb without it)', async () => {
-    getLocalStore.mockImplementation(() => {
-      throw new Error('No "getLocalStore" export is defined on the mock')
-    })
-
-    expect(await getCurrencySettings()).toEqual({
-      mainCurrency: 'UAH',
-      fetchExchangeRates: true,
-    })
+    await expect(getCurrencySettings()).rejects.toBe(error)
   })
 })
 
 describe('updateCurrencySettings', () => {
-  it('writes fetchExchangeRates and getCurrencySettings reads it back', async () => {
+  it('hands the patch to localDb.updateSyncedSettings', async () => {
     await updateCurrencySettings({ fetchExchangeRates: false })
-    expect((await getCurrencySettings()).fetchExchangeRates).toBe(false)
+
+    expect(updateSyncedSettings).toHaveBeenCalledTimes(1)
+    expect(updateSyncedSettings).toHaveBeenCalledWith({ fetchExchangeRates: false })
 
     await updateCurrencySettings({ fetchExchangeRates: true })
-    expect((await getCurrencySettings()).fetchExchangeRates).toBe(true)
+
+    expect(updateSyncedSettings).toHaveBeenCalledTimes(2)
+    expect(updateSyncedSettings).toHaveBeenLastCalledWith({ fetchExchangeRates: true })
   })
 
-  it('merges into the stored object and keeps every other field', async () => {
-    mockStore.set('meta:settings', {
-      mainCurrency: 'EUR',
-      autoLockMinutes: 5,
-      failedUnlockAttempts: 3,
-    })
+  it('does not write meta:settings itself any more', async () => {
+    mockStore.set('meta:settings', { autoLockMinutes: 5 })
 
     await updateCurrencySettings({ fetchExchangeRates: false })
 
-    expect(mockStore.get('meta:settings')).toEqual({
-      mainCurrency: 'EUR',
-      autoLockMinutes: 5,
-      failedUnlockAttempts: 3,
-      fetchExchangeRates: false,
-    })
+    expect(idbSet).not.toHaveBeenCalled()
+    expect(mockStore.get('meta:settings')).toEqual({ autoLockMinutes: 5 })
   })
 
-  it('does not let a patch change mainCurrency', async () => {
-    mockStore.set('meta:settings', { mainCurrency: 'EUR' })
-    const widePatch = { fetchExchangeRates: false, mainCurrency: 'USD' }
-
-    await updateCurrencySettings(widePatch)
-
-    expect((await getCurrencySettings()).mainCurrency).toBe('EUR')
-  })
-
-  it('announces the meta:settings key to other tabs after writing', async () => {
+  it('does not announce meta:settings: localDb announces syncedSettings after it commits', async () => {
     const channel = fakeChannel()
     setSyncChannel(channel)
 
     await updateCurrencySettings({ fetchExchangeRates: false })
 
-    expect(channel.postMessage).toHaveBeenCalledWith({
-      type: 'changed',
-      keys: ['meta:settings'],
-    })
+    expect(channel.postMessage).not.toHaveBeenCalled()
   })
 
-  it('is a no-op without a store', async () => {
-    getLocalStore.mockReturnValue(null)
+  it('passes a patch that wants to change mainCurrency on without writing it itself', async () => {
+    const widePatch = { fetchExchangeRates: false, mainCurrency: 'USD' }
 
-    await updateCurrencySettings({ fetchExchangeRates: false })
+    await updateCurrencySettings(widePatch)
 
     expect(idbSet).not.toHaveBeenCalled()
-    expect(mockStore.size).toBe(0)
+    expect(updateSyncedSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ fetchExchangeRates: false }),
+    )
+  })
+
+  it('rejects when localDb rejects, so a failed write is not hidden', async () => {
+    const error = new DecryptError('syncedSettings')
+    updateSyncedSettings.mockRejectedValue(error)
+
+    await expect(updateCurrencySettings({ fetchExchangeRates: false })).rejects.toBe(
+      error,
+    )
   })
 })

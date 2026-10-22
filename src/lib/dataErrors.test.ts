@@ -1,13 +1,19 @@
 // No CONTRACT_GAPs: dataErrors is fully specified in the Interface Contract.
+// `syncedSettings` is a data key with a label in both catalogs.
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
+import { setLang } from '@/i18n/core'
 import {
   DecryptError,
   isDataStorageKey,
   isDecryptError,
   storageKeyLabel,
 } from '@/lib/dataErrors'
+
+afterEach(() => {
+  setLang('en', { persist: false })
+})
 
 describe('DecryptError', () => {
   it('carries the storage key, name and message', () => {
@@ -70,6 +76,8 @@ describe('isDataStorageKey', () => {
     'incomeCategories',
     'income',
     'budgets',
+    'recurring',
+    'syncedSettings',
     'expenses_2026_03',
     'expenses_1999_12',
   ])('accepts %s', (key) => {
@@ -80,6 +88,7 @@ describe('isDataStorageKey', () => {
     'quarantine:expenses_2026_03:2026-03-01T00:00:00.000Z',
     'quarantine:categories:2026-03-01T00:00:00.000Z',
     'quarantine:incomeCategories:2026-03-01T00:00:00.000Z',
+    'quarantine:syncedSettings:2026-03-01T00:00:00.000Z',
     'expenses_',
     'expenses_2026_3',
     'expenses_26_03',
@@ -89,6 +98,12 @@ describe('isDataStorageKey', () => {
     'categories2',
     'incomecategories',
     'incomeCategories2',
+    'SyncedSettings',
+    'syncedsettings',
+    'syncedSettings2',
+    'meta:sync',
+    'meta:settings',
+    'meta:vault',
     'minima_key_verify_u1',
     '',
   ])('rejects %s', (key) => {
@@ -115,10 +130,23 @@ describe('storageKeyLabel', () => {
     )
   })
 
+  it('labels the synced currency settings record', () => {
+    expect(storageKeyLabel('syncedSettings')).toBe('Currency settings')
+    expect(storageKeyLabel('syncedSettings')).not.toBe('syncedSettings')
+    expect(storageKeyLabel('syncedSettings')).not.toBe(storageKeyLabel('budgets'))
+  })
+
+  it('labels the synced currency settings record in Ukrainian', () => {
+    setLang('uk', { persist: false })
+
+    expect(storageKeyLabel('syncedSettings')).toBe('Налаштування валюти')
+  })
+
   it('returns anything else unchanged', () => {
     expect(storageKeyLabel('something_else')).toBe('something_else')
     expect(
       storageKeyLabel('quarantine:income:2026-03-01T00:00:00.000Z'),
     ).toBe('quarantine:income:2026-03-01T00:00:00.000Z')
+    expect(storageKeyLabel('meta:sync')).toBe('meta:sync')
   })
 })

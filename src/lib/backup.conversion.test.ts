@@ -1,16 +1,21 @@
 // No CONTRACT_GAPs: BackupPayload.settings (mainCurrency, fetchExchangeRates),
 // raw conversion / manualRate records, replace/merge settings rules and the
 // post-restore conversion request are fully specified in the Interface
-// Contract (module: backup) and plan section 12.
+// Contract (module: backup) and plan sections 9 and 12.
 //
 // Integration style (as backup.test.ts): real crypto, real vault, real
 // localDb, idb-keyval backed by a Map. A backup from before this change is
 // built by re-encrypting a created payload without the new fields.
+//
+// The currency settings live in the encrypted `syncedSettings` record now, so
+// "the local values" are set by writing that record, and cases that need "a
+// record this device does not have" remove it from the stored list directly
+// (a delete would leave a newer tombstone, which a merge keeps).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BackupPayload, MinimaBackupV1 } from '@/lib/backup'
-import type { Expense, IncomeEntry } from '@/lib/domain'
+import type { Currency, Expense, IncomeEntry } from '@/lib/domain'
 import type { RateProvider, RateTable } from '@/lib/rates/types'
 import { getCurrencySettings, updateCurrencySettings } from '@/lib/appSettings'
 import {
@@ -27,7 +32,6 @@ import {
   addIncomeCategory,
   applyEntryConversions,
   convertBudgets,
-  deleteExpense,
   getAllExpenses,
   getAllIncome,
   getLocalDbKey,
@@ -36,7 +40,6 @@ import {
 } from '@/lib/localDb'
 import { setSyncChannel } from '@/lib/syncChannel'
 import {
-  META_SETTINGS_KEY,
   createVault,
   lockVault,
   openHeaderWithSecret,
@@ -99,10 +102,6 @@ async function setupDevice(): Promise<void> {
 function wipe() {
   lockVault()
   mockStore.clear()
-}
-
-function storedSettings() {
-  return mockStore.get(META_SETTINGS_KEY) as Record<string, unknown>
 }
 
 async function readPayload(
@@ -171,6 +170,22 @@ async function patchStoredRecord(
     await encryptValue(
       dek,
       list.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    ),
+  )
+}
+
+// Removes one stored record as if this device never had it (a delete would
+// leave a tombstone instead).
+async function dropStoredRecord(storageKey: string, id: string) {
+  const dek = getLocalDbKey()
+  const raw = mockStore.get(storageKey)
+  if (!dek || !(raw instanceof Uint8Array)) throw new Error('cannot drop')
+  const list = (await decryptValue(dek, raw)) as Array<{ id: string }>
+  mockStore.set(
+    storageKey,
+    await encryptValue(
+      dek,
+      list.filter((r) => r.id !== id),
     ),
   )
 }
@@ -321,18 +336,25 @@ describe('restoring the currency settings', () => {
     return createBackup()
   }
 
-  function setLocalCurrencySettings(main: string, fetchRates: boolean) {
-    mockStore.set(META_SETTINGS_KEY, {
-      ...storedSettings(),
-      mainCurrency: main,
-      fetchExchangeRates: fetchRates,
-    })
+  // The local values are the synced settings record.
+  async function setLocalCurrencySettings(main: Currency, fetchRates: boolean) {
+    const dek = getLocalDbKey()
+    if (!dek) throw new Error('expected an unlocked vault')
+    mockStore.set(
+      'syncedSettings',
+      await encryptValue(dek, {
+        id: 'settings',
+        mainCurrency: main,
+        fetchExchangeRates: fetchRates,
+        updatedAt: T1,
+      }),
+    )
   }
 
   it('replace restores them', async () => {
     await setupDevice()
     const text = serializeBackup(await backupWithMain('EUR', false))
-    setLocalCurrencySettings('UAH', true)
+    await setLocalCurrencySettings('UAH', true)
     await upsertBudget({ categoryId: 'c1', monthlyLimit: 5, currency: 'UAH' })
 
     await restoreBackup(text, PW, 'replace')
@@ -363,7 +385,7 @@ describe('restoring the currency settings', () => {
       ...p,
       settings: { ...p.settings, mainCurrency: 'GBP', fetchExchangeRates: 'yes' },
     }))
-    setLocalCurrencySettings('USD', true)
+    await setLocalCurrencySettings('USD', true)
 
     await restoreBackup(serializeBackup(broken), PW, 'replace')
 
@@ -382,7 +404,7 @@ describe('restoring the currency settings', () => {
       delete settings.fetchExchangeRates
       return { ...p, settings }
     })
-    setLocalCurrencySettings('USD', true)
+    await setLocalCurrencySettings('USD', true)
 
     await restoreBackup(serializeBackup(legacy), PW, 'replace')
 
@@ -402,8 +424,8 @@ describe('restoring the currency settings', () => {
       createdAt: FEB_3,
     })
     const text = serializeBackup(await backupWithMain('EUR', false))
-    setLocalCurrencySettings('USD', true)
-    await deleteExpense(e.id, e.createdAt)
+    await setLocalCurrencySettings('USD', true)
+    await dropStoredRecord(FEB_CHUNK, e.id)
 
     const summary = await restoreBackup(text, PW, 'merge')
 
@@ -494,7 +516,7 @@ describe('a backup from before this change', () => {
       },
     ])
     const text = serializeBackup(await createBackup())
-    await deleteExpense(seeded.id, seeded.createdAt)
+    await dropStoredRecord(FEB_CHUNK, seeded.id)
     await convertBudgets('EUR', () => 1, { setMainCurrency: true })
 
     await restoreBackup(text, PW, 'merge')
@@ -542,7 +564,7 @@ describe('restoreBackup asks for a conversion run', () => {
     await setupDevice()
     const s = await seedConverted()
     const text = serializeBackup(await createBackup())
-    await deleteExpense(s.usd.id, s.usd.createdAt)
+    await dropStoredRecord(FEB_CHUNK, s.usd.id)
     const listener = listen()
 
     await restoreBackup(text, PW, 'merge')

@@ -1,5 +1,7 @@
 // No CONTRACT_GAPs: quarantineKey, hasLocalData and the strict chunk-key filter
-// are fully specified in the Interface Contract.
+// are fully specified in the Interface Contract. `syncedSettings` is a data key
+// like the others, and quarantine is a derived write: it never touches
+// meta:sync.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -14,8 +16,10 @@ import {
   getAllExpenses,
   getAllIncome,
   getExpensesForRange,
+  getLocalRev,
   hasLocalData,
   quarantineKey,
+  readSyncedSettings,
   unlockLocalDb,
   wipeLocalDbKey,
 } from '@/lib/localDb'
@@ -36,6 +40,20 @@ vi.mock('idb-keyval', () => ({
     }
     ops.push(`set:${key}`)
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  // User writes go through setMany; it is recorded as the same kind of write.
+  setMany: (entries: Array<[string, unknown]>) => {
+    if (
+      failures.setPrefix &&
+      entries.some(([key]) => key.startsWith(failures.setPrefix ?? ''))
+    ) {
+      return Promise.reject(new Error('disk full'))
+    }
+    for (const [key, value] of entries) {
+      ops.push(`set:${key}`)
+      mockStore.set(key, value)
+    }
     return Promise.resolve()
   },
   del: (key: string) => {
@@ -203,6 +221,7 @@ describe('localDb quarantine and orphan detection', () => {
       await expect(
         quarantineKey('quarantine:expenses_2024_03:2024-01-01T00:00:00.000Z'),
       ).rejects.toThrow()
+      await expect(quarantineKey('meta:sync')).rejects.toThrow()
 
       expect(mockStore.has('something_else')).toBe(true)
       expect(ops).toEqual([])
@@ -228,6 +247,43 @@ describe('localDb quarantine and orphan detection', () => {
       expect(mockStore.has('incomeCategories')).toBe(false)
       expect(qKey?.startsWith('quarantine:incomeCategories:')).toBe(true)
       expect(mockStore.get(qKey as string)).toBe(bytes)
+    })
+
+    it('quarantines a syncedSettings blob like any other data key', async () => {
+      const bytes = garbage()
+      mockStore.set('syncedSettings', bytes)
+
+      const qKey = await quarantineKey('syncedSettings')
+
+      expect(mockStore.has('syncedSettings')).toBe(false)
+      expect(qKey?.startsWith('quarantine:syncedSettings:')).toBe(true)
+      expect(mockStore.get(qKey as string)).toBe(bytes)
+    })
+
+    it('after quarantining syncedSettings, reads return the defaults instead of throwing', async () => {
+      mockStore.set('syncedSettings', garbage())
+      await expect(readSyncedSettings()).rejects.toBeInstanceOf(DecryptError)
+
+      await quarantineKey('syncedSettings')
+
+      expect(await readSyncedSettings()).toMatchObject({
+        id: 'settings',
+        mainCurrency: 'UAH',
+        fetchExchangeRates: true,
+      })
+    })
+
+    it('is a derived write: it leaves the change counter alone', async () => {
+      await addCategory({ name: 'Food' })
+      const rev = await getLocalRev()
+      const syncBlob = mockStore.get('meta:sync')
+      mockStore.set(CHUNK, garbage())
+
+      await quarantineKey(CHUNK)
+      await quarantineKey('categories')
+
+      expect(await getLocalRev()).toBe(rev)
+      expect(mockStore.get('meta:sync')).toBe(syncBlob)
     })
 
     it('posts a changed message for the quarantined key', async () => {
@@ -346,6 +402,7 @@ describe('localDb quarantine and orphan detection', () => {
       ['income categories', 'incomeCategories'],
       ['income', 'income'],
       ['budgets', 'budgets'],
+      ['synced settings', 'syncedSettings'],
     ])('is true when the store holds %s', async (_name, key) => {
       mockStore.set(key, garbage())
 
@@ -358,6 +415,7 @@ describe('localDb quarantine and orphan detection', () => {
         garbage(),
       )
       mockStore.set('something_else', garbage())
+      mockStore.set('meta:sync', { localRev: 5 })
 
       await expect(hasLocalData()).resolves.toBe(false)
     })

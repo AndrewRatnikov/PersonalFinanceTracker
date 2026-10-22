@@ -1,22 +1,25 @@
-// No CONTRACT_GAPs: the meta:settings mapping of queryKeysForStorageKeys is
-// fully specified in the Interface Contract (plan section 12). The existing
-// mappings are re-checked here so the new one cannot replace them.
+// No CONTRACT_GAPs: the meta:settings and syncedSettings mappings of
+// queryKeysForStorageKeys are fully specified in the Interface Contract
+// (module: syncChannel). The existing mappings are re-checked here so the new
+// one cannot replace them.
 
 import { describe, expect, it, vi } from 'vitest'
 
 import type { SyncChannel } from '@/lib/syncChannel'
 import { listenForChanges, queryKeysForStorageKeys } from '@/lib/syncChannel'
 
+const SETTINGS_QUERY_KEYS = [
+  ['settings'],
+  ['conversion-status'],
+  ['expenses'],
+  ['income'],
+  ['analytics'],
+  ['budgets'],
+]
+
 describe('queryKeysForStorageKeys for meta:settings', () => {
   it('maps it to the settings, conversion status and data queries', () => {
-    expect(queryKeysForStorageKeys(['meta:settings'])).toEqual([
-      ['settings'],
-      ['conversion-status'],
-      ['expenses'],
-      ['income'],
-      ['analytics'],
-      ['budgets'],
-    ])
+    expect(queryKeysForStorageKeys(['meta:settings'])).toEqual(SETTINGS_QUERY_KEYS)
   })
 
   it('does not repeat a key that another storage key also maps to', () => {
@@ -51,8 +54,30 @@ describe('queryKeysForStorageKeys for meta:settings', () => {
   })
 })
 
-describe('listenForChanges with a meta:settings message', () => {
-  it('invalidates the settings and conversion-status queries', () => {
+describe('queryKeysForStorageKeys for syncedSettings', () => {
+  it('maps it to the same six queries as meta:settings', () => {
+    const synced = queryKeysForStorageKeys(['syncedSettings'])
+
+    expect(synced).toEqual(SETTINGS_QUERY_KEYS)
+    expect(synced).toEqual(queryKeysForStorageKeys(['meta:settings']))
+  })
+
+  it('does not repeat a key when it comes with meta:settings or a data key', () => {
+    const both = queryKeysForStorageKeys(['syncedSettings', 'meta:settings'])
+    const withIncome = queryKeysForStorageKeys(['income', 'syncedSettings'])
+
+    expect(both).toEqual(SETTINGS_QUERY_KEYS)
+    expect(withIncome.filter((k) => k[0] === 'income')).toHaveLength(1)
+    expect(withIncome.filter((k) => k[0] === 'settings')).toHaveLength(1)
+  })
+
+  it('does not map the bookkeeping key meta:sync to any query', () => {
+    expect(queryKeysForStorageKeys(['meta:sync'])).toEqual([])
+  })
+})
+
+describe('listenForChanges with a settings message', () => {
+  function listenAndSend(key: string) {
     let handler: ((event: MessageEvent) => void) | undefined
     const channel: SyncChannel = {
       postMessage: vi.fn(),
@@ -67,16 +92,28 @@ describe('listenForChanges with a meta:settings message', () => {
 
     handler?.(
       new MessageEvent('message', {
-        data: { type: 'changed', keys: ['meta:settings'] },
+        data: { type: 'changed', keys: [key] },
       }),
     )
+    return invalidateQueries
+  }
 
-    const invalidated = invalidateQueries.mock.calls.map(
-      (c) => (c[0] as { queryKey: Array<string> }).queryKey[0],
-    )
-    expect(invalidated).toEqual(
-      expect.arrayContaining(['settings', 'conversion-status', 'expenses']),
-    )
-    expect(invalidateQueries).toHaveBeenCalledTimes(6)
+  it.each(['meta:settings', 'syncedSettings'])(
+    'a %s message invalidates the settings and conversion-status queries',
+    (key) => {
+      const invalidateQueries = listenAndSend(key)
+
+      const invalidated = invalidateQueries.mock.calls.map(
+        (c) => (c[0] as { queryKey: Array<string> }).queryKey[0],
+      )
+      expect(invalidated).toEqual(
+        expect.arrayContaining(['settings', 'conversion-status', 'expenses']),
+      )
+      expect(invalidateQueries).toHaveBeenCalledTimes(6)
+    },
+  )
+
+  it('an unrelated key invalidates nothing', () => {
+    expect(listenAndSend('meta:sync')).not.toHaveBeenCalled()
   })
 })

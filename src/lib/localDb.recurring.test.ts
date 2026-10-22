@@ -15,6 +15,10 @@
 //   the wording but not the order against the existing "N expenses use this
 //   category" check; only items-only usage is tested.
 //
+// Sync-ready data run: every setMany that writes a user change also carries
+// meta:sync, deleteRecurring leaves a tombstone, and the generated records get
+// deterministic ids (asserted in localDb.occurrenceIds.test.ts).
+//
 // Integration style (as localDb.incomeCategories.test.ts): real crypto and
 // real localDb, idb-keyval backed by a Map with a failure switch on setMany.
 // Dates are passed to the functions explicitly ("today") so the tests do not
@@ -262,7 +266,7 @@ describe('processDueRecurring: catch-up (acceptance 5)', () => {
     expect(item.updatedAt).toBe(NOW_ISO)
   })
 
-  it('writes the item and every chunk in ONE setMany and announces every written key', async () => {
+  it('writes the item, every chunk and meta:sync in ONE setMany and announces every written data key', async () => {
     const category = await addCategory({ name: 'Gym' })
     await seedRecurring([makeItem({ categoryId: category.id })])
     const channel = fakeChannel()
@@ -278,7 +282,7 @@ describe('processDueRecurring: catch-up (acceptance 5)', () => {
     )
     expect(ctl.setManyCalls).toHaveLength(1)
     expect([...ctl.setManyCalls[0]].sort()).toEqual(
-      ['recurring', ...expectedChunks].sort(),
+      ['meta:sync', 'recurring', ...expectedChunks].sort(),
     )
     expect([...new Set(postedKeys(channel))].sort()).toEqual(
       ['recurring', ...expectedChunks].sort(),
@@ -696,7 +700,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
   const chunkLocks = (dates: Array<string>) =>
     Array.from(new Set(dates.map((d) => `minima:${expenseChunkKey(occurrenceCreatedAt(d))}`)))
 
-  it('processDueRecurring (expense item) holds recurring and every target chunk together at setMany', async () => {
+  it('processDueRecurring (expense item) holds recurring, meta:sync and every target chunk together at setMany', async () => {
     const category = await addCategory({ name: 'Gym' })
     await seedRecurring([makeItem({ categoryId: category.id })])
     ctl.setManyCalls.length = 0
@@ -705,7 +709,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
 
     await processDueRecurring(TODAY)
 
-    const expected = ['minima:recurring', ...chunkLocks(FOUR_DATES)]
+    const expected = ['minima:recurring', 'minima:meta:sync', ...chunkLocks(FOUR_DATES)]
     for (const name of expected) expect(ctl.requested).toContain(name)
     expect(ctl.heldAtSetMany).toHaveLength(1)
     for (const name of expected) expect(lastHeld()).toContain(name)
@@ -727,6 +731,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
     expect(ctl.heldAtSetMany).toHaveLength(1)
     expect(lastHeld()).toContain('minima:recurring')
     expect(lastHeld()).toContain('minima:income')
+    expect(lastHeld()).toContain('minima:meta:sync')
   })
 
   it('confirmRecurringOccurrence holds recurring and the target chunk together at setMany', async () => {
@@ -739,6 +744,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
 
     expect(ctl.heldAtSetMany).toHaveLength(1)
     expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:meta:sync')
     for (const name of chunkLocks(['2026-02-15'])) expect(lastHeld()).toContain(name)
   })
 
@@ -767,6 +773,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
 
     expect(ctl.heldAtSetMany).toHaveLength(1)
     expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:meta:sync')
     for (const name of chunkLocks(FOUR_DATES)) expect(lastHeld()).toContain(name)
   })
 
@@ -781,6 +788,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
 
     expect(ctl.heldAtSetMany).toHaveLength(1)
     expect(lastHeld()).toContain('minima:recurring')
+    expect(lastHeld()).toContain('minima:meta:sync')
     for (const name of chunkLocks([TODAY])) expect(lastHeld()).toContain(name)
   })
 
@@ -796,6 +804,7 @@ describe('write locks held around the single setMany (acceptance 8)', () => {
     expect(ctl.heldAtSetMany).toHaveLength(1)
     expect(lastHeld()).toContain('minima:recurring')
     expect(lastHeld()).toContain('minima:income')
+    expect(lastHeld()).toContain('minima:meta:sync')
   })
 
   it('a manual addExpense racing processDueRecurring in the same chunk loses nothing', async () => {
@@ -846,6 +855,18 @@ describe('processDueRecurring: item whose category is gone (D2)', () => {
   it('an item with only a missing category leaves every byte untouched', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await seedRecurring([makeItem({ categoryId: 'gone' })])
+    const before = snapshot()
+
+    expect(await processDueRecurring(TODAY)).toEqual({ created: 0, itemsTouched: 0 })
+
+    expectUnchanged(before)
+  })
+
+  it('an item whose category was deleted counts as "category not found" too', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const category = await addCategory({ name: 'Gym' })
+    await deleteCategory(category.id)
+    await seedRecurring([makeItem({ categoryId: category.id })])
     const before = snapshot()
 
     expect(await processDueRecurring(TODAY)).toEqual({ created: 0, itemsTouched: 0 })
@@ -1004,9 +1025,11 @@ describe('ask mode (acceptance 10)', () => {
     expect(item.occurrenceCount).toBe(1)
     expect(ctl.setManyCalls).toHaveLength(1)
     expect([...ctl.setManyCalls[0]].sort()).toEqual(
+      ['meta:sync', 'recurring', expenseChunkKey(occurrenceCreatedAt('2026-02-15'))].sort(),
+    )
+    expect([...postedKeys(channel)].sort()).toEqual(
       ['recurring', expenseChunkKey(occurrenceCreatedAt('2026-02-15'))].sort(),
     )
-    expect([...postedKeys(channel)].sort()).toEqual([...ctl.setManyCalls[0]].sort())
     expect((await getDueRecurring('2026-04-20')).map((d) => d.occurrenceDate)).toEqual([
       '2026-03-15',
       '2026-04-15',
@@ -1288,6 +1311,7 @@ describe('getAllRecurring and addRecurring (acceptance 11)', () => {
       createdAt: NOW_ISO,
       updatedAt: NOW_ISO,
     })
+    expect('rev' in created).toBe(false)
   })
 
   it('createThroughToday true in auto mode creates the occurrences in one setMany', async () => {
@@ -1312,6 +1336,7 @@ describe('getAllRecurring and addRecurring (acceptance 11)', () => {
     expect(created.occurrenceCount).toBe(4)
     expect(ctl.setManyCalls).toHaveLength(1)
     expect(ctl.setManyCalls[0]).toContain('recurring')
+    expect(ctl.setManyCalls[0]).toContain('meta:sync')
     expect(postedKeys(channel)).toContain('recurring')
     // The next generation run finds nothing to do.
     expect(await processDueRecurring(TODAY)).toEqual({ created: 0, itemsTouched: 0 })
@@ -1353,6 +1378,18 @@ describe('getAllRecurring and addRecurring (acceptance 11)', () => {
 
     await expect(
       addRecurring(makeInput('gone'), { createThroughToday: false, today: TODAY }),
+    ).rejects.toThrow('Category not found')
+
+    expectUnchanged(before)
+  })
+
+  it('rejects a deleted category like an unknown one', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await deleteCategory(category.id)
+    const before = snapshot()
+
+    await expect(
+      addRecurring(makeInput(category.id), { createThroughToday: false, today: TODAY }),
     ).rejects.toThrow('Category not found')
 
     expectUnchanged(before)
@@ -1525,6 +1562,22 @@ describe('updateRecurring (acceptance 13)', () => {
     )
   })
 
+  it('throws "Recurring item not found" for a deleted item and writes nothing', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    const created = await addRecurring(makeInput(category.id), {
+      createThroughToday: false,
+      today: TODAY,
+    })
+    await deleteRecurring(created.id)
+    const before = snapshot()
+
+    await expect(updateRecurring(created.id, { amount: 5 })).rejects.toThrow(
+      `Recurring item not found: ${created.id}`,
+    )
+
+    expectUnchanged(before)
+  })
+
   it('validates the merged item and stores nothing on failure', async () => {
     const category = await addCategory({ name: 'Gym' })
     const created = await addRecurring(makeInput(category.id), {
@@ -1652,7 +1705,7 @@ describe('setRecurringPaused (D3)', () => {
 })
 
 describe('deleteRecurring (acceptance 13)', () => {
-  it('removes the item and keeps the records it created as ordinary records', async () => {
+  it('tombstones the item and keeps the records it created as ordinary records', async () => {
     const category = await addCategory({ name: 'Gym' })
     await seedRecurring([
       makeItem({ id: 'gone', categoryId: category.id }),
@@ -1665,6 +1718,10 @@ describe('deleteRecurring (acceptance 13)', () => {
     await deleteRecurring('gone')
 
     expect((await getAllRecurring()).map((i) => i.id)).toEqual(['stays'])
+    // The item stays in the key as a tombstone.
+    const raw = await storedRecurring()
+    expect(raw.map((i) => i.id).sort()).toEqual(['gone', 'stays'])
+    expect(raw.find((i) => i.id === 'gone')?.deletedAt).toBe(NOW_ISO)
     expect(await storedExpenses()).toEqual(recordsBefore)
     for (const [key, value] of chunkBlobs) expect(mockStore.get(key)).toBe(value)
     // The surviving records are visible through the normal reader.
@@ -1690,6 +1747,17 @@ describe('deleteRecurring (acceptance 13)', () => {
     await deleteRecurring('r1')
 
     expect(await processDueRecurring(TODAY)).toEqual({ created: 0, itemsTouched: 0 })
+    expect(chunkKeys()).toEqual([])
+  })
+
+  it('a deleted ask-mode item is no longer due', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await seedRecurring([makeItem({ mode: 'ask', categoryId: category.id })])
+    expect((await getDueRecurring('2026-04-20')).length).toBeGreaterThan(0)
+
+    await deleteRecurring('r1')
+
+    expect(await getDueRecurring('2026-04-20')).toEqual([])
   })
 })
 
@@ -1731,6 +1799,18 @@ describe('category deletes are refused while a recurring item uses the category 
 
     await expect(deleteCategory(used.id)).rejects.toThrow('Used by 2 recurring items')
     await expect(deleteCategory(other.id)).rejects.toThrow('Used by 1 recurring item')
+  })
+
+  it('counts live items only: a deleted item no longer blocks', async () => {
+    const category = await addCategory({ name: 'Gym' })
+    await seedRecurring([
+      makeItem({ id: 'live', categoryId: category.id }),
+      makeItem({ id: 'dead', categoryId: category.id, deletedAt: OLD }),
+    ])
+
+    await expect(deleteCategory(category.id)).rejects.toThrow(
+      'Used by 1 recurring item',
+    )
   })
 
   it('succeeds once the items are deleted', async () => {
@@ -1778,6 +1858,20 @@ describe('category deletes are refused while a recurring item uses the category 
     )
   })
 
+  it('deleteIncomeCategory counts live income items only', async () => {
+    const category = await addIncomeCategory({ name: 'Salary' })
+    await seedRecurring([
+      makeItem({ id: 'dead', kind: 'income', categoryId: category.id, deletedAt: OLD }),
+    ])
+
+    await deleteIncomeCategory(category.id)
+
+    expect(await readStored('incomeCategories')).toHaveLength(1)
+    expect((await readStored<{ deletedAt?: string }>('incomeCategories'))[0].deletedAt).toBe(
+      NOW_ISO,
+    )
+  })
+
   it('deleteIncomeCategory ignores expense items that share the id', async () => {
     await seedCategories('categories', ['shared'])
     await seedCategories('incomeCategories', ['shared'])
@@ -1786,7 +1880,12 @@ describe('category deletes are refused while a recurring item uses the category 
     await deleteIncomeCategory('shared')
 
     expect(mockStore.has('incomeCategories')).toBe(true)
-    expect(await readStored('incomeCategories')).toEqual([])
+    expect(await getAllCategories()).toHaveLength(1)
+    // The category stays in its key as a tombstone.
+    const raw = await readStored<{ id: string; deletedAt?: string }>('incomeCategories')
+    expect(raw).toHaveLength(1)
+    expect(raw[0].id).toBe('shared')
+    expect(raw[0].deletedAt).toBe(NOW_ISO)
   })
 })
 
@@ -1838,9 +1937,11 @@ describe('Quick Add repeat (acceptance 12)', () => {
     })
     expect(ctl.setManyCalls).toHaveLength(1)
     expect([...ctl.setManyCalls[0]].sort()).toEqual(
+      ['meta:sync', 'recurring', expenseChunkKey(created.createdAt)].sort(),
+    )
+    expect([...postedKeys(channel)].sort()).toEqual(
       ['recurring', expenseChunkKey(created.createdAt)].sort(),
     )
-    expect([...postedKeys(channel)].sort()).toEqual([...ctl.setManyCalls[0]].sort())
   })
 
   it('the next processDueRecurring creates nothing until next month', async () => {
@@ -1950,7 +2051,7 @@ describe('Quick Add repeat (acceptance 12)', () => {
       occurrenceCount: 1,
     })
     expect(ctl.setManyCalls).toHaveLength(1)
-    expect([...ctl.setManyCalls[0]].sort()).toEqual(['income', 'recurring'])
+    expect([...ctl.setManyCalls[0]].sort()).toEqual(['income', 'meta:sync', 'recurring'])
     expect(await processDueRecurring(TODAY)).toEqual({ created: 0, itemsTouched: 0 })
     expect(chunkKeys()).toEqual([])
   })

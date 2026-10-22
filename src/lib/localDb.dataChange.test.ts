@@ -1,5 +1,7 @@
 // No CONTRACT_GAPs: lastDataChangeAt behaviour is specified in the Interface
-// Contract (module: localDb additions).
+// Contract (module: localDb additions). Deletes are soft now, and
+// applyIncomingRecords / undeleteExpense / compactTombstones follow the plan
+// (§5, §8): incoming changes and undelete are data changes, compacting is not.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +9,8 @@ import {
   addCategory,
   addExpense,
   addIncome,
+  applyIncomingRecords,
+  compactTombstones,
   deleteBudget,
   deleteCategory,
   deleteExpense,
@@ -15,6 +19,7 @@ import {
   getAllBudgets,
   provisionDefaultCategories,
   quarantineKey,
+  undeleteExpense,
   unlockLocalDb,
   updateCategory,
   updateExpense,
@@ -35,6 +40,10 @@ vi.mock('idb-keyval', () => ({
       return Promise.reject(new Error('settings write failed'))
     }
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  setMany: (entries: Array<[string, unknown]>) => {
+    for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
   del: (key: string) => {
@@ -171,6 +180,23 @@ describe('lastDataChangeAt is set after every committed mutation', () => {
     expect(changedAt()).toBe(T3)
   })
 
+  it('undeleteExpense', async () => {
+    const cat = await addCategory({ name: 'Food' })
+    const e = await addExpense({
+      amount: 5,
+      currency: 'UAH',
+      categoryId: cat.id,
+      createdAt: T1,
+    })
+    setNow(T2)
+    await deleteExpense(e.id, e.createdAt)
+
+    setNow(T3)
+    await undeleteExpense(e.id, e.createdAt)
+
+    expect(changedAt()).toBe(T3)
+  })
+
   it('addIncome', async () => {
     await addIncome({ categoryId: 'ic1', amount: 5, currency: 'UAH' })
 
@@ -233,6 +259,21 @@ describe('lastDataChangeAt is set after every committed mutation', () => {
 
     expect(changedAt()).toBe(T1)
   })
+
+  it('applyIncomingRecords, when it applied something', async () => {
+    setNow(T2)
+
+    await applyIncomingRecords([
+      {
+        type: 'category',
+        id: 'remote-cat',
+        updatedAt: T2,
+        data: { id: 'remote-cat', name: 'Remote', icon: null, updatedAt: T2 },
+      },
+    ])
+
+    expect(changedAt()).toBe(T2)
+  })
 })
 
 describe('lastDataChangeAt merges into meta:settings', () => {
@@ -286,6 +327,23 @@ describe('lastDataChangeAt is not set when nothing committed', () => {
     expect(changedAt()).toBe(T1)
   })
 
+  it('deleting a record that does not exist or is already deleted does not set it', async () => {
+    const inc = await addIncome({
+      categoryId: 'ic1',
+      amount: 5,
+      currency: 'UAH',
+    })
+    setNow(T2)
+    await deleteIncome(inc.id)
+    expect(changedAt()).toBe(T2)
+
+    setNow(T3)
+    await deleteIncome(inc.id)
+    await deleteIncome('never-existed')
+
+    expect(changedAt()).toBe(T2)
+  })
+
   it('a DecryptError on the underlying blob does not set it', async () => {
     mockStore.set('income', crypto.getRandomValues(new Uint8Array(64)))
 
@@ -305,6 +363,48 @@ describe('lastDataChangeAt is not set when nothing committed', () => {
 
     expect(target).not.toBeNull()
     expect(changedAt()).toBe(T1)
+  })
+
+  it('compactTombstones is not a data change', async () => {
+    const inc = await addIncome({
+      categoryId: 'ic1',
+      amount: 5,
+      currency: 'UAH',
+    })
+    await deleteIncome(inc.id)
+    expect(changedAt()).toBe(T1)
+
+    setNow(T3)
+    const removed = await compactTombstones('2030-01-01T00:00:00.000Z')
+
+    expect(removed).toBe(1)
+    expect(changedAt()).toBe(T1)
+  })
+
+  it('applyIncomingRecords that keeps the local record does not set it', async () => {
+    setNow(T2)
+    await applyIncomingRecords([
+      {
+        type: 'category',
+        id: 'remote-cat',
+        updatedAt: T2,
+        data: { id: 'remote-cat', name: 'Remote', icon: null, updatedAt: T2 },
+      },
+    ])
+    expect(changedAt()).toBe(T2)
+
+    setNow(T3)
+    const result = await applyIncomingRecords([
+      {
+        type: 'category',
+        id: 'remote-cat',
+        updatedAt: T1,
+        data: { id: 'remote-cat', name: 'Older', icon: null, updatedAt: T1 },
+      },
+    ])
+
+    expect(result).toEqual({ applied: 0, kept: 1, conflicts: 0 })
+    expect(changedAt()).toBe(T2)
   })
 })
 
