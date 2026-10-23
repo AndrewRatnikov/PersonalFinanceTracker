@@ -97,7 +97,9 @@ function queryKeysFor(storageKey: string): Array<Array<string>> {
     case 'recurring':
       return [['recurring'], ['expenses'], ['income'], ['analytics']]
     case 'meta:settings':
-      // The main currency and the exchange-rate switch change every total.
+    case 'syncedSettings':
+      // The main currency and the exchange-rate switch (encrypted record
+      // `syncedSettings`; legacy fields in `meta:settings`) change every total.
       return [
         ['settings'],
         ['conversion-status'],
