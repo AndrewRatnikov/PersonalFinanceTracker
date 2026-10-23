@@ -221,13 +221,24 @@ describe('seq and pull (criterion 11)', () => {
       Date.parse(
         expectOk<Array<{ last_seen_at: string }>>(await f.rpc('list_devices'))[0].last_seen_at,
       )
-    const t0 = await seen()
+    const backdate = async () => {
+      await ctx.admin(
+        `update public.devices set last_seen_at = now() - interval '1 hour' where device_id = $1`,
+        [f.deviceId],
+      )
+    }
+    // Not wall-clock gaps between calls: reset to an hour ago before each call.
+    const recent = Date.now() - 30 * 60_000
+
+    await backdate()
+    expect(await seen()).toBeLessThan(recent)
     expectOk(await push(f, [wireRecord(1)]))
-    const t1 = await seen()
+    expect(await seen()).toBeGreaterThan(recent)
+
+    await backdate()
+    expect(await seen()).toBeLessThan(recent)
     expectOk(await pull(f, 0))
-    const t2 = await seen()
-    expect(t1).toBeGreaterThan(t0)
-    expect(t2).toBeGreaterThan(t1)
+    expect(await seen()).toBeGreaterThan(recent)
   })
 })
 
@@ -366,6 +377,7 @@ describe('element validation', () => {
     ['record_key with a plus', { ...wireRecord(1), record_key: `${'a'.repeat(20)}+` }],
     ['record_key with padding', { ...wireRecord(1), record_key: `${'a'.repeat(20)}=` }],
     ['record_key too long', { ...wireRecord(1), record_key: 'a'.repeat(129) }],
+    // A JSON number record_key must be rejected: the server requires jsonb_typeof = 'string'.
     ['record_key not a string', { ...wireRecord(1), record_key: 12345678901234567890 }],
     ['empty ciphertext', { ...wireRecord(1), ciphertext: '' }],
     ['ciphertext too long', { ...wireRecord(1), ciphertext: 'c'.repeat(65537) }],

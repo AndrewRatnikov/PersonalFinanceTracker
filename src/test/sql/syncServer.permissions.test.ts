@@ -380,12 +380,20 @@ describe('register_device (criterion 9)', () => {
     )
     expectOk(await rpc('rename_device', { p_device_id: id, p_label: 'Renamed' }))
 
+    // Push last_seen_at an hour back so the refresh is detectable without
+    // depending on wall-clock gaps between fast transactions.
+    await ctx.admin(
+      `update public.devices set last_seen_at = now() - interval '1 hour' where device_id = $1`,
+      [id],
+    )
+    const backdated = Date.now() - 3_600_000
+
     const again = expectOk<{ label: string; created_at: string; last_seen_at: string }>(
       await rpc('register_device', { p_device_id: id, p_label: 'Old name' }),
     )
     expect(again.label).toBe('Renamed')
     expect(again.created_at).toEqual(created.created_at)
-    expect(Date.parse(again.last_seen_at)).toBeGreaterThan(Date.parse(created.last_seen_at))
+    expect(Date.parse(again.last_seen_at)).toBeGreaterThan(backdated + 30 * 60_000)
     expect(expectOk<Array<unknown>>(await rpc('list_devices'))).toHaveLength(1)
   })
 
