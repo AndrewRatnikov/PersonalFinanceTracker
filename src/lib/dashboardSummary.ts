@@ -10,6 +10,7 @@ import type {
 import { t } from '@/i18n/core'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { mainAmountOf } from '@/lib/money'
+import { isLive } from '@/lib/syncRecords'
 
 export type BudgetStatus = 'ok' | 'warning' | 'over'
 
@@ -75,14 +76,11 @@ export function getBudgetStatus(ratio: number): BudgetStatus {
 export function computeDashboardSummary(
   input: DashboardSummaryInput,
 ): DashboardSummary {
-  const {
-    expenses,
-    income,
-    budgets,
-    categories,
-    now,
-    mainCurrency = DEFAULT_MAIN_CURRENCY,
-  } = input
+  const { categories, now, mainCurrency = DEFAULT_MAIN_CURRENCY } = input
+  // Deleted records (tombstones) never count.
+  const expenses = input.expenses.filter(isLive)
+  const income = input.income.filter(isLive)
+  const budgets = input.budgets.filter(isLive)
 
   const n = dayjs(now)
   const isThisMonth = (createdAt: string) => {
