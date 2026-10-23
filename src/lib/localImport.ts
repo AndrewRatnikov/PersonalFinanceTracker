@@ -13,7 +13,11 @@ import {
 } from './localDb'
 import { AppError } from './appErrors'
 import { CURRENCIES } from './domain'
+import { isLive } from './syncRecords'
 import type { Category, Currency } from './domain'
+
+// Deleted records (tombstones) are never matched: a row equal to a deleted
+// entry is not a duplicate, and a deleted category's name is unknown.
 
 // A row that was skipped, as a code the UI words in the UI language. `row` is
 // numbered like the "Row N" errors (record index + 2); `value` is the raw cell.
@@ -254,7 +258,7 @@ export async function importCategoriesFromCSV(
   csv: string,
 ): Promise<ImportResult> {
   const rows = parseCSV(csv)
-  const existing = await getAllCategories()
+  const existing = (await getAllCategories()).filter(isLive)
   const existingNames = new Set(
     existing.map((c) => c.name.trim().toLowerCase()),
   )
@@ -287,7 +291,7 @@ export async function importExpensesFromCSV(
   csv: string,
   options: ImportOptions = {},
 ): Promise<ImportResult> {
-  const categories = await getAllCategories()
+  const categories = (await getAllCategories()).filter(isLive)
   if (categories.length === 0) {
     throw new AppError(
       'import-needs-categories',
@@ -303,7 +307,7 @@ export async function importExpensesFromCSV(
   const existing = new Set<string>()
   if (!options.allowDuplicates) {
     const nameById = new Map(categories.map((c) => [c.id, c.name]))
-    for (const e of await getAllExpenses()) {
+    for (const e of (await getAllExpenses()).filter(isLive)) {
       existing.add(
         expenseFingerprint({
           createdAt: e.createdAt,
@@ -404,12 +408,14 @@ export async function importIncomeFromCSV(
   options: ImportOptions = {},
 ): Promise<ImportResult> {
   const categoryMap = new Map<string, Category>(
-    (await getAllIncomeCategories()).map((c) => [c.name.trim().toLowerCase(), c]),
+    (await getAllIncomeCategories())
+      .filter(isLive)
+      .map((c) => [c.name.trim().toLowerCase(), c]),
   )
 
   const existing = new Set<string>()
   if (!options.allowDuplicates) {
-    for (const i of await getAllIncome()) {
+    for (const i of (await getAllIncome()).filter(isLive)) {
       existing.add(
         incomeFingerprint({
           createdAt: i.createdAt,
@@ -510,7 +516,7 @@ export async function importIncomeFromCSV(
 }
 
 export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
-  const categories = await getAllCategories()
+  const categories = (await getAllCategories()).filter(isLive)
   if (categories.length === 0) {
     throw new AppError(
       'import-needs-categories',
