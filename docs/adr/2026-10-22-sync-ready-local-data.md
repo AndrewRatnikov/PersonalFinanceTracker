@@ -1,0 +1,40 @@
+# Sync-ready local data: tombstones, local rev, deterministic occurrence ids, synced settings record
+
+- **Status:** Accepted
+- **Date:** 2026-10-22
+- **Source:** orchestrator run `run_20261022_204015` (sync groundwork, local data only; no network code)
+- **Code:** `src/lib/localDb.ts`, `src/lib/syncRecords.ts`, `src/lib/occurrenceId.ts`, `src/lib/appSettings.ts`, `src/lib/backup.ts`, `src/lib/domain.ts`
+- **Supersedes:** [2026-09-29-cross-month-expense-move-order](2026-09-29-cross-month-expense-move-order.md), and in part `docs/adr/2026-10-08-backup-restore-rules.md` (equal-time rule, replace semantics) and `docs/adr/2026-10-15-main-currency-stored-nbu-conversion.md` (where the main currency is stored), `docs/free-tier-spec.md` §5.5 and §15
+
+## Context
+
+Encrypted multi-device sync is planned for later runs. Per-record newest-wins sync needs four things the local store did not have. Deletes were hard deletes, so a delete could not win or lose a merge. There was no cheap "changed since" marker: timestamps are unreliable because device clocks move backwards and conversion writes deliberately leave `updatedAt` alone. Two offline devices generating the same recurring occurrence produced two records with random ids (ADR 2026-10-14 asked for a revisit once a server exists). The currency settings lived in plaintext `meta:settings` next to per-device state, so they could not be synced as an encrypted record.
+
+## Decision
+
+- **Tombstones.** `Category`, `Expense`, `IncomeEntry`, `BudgetEntry` and `RecurringItem` gain optional `deletedAt` and `rev`. A delete sets `deletedAt = updatedAt = now` and keeps the record in its array and chunk. One pure helper, `isLive` in `src/lib/syncRecords.ts`, is used by every reader and computation (lists, totals, analytics, dashboard, recurrence, conversion, CSV export and import, suggestions, repeat-last, name and "in use" checks). A deleted category name can be reused and gets a new id. Deleting a missing or already-deleted record writes nothing. Only quarantine, wipe and `compactTombstones(olderThan)` remove data. `undeleteExpense` clears `deletedAt` and bumps `updatedAt`; Repeat-last's Undo stays a delete and no UI was added.
+- **Local rev.** The plaintext key `meta:sync` holds `{ localRev }` (missing or junk reads as 0). Every user write stamps each record it creates, changes, deletes or undeletes with `rev = ++localRev` and writes the data and `meta:sync` in the same `setMany`, under a write lock that includes `meta:sync`. A write that sets `updatedAt` stamps `rev`, and only such writes do (this includes `convertBudgets`' budget fix). Derived writes (conversion, migrations, quarantine, applied incoming records, compaction) touch neither. A record without `rev` counts as 0, so the first sync uploads a full snapshot. `rev` is stripped from every public localDb read and from backups, CSV and sync records.
+- **Sync API.** `listChangedRecords(sinceRev)`, `applyIncomingRecords(records)` and `compactTombstones(olderThan)` in `localDb.ts`. `applyIncomingRecords` is one transaction, changes no `rev` or `localRev`, rejects the whole batch if one record is malformed, and moves an expense to the chunk of its `createdAt`.
+- **Merge rule.** `mergeRecord` returns `take-incoming` (strictly newer), `keep-local`, or `conflict-same-time` (equal time, different canonical content). `sameTimeWinner` resolves a tie: a tombstone wins, otherwise the larger canonical JSON string (keys sorted recursively; `rev`, `conversion` and the joined `category` ignored). Every tie counts in `RestoreSummary.conflicts`, whichever side wins. Backup merge uses the same functions.
+- **Replace-restore** keeps live local records absent from the backup as fresh tombstones instead of dropping them, and stamps a fresh rev on every record it writes. Merge-restore is one `setMany` with one rev per written record and writes nothing when the plan is empty.
+- **Occurrence ids.** A record generated for a recurring occurrence gets `occurrenceRecordId(recurringId, occurrenceDate)`: the first 16 bytes of SHA-256 of `${recurringId}:${occurrenceDate}`, with version nibble 5 and RFC 4122 variant bits, formatted as a UUID. Existing records keep their ids. The `recurringId` + `occurrenceDate` check stays and counts tombstones as handled, so a deleted occurrence is never regenerated.
+- **Synced settings.** `mainCurrency` and `fetchExchangeRates` move to an encrypted single-object data key `syncedSettings` (`SyncedSettingsRecord`, id `settings`, with `updatedAt` and `rev`). It is an object, not a one-element array, so the generic array-key paths (restore, replace fill, backup loop) don't treat it as user records. Per-device state stays in plaintext `meta:settings`, language in localStorage and a cookie, and `localRev` in `meta:sync`. Reads fall back to the legacy `meta:settings` fields until the record exists. A one-time idempotent migration after unlock moves the legacy fields and strips them from `meta:settings`. The migrated record carries no `rev`; its `updatedAt` is the epoch (`SETTINGS_DEFAULT_UPDATED_AT`) for pure defaults and the migration time when a real value was stored. `getCurrencySettings` now lets a `DecryptError` from `syncedSettings` propagate to the Data problem screen (ADR 2026-10-07) instead of reading as defaults.
+- **Cross-month move.** `updateExpense` writes both month chunks and `meta:sync` in one `setMany`.
+
+## Alternatives considered
+
+- **Separate tombstone list per key, or hard deletes plus a deletion log.** Lost: the first splits a record's history across two places; the second has no `updatedAt` race semantics.
+- **Timestamps as the change marker.** Lost: clock skew, and conversion writes don't bump `updatedAt`. **Encrypting `meta:sync`** lost: it holds no user data and must be readable before unlock.
+- **Random ids plus a pair check at merge time, or a `${recurringId}:${date}` string id.** Lost: type-specific dedupe logic; and the string is not UUID-shaped while ids are validated as `[A-Za-z0-9_-]{1,100}` in URLs.
+- **A one-element array for settings, or keeping the fields in plaintext `meta:settings`.** Lost for the reasons above.
+- **Migrated settings with `updatedAt` always `now`** (a fresh second device would beat the first device's real choice) **or always the epoch** (two migrated devices would be decided by the JSON tie-break, "UAH" over "EUR", rather than by having a real value). A rev at migration also lost: it is a derived write and the first sync uploads everything anyway.
+- **Tie-break folded into `mergeRecord`, or counting only conflicts the incoming side wins.** Lost: conflicts could not be counted, and the same tie would count differently by direction.
+- **Keeping the two-write chunk move.** Lost: the rev must commit atomically with the data; the 2026-09-29 ADR itself named one `setMany` as the follow-up.
+
+## Consequences
+
+- Deletes no longer free space until `compactTombstones` runs; nothing calls it yet. Every new reader must filter with `isLive`, or deleted records reappear.
+- Atomic moves remove the duplicate-on-crash window; merge restore changes from "equal time, local wins" to the deterministic tie-break, and replace-restore now leaves tombstones.
+- Deviations as shipped: converter background writes (`applyEntryConversions`, `convertBudgets` without a currency change) no longer set `lastDataChangeAt`. Merge restore no longer calls `ensureIncomeCategories`; only replace does, and a device without an `incomeCategories` key gets defaults at the next unlock. The migration strips the legacy fields even when they held only invalid values.
+- Accepted gaps: records generated before this run keep random ids, so two devices that both generated the same occurrence show both copies after the first sync (a later run could dedupe by `recurringId` + `occurrenceDate`). The time-zone neighbouring-chunk gap of ADR 2026-10-14 remains. A malformed incoming record rejects the whole batch. Backup tombstones for unknown ids are stored and counted as `added`.
+- Revisit if the sync engine prefers skip-and-report for bad records, or if clock-based newest-wins proves too lossy.

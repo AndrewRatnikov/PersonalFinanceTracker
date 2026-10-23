@@ -8,7 +8,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 
 | Date | Decision | Status |
 |---|---|---|
-| [2026-09-29](2026-09-29-cross-month-expense-move-order.md) | Moving an expense to another month writes the new chunk before removing it from the old one | Accepted |
+| [2026-09-29](2026-09-29-cross-month-expense-move-order.md) | Moving an expense to another month writes the new chunk before removing it from the old one | Superseded by [2026-10-22](2026-10-22-sync-ready-local-data.md) |
 | [2026-09-30](2026-09-30-one-currency-at-a-time-no-conversion.md) | Totals are computed in one currency at a time; other currencies are listed, not converted | Superseded by [2026-10-15](2026-10-15-main-currency-stored-nbu-conversion.md) |
 | [2026-10-05](2026-10-05-no-budget-dashboard-layout.md) | Without a budget, the month figures live in the dashboard hero, and `BudgetSummaryCard` only appears once a budget is set | Accepted |
 | [2026-10-07](2026-10-07-decrypt-errors-from-queries-and-mutations.md) | A decrypt error from any query *or* mutation opens the Data problem screen and is never retried | Accepted |
@@ -22,6 +22,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-20](2026-10-20-expense-drawer-driven-by-url-params.md) | Expense add/edit in one drawer driven by URL params | Accepted |
 | [2026-10-20](2026-10-20-category-default-currency-stored-on-category.md) | A category's default currency is an optional field on the category record | Accepted |
 | [2026-10-21](2026-10-21-custom-typed-i18n-catalog-cookie-localstorage.md) | Custom typed i18n catalog, language via cookie + localStorage | Accepted |
+| [2026-10-22](2026-10-22-sync-ready-local-data.md) | Sync-ready local data: tombstones, local rev, deterministic occurrence ids, synced settings record | Accepted |
 
 ## Where else decisions live
 
