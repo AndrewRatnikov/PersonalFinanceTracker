@@ -33,6 +33,16 @@ export function isDataRoute(pathname: string): boolean {
   )
 }
 
+// Public pages (Terms, Privacy) read no data: the unlock gate never covers
+// them, so they stay readable while the vault is locked or being created.
+export const PUBLIC_ROUTES: ReadonlyArray<string> = ['/terms', '/privacy']
+
+export function isPublicRoute(pathname: string): boolean {
+  return PUBLIC_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  )
+}
+
 export function phaseForVaultState(state: VaultState): VaultPhase {
   // v1, v2 and orphaned all go to the gate, which picks Unlock or Recovery.
   return state === 'none' ? 'none' : 'locked'
@@ -104,7 +114,9 @@ export function computeGate(input: {
   const { mounted, phase, createRequested, pathname } = input
   return {
     showGate:
-      mounted && (phase === 'locked' || (phase === 'none' && createRequested)),
+      mounted &&
+      !isPublicRoute(pathname) &&
+      (phase === 'locked' || (phase === 'none' && createRequested)),
     // Non-data routes keep rendering under the overlay (the OAuth callback
     // must still run while locked). Data routes wait for the unlock so their
     // queries never run without a key.
