@@ -27,12 +27,20 @@
 // records with only a free-text `source`) is converted with
 // convertIncomeSources before planning, so old backups restore into
 // categories.
+//
+// Sync groundwork: tombstones (`deletedAt`) travel in the payload, the local
+// `rev` never does. Merge decides per record with syncRecords.mergeRecord and
+// its same-time tie-break, so a newer tombstone in a backup deletes on merge.
+// Replace keeps local-only live records as fresh tombstones. Every record a
+// restore writes gets a fresh rev, committed with `meta:sync` in the one
+// setMany. The currency settings live in the encrypted `syncedSettings`
+// record: createBackup reads them from it, replace writes it, merge leaves it.
 
 import dayjs from 'dayjs'
 import { get, keys, setMany } from 'idb-keyval'
 import { t as translateMessage } from '../i18n/core'
 
-import { getAppSettings, getCurrencySettings } from './appSettings'
+import { getAppSettings } from './appSettings'
 import { getBackupSettings, recordBackupCompleted } from './backupReminder'
 import {
   base64ToBytes,
@@ -45,14 +53,19 @@ import { isCurrency } from './domain'
 import { saveFile } from './fileDownload'
 import { convertIncomeSources } from './incomeCategories'
 import {
+  SYNCED_SETTINGS_KEY,
+  SYNC_META_KEY,
   ensureIncomeCategories,
   expenseChunkKey,
   getLocalDbKey,
+  getLocalRev,
   getLocalStore,
+  readSyncedSettings,
   requestEntryConversion,
   unlockLocalDb,
 } from './localDb'
 import { postChanged } from './syncChannel'
+import { isLive, mergeRecord, sameTimeWinner } from './syncRecords'
 import {
   META_SETTINGS_KEY,
   META_VAULT_KEY,
@@ -71,6 +84,7 @@ import type {
   Expense,
   IncomeEntry,
   RecurringItem,
+  SyncedSettingsRecord,
 } from './domain'
 import type { VaultHeaderV2 } from './vault'
 
@@ -91,8 +105,10 @@ export interface BackupPayload {
   incomeCategories?: Array<Category>
   // Optional so backups made before recurring items still validate.
   recurring?: Array<RecurringItem>
-  // Records keep their raw `conversion` / `manualRate`. The currency settings
-  // are optional so backups made before the main currency still validate.
+  // Records keep their raw `conversion` / `manualRate` and `deletedAt`, never
+  // the local `rev`. The currency settings are optional so backups made
+  // before the main currency still validate (and are left out when the
+  // settings record was unreadable in a partial backup).
   settings: {
     autoLockMinutes: number
     backupReminderDays: number
@@ -184,6 +200,18 @@ function stripCategory(e: Expense): Expense {
   return copy
 }
 
+// A copy without the local `rev` (local bookkeeping never leaves the device).
+function stripRev<T extends object>(record: T): T {
+  if (!('rev' in record)) return record
+  const copy: Record<string, unknown> = { ...record }
+  delete copy.rev
+  return copy as T
+}
+
+function stripRevs<T extends object>(list: Array<T>): Array<T> {
+  return list.map(stripRev)
+}
+
 async function dataKeysOf(store: UseStore): Promise<Array<string>> {
   return (await keys(store))
     .filter((k): k is string => typeof k === 'string' && isDataStorageKey(k))
@@ -241,15 +269,31 @@ export async function createBackup(
       skipped.push(key)
       continue
     }
-    if (!Array.isArray(value)) continue
-    if (key === 'categories') categories = value as Array<Category>
+    // `syncedSettings` is a single record, read through readSyncedSettings.
+    if (key === SYNCED_SETTINGS_KEY || !Array.isArray(value)) continue
+    if (key === 'categories') categories = stripRevs(value as Array<Category>)
     else if (key === 'incomeCategories') {
-      incomeCategories = value as Array<Category>
-    } else if (key === 'income') income = value as Array<IncomeEntry>
-    else if (key === 'budgets') budgets = value as Array<BudgetEntry>
-    else if (key === 'recurring') recurring = value as Array<RecurringItem>
-    else {
-      for (const e of value as Array<Expense>) expenses.push(stripCategory(e))
+      incomeCategories = stripRevs(value as Array<Category>)
+    } else if (key === 'income') income = stripRevs(value as Array<IncomeEntry>)
+    else if (key === 'budgets') budgets = stripRevs(value as Array<BudgetEntry>)
+    else if (key === 'recurring') {
+      recurring = stripRevs(value as Array<RecurringItem>)
+    } else {
+      for (const e of value as Array<Expense>) {
+        expenses.push(stripRev(stripCategory(e)))
+      }
+    }
+  }
+
+  // The record when readable, else the legacy fields or the defaults. Left
+  // out when the record was skipped as unreadable.
+  let currency: Pick<SyncedSettingsRecord, 'mainCurrency' | 'fetchExchangeRates'> | null =
+    null
+  if (!skipped.includes(SYNCED_SETTINGS_KEY)) {
+    const record = await readSyncedSettings()
+    currency = {
+      mainCurrency: record.mainCurrency,
+      fetchExchangeRates: record.fetchExchangeRates,
     }
   }
 
@@ -264,7 +308,7 @@ export async function createBackup(
     settings: {
       autoLockMinutes: (await getAppSettings()).autoLockMinutes,
       backupReminderDays: (await getBackupSettings()).backupReminderDays,
-      ...(await getCurrencySettings()),
+      ...(currency ?? {}),
     },
   }
 
@@ -359,19 +403,31 @@ export function backupFileName(now = new Date()): string {
 
 // ── Restore ───────────────────────────────────────────────────────────────────
 
-// 'replace' when this device holds no expenses, income, budgets or recurring
-// items (default expense and income categories don't count), otherwise 'merge'.
+// 'replace' when this device holds no live expenses, income, budgets or
+// recurring items (default expense and income categories, the synced settings
+// and tombstones don't count), otherwise 'merge'.
 export async function defaultRestoreMode(): Promise<RestoreMode> {
   const store = getLocalStore()
   const dek = getLocalDbKey()
   if (!store || !dek) return 'replace'
   for (const key of await dataKeysOf(store)) {
-    if (key === 'categories' || key === 'incomeCategories') continue
+    if (
+      key === 'categories' ||
+      key === 'incomeCategories' ||
+      key === SYNCED_SETTINGS_KEY
+    ) {
+      continue
+    }
     const raw = await get<unknown>(key, store)
     if (!(raw instanceof Uint8Array)) continue
     try {
       const value = await decryptValue(dek, raw)
-      if (Array.isArray(value) && value.length > 0) return 'merge'
+      if (
+        Array.isArray(value) &&
+        value.some((r) => isObject(r) && isLive(r as { deletedAt?: string }))
+      ) {
+        return 'merge'
+      }
     } catch {
       // Unreadable data is still data: don't offer to replace it by default.
       return 'merge'
@@ -407,17 +463,24 @@ function validatePayload(value: unknown): BackupPayload {
     }
   }
   const settings = isObject(value.settings) ? value.settings : {}
+  // A `rev` inside a file is dropped: revs are local bookkeeping.
   return {
     schemaVersion: 1,
-    categories: value.categories as Array<Category>,
-    expenses: (value.expenses as Array<Expense>).map(stripCategory),
-    income: value.income as Array<IncomeEntry>,
-    budgets: value.budgets as Array<BudgetEntry>,
+    categories: stripRevs(value.categories as Array<Category>),
+    expenses: (value.expenses as Array<Expense>).map((e) =>
+      stripRev(stripCategory(e)),
+    ),
+    income: stripRevs(value.income as Array<IncomeEntry>),
+    budgets: stripRevs(value.budgets as Array<BudgetEntry>),
     ...(value.incomeCategories !== undefined
-      ? { incomeCategories: value.incomeCategories as Array<Category> }
+      ? {
+          incomeCategories: stripRevs(
+            value.incomeCategories as Array<Category>,
+          ),
+        }
       : {}),
     ...(value.recurring !== undefined
-      ? { recurring: value.recurring as Array<RecurringItem> }
+      ? { recurring: stripRevs(value.recurring as Array<RecurringItem>) }
       : {}),
     settings: settings as BackupPayload['settings'],
   }
@@ -474,35 +537,11 @@ async function openBackup(
   return { dek, payload: await decryptPayload(dek, backup.payload) }
 }
 
-function timestampOf(r: { updatedAt?: string; createdAt?: string }): number {
-  const t = Date.parse(r.updatedAt ?? r.createdAt ?? '')
-  return Number.isNaN(t) ? 0 : t
-}
-
-function contentOf(r: object): string {
-  if ('category' in r) return JSON.stringify(stripCategory(r as Expense))
-  return JSON.stringify(r)
-}
-
-type Outcome = 'added' | 'updated' | 'conflict' | 'same'
-
 interface MergeRecord {
   id: string
   updatedAt?: string
   createdAt?: string
-}
-
-// The merge rule: the backup record wins only when it is strictly newer.
-function compare(
-  local: MergeRecord | undefined,
-  incoming: MergeRecord,
-): Outcome {
-  if (!local) return 'added'
-  const a = timestampOf(local)
-  const b = timestampOf(incoming)
-  if (b > a) return 'updated'
-  if (b === a && contentOf(local) !== contentOf(incoming)) return 'conflict'
-  return 'same'
+  deletedAt?: string
 }
 
 interface Counters {
@@ -511,31 +550,60 @@ interface Counters {
   conflicts: number
 }
 
+// Hands out fresh revs for the records a restore writes; committed as
+// `meta:sync` in the same setMany.
+interface RevSource {
+  next: () => number
+}
+
+function stamped<T extends object>(record: T, revs: RevSource): T {
+  return { ...record, rev: revs.next() }
+}
+
+// The merge decision for one record: whether the backup's record is written,
+// and how it counts. A same-time conflict is always counted; the backup's
+// record is written when it wins the tie-break.
+function mergeOutcome(
+  local: MergeRecord | undefined,
+  incoming: MergeRecord,
+  counters: Counters,
+): boolean {
+  const decision = mergeRecord(local, incoming)
+  if (decision === 'take-incoming') {
+    if (local) counters.updated++
+    else counters.added++
+    return true
+  }
+  if (decision === 'conflict-same-time' && local) {
+    counters.conflicts++
+    return sameTimeWinner(local, incoming) === 'incoming'
+  }
+  return false
+}
+
 // Upserts a single-key collection by id. Returns the merged list and how many
 // records were written, or null when nothing changed.
 function mergeList(
   local: Array<MergeRecord>,
   incoming: Array<MergeRecord>,
   counters: Counters,
+  revs: RevSource,
 ): { records: Array<MergeRecord>; written: number } | null {
   const result = [...local]
   const index = new Map(result.map((r, i) => [r.id, i]))
   let written = 0
   for (const record of incoming) {
     const i = index.get(record.id)
-    const outcome = compare(i === undefined ? undefined : result[i], record)
-    if (outcome === 'added') {
+    const current = i === undefined ? undefined : result[i]
+    if (!mergeOutcome(current, record, counters)) continue
+    const next = stamped(record, revs)
+    if (i === undefined) {
       index.set(record.id, result.length)
-      result.push(record)
-      counters.added++
-      written++
-    } else if (outcome === 'updated' && i !== undefined) {
-      result[i] = record
-      counters.updated++
-      written++
-    } else if (outcome === 'conflict') {
-      counters.conflicts++
+      result.push(next)
+    } else {
+      result[i] = next
     }
+    written++
   }
   return written > 0 ? { records: result, written } : null
 }
@@ -552,8 +620,10 @@ function groupExpenses(expenses: Array<Expense>): Map<string, Array<Expense>> {
 }
 
 interface LocalData {
-  // Decrypted value per data key.
+  // Decrypted list per data key (not the settings record).
   values: Map<string, Array<unknown>>
+  // The decrypted synced settings record, when readable.
+  settings?: unknown
   // Raw stored values that could not be decrypted (replace only), or every
   // stored value of an orphaned device. Quarantined unchanged.
   unreadable: Map<string, unknown>
@@ -567,18 +637,20 @@ async function readLocal(
 ): Promise<LocalData> {
   const values = new Map<string, Array<unknown>>()
   const unreadable = new Map<string, unknown>()
+  let settings: unknown
   for (const key of dataKeys) {
     const raw = await get<unknown>(key, store)
     if (!(raw instanceof Uint8Array)) continue
     try {
       const value = await decryptValue(dek, raw)
-      values.set(key, Array.isArray(value) ? value : [])
+      if (key === SYNCED_SETTINGS_KEY) settings = value
+      else values.set(key, Array.isArray(value) ? value : [])
     } catch (err) {
       if (mode === 'merge') throw new DecryptError(key, err)
       unreadable.set(key, raw)
     }
   }
-  return { values, unreadable }
+  return { values, settings, unreadable }
 }
 
 // An orphaned device has no key that could open its data: every stored value
@@ -616,7 +688,7 @@ type PreparedPayload = BackupPayload & { incomeCategories: Array<Category> }
 // Converts legacy income (no incomeCategories in the payload, or records with
 // only a free-text source) into income categories. The backup records keep
 // their own updatedAt, so merging the same legacy backup again is a no-op
-// and never overwrites a newer local edit. In a merge the local income
+// and never overwrites a newer local edit. In a merge the live local income
 // categories are reused by name. Defaults are added only when a payload
 // without incomeCategories replaces the data.
 function prepareIncome(
@@ -637,7 +709,7 @@ function prepareIncome(
     const ids = new Set(base.map((c) => c.id))
     for (const c of (local.values.get('incomeCategories') ??
       []) as Array<Category>) {
-      if (!ids.has(c.id)) base.push(c)
+      if (!ids.has(c.id) && isLive(c)) base.push(stripRev(c))
     }
   }
   const converted = convertIncomeSources(payload.income, base, {
@@ -660,20 +732,71 @@ interface Plan {
   counters: Counters
 }
 
-function planReplace(local: LocalData, payload: PreparedPayload): Plan {
+type SingleCollection =
+  | 'categories'
+  | 'incomeCategories'
+  | 'income'
+  | 'budgets'
+  | 'recurring'
+
+function planReplace(
+  local: LocalData,
+  payload: PreparedPayload,
+  revs: RevSource,
+  now: string,
+): Plan {
   const writes = new Map<string, Array<unknown>>()
-  writes.set('categories', payload.categories)
-  writes.set('incomeCategories', payload.incomeCategories)
-  writes.set('income', payload.income)
-  writes.set('budgets', payload.budgets)
   const recurring = payload.recurring ?? []
-  writes.set('recurring', recurring)
+  const singles: Array<[SingleCollection, Array<MergeRecord>]> = [
+    ['categories', payload.categories],
+    ['incomeCategories', payload.incomeCategories],
+    ['income', payload.income],
+    ['budgets', payload.budgets],
+    ['recurring', recurring],
+  ]
+  // Every backup record is written with a fresh rev and its own times.
+  for (const [key, list] of singles) {
+    writes.set(
+      key,
+      list.map((r) => stamped(r, revs)),
+    )
+  }
   for (const [key, list] of groupExpenses(payload.expenses)) {
+    writes.set(
+      key,
+      list.map((r) => stamped(r, revs)),
+    )
+  }
+
+  // A live local record the backup doesn't have stays as a fresh tombstone
+  // (so a later sync can't bring it back); a local tombstone stays as it is.
+  const keepLocal = (record: MergeRecord): MergeRecord =>
+    isLive(record)
+      ? stamped({ ...record, deletedAt: now, updatedAt: now }, revs)
+      : record
+  for (const [key, incoming] of singles) {
+    const ids = new Set(incoming.map((r) => r.id))
+    const list = writes.get(key) ?? []
+    for (const r of (local.values.get(key) ?? []) as Array<MergeRecord>) {
+      if (!ids.has(r.id)) list.push(keepLocal(r))
+    }
     writes.set(key, list)
   }
-  // Keys the backup doesn't cover become an encrypted empty list, so the
-  // restore stays one setMany with no deletes.
+  const backupExpenseIds = new Set(payload.expenses.map((e) => e.id))
+  for (const [key, list] of local.values) {
+    if (!key.startsWith(EXPENSE_CHUNK_PREFIX)) continue
+    for (const r of list as Array<Expense>) {
+      if (backupExpenseIds.has(r.id)) continue
+      const chunk = expenseChunkKey(r.createdAt)
+      const target = writes.get(chunk) ?? []
+      target.push(keepLocal(r))
+      writes.set(chunk, target)
+    }
+  }
+  // Keys the backup doesn't cover and nothing was kept in become an
+  // encrypted empty list, so the restore stays one setMany with no deletes.
   for (const key of [...local.values.keys(), ...local.unreadable.keys()]) {
+    if (key === SYNCED_SETTINGS_KEY) continue
     if (!writes.has(key)) writes.set(key, [])
   }
 
@@ -704,7 +827,11 @@ function planReplace(local: LocalData, payload: PreparedPayload): Plan {
   }
 }
 
-function planMerge(local: LocalData, payload: PreparedPayload): Plan {
+function planMerge(
+  local: LocalData,
+  payload: PreparedPayload,
+  revs: RevSource,
+): Plan {
   const writes = new Map<string, Array<unknown>>()
   const counters: Counters = { added: 0, updated: 0, conflicts: 0 }
   const counts = {
@@ -731,6 +858,7 @@ function planMerge(local: LocalData, payload: PreparedPayload): Plan {
       (local.values.get(key) ?? []) as Array<MergeRecord>,
       incoming,
       counters,
+      revs,
     )
     if (merged) {
       writes.set(key, merged.records)
@@ -738,13 +866,13 @@ function planMerge(local: LocalData, payload: PreparedPayload): Plan {
     }
   }
 
-  // Recurring items: upsert by id, the newer updatedAt wins. They have no
-  // count of their own in RestoreSummary; they show in added / updated /
-  // conflicts.
+  // Recurring items: upsert by id with the same rule. They have no count of
+  // their own in RestoreSummary; they show in added / updated / conflicts.
   const mergedRecurring = mergeList(
     (local.values.get('recurring') ?? []) as Array<MergeRecord>,
     payload.recurring ?? [],
     counters,
+    revs,
   )
   if (mergedRecurring) writes.set('recurring', mergedRecurring.records)
 
@@ -763,13 +891,7 @@ function planMerge(local: LocalData, payload: PreparedPayload): Plan {
       oldKey === undefined
         ? undefined
         : chunks.get(oldKey)?.find((e) => e.id === incoming.id)
-    const outcome = compare(current, incoming)
-    if (outcome !== 'added' && outcome !== 'updated') {
-      if (outcome === 'conflict') counters.conflicts++
-      continue
-    }
-    if (outcome === 'added') counters.added++
-    else counters.updated++
+    if (!mergeOutcome(current, incoming, counters)) continue
     counts.expenses++
 
     if (oldKey !== undefined) {
@@ -780,13 +902,35 @@ function planMerge(local: LocalData, payload: PreparedPayload): Plan {
       changed.add(oldKey)
     }
     const newKey = expenseChunkKey(incoming.createdAt)
-    chunks.set(newKey, [...(chunks.get(newKey) ?? []), incoming])
+    chunks.set(newKey, [...(chunks.get(newKey) ?? []), stamped(incoming, revs)])
     where.set(incoming.id, newKey)
     changed.add(newKey)
   }
   for (const key of changed) writes.set(key, chunks.get(key) ?? [])
 
   return { writes, counts, counters }
+}
+
+// The local currency settings: the readable record, else the legacy
+// plaintext fields, else the defaults.
+function localCurrency(
+  local: LocalData,
+  plain: Record<string, unknown>,
+): Pick<SyncedSettingsRecord, 'mainCurrency' | 'fetchExchangeRates'> {
+  const record = isObject(local.settings) ? local.settings : plain
+  return {
+    mainCurrency: isCurrency(record.mainCurrency)
+      ? record.mainCurrency
+      : isCurrency(plain.mainCurrency)
+        ? plain.mainCurrency
+        : 'UAH',
+    fetchExchangeRates:
+      typeof record.fetchExchangeRates === 'boolean'
+        ? record.fetchExchangeRates
+        : typeof plain.fetchExchangeRates === 'boolean'
+          ? plain.fetchExchangeRates
+          : true,
+  }
 }
 
 export async function restoreBackup(
@@ -831,12 +975,14 @@ export async function restoreBackup(
     'income',
     'budgets',
     'recurring',
+    SYNCED_SETTINGS_KEY,
     ...groupExpenses(payload.expenses).keys(),
   ]
   const localKeys = fresh ? [] : await dataKeysOf(store)
   const lockKeys = [
     ...new Set([...localKeys, ...backupKeys]),
     META_SETTINGS_KEY,
+    SYNC_META_KEY,
     ...(adopt ? [META_VAULT_KEY] : []),
   ]
 
@@ -848,12 +994,17 @@ export async function restoreBackup(
         ? await readOrphaned(store, localKeys)
         : await readLocal(store, targetDek, localKeys, effectiveMode)
 
-    // 5. Convert legacy income, then compute the final collections.
+    // 5. Convert legacy income, then compute the final collections. Every
+    //    record written gets a fresh rev.
+    const startRev = await getLocalRev()
+    let lastRev = startRev
+    const revs: RevSource = { next: () => ++lastRev }
+    const now = new Date().toISOString()
     const prepared = prepareIncome(payload, local, effectiveMode)
     const plan =
       effectiveMode === 'replace'
-        ? planReplace(local, prepared)
-        : planMerge(local, prepared)
+        ? planReplace(local, prepared, revs, now)
+        : planMerge(local, prepared, revs)
 
     const summary: RestoreSummary = {
       mode: effectiveMode,
@@ -862,23 +1013,42 @@ export async function restoreBackup(
       skipped: backup.skipped ?? [],
       adoptedVault: adopt,
     }
-    if (
-      effectiveMode === 'merge' &&
-      plan.counters.added + plan.counters.updated === 0
-    ) {
+    // A merge that changes nothing (no added, no updated, no tie won by the
+    // backup) writes nothing.
+    if (effectiveMode === 'merge' && plan.writes.size === 0) {
       return { summary, written: [] as Array<string> }
     }
 
     // 6. Write once.
-    const now = new Date().toISOString()
+    const storedRaw = await get<unknown>(META_SETTINGS_KEY, store)
+    const plain: Record<string, unknown> = isObject(storedRaw) ? storedRaw : {}
     const entries: Array<[string, unknown]> = []
     for (const [key, records] of plan.writes) {
       entries.push([key, await encryptValue(targetDek, records)])
     }
+    const written = [...plan.writes.keys()]
     if (effectiveMode === 'replace') {
       for (const [key, raw] of local.unreadable) {
         entries.push([`quarantine:${key}:${now}`, raw])
       }
+      // The synced settings: the backup's valid values, else the local ones.
+      const current = localCurrency(local, plain)
+      const { mainCurrency, fetchExchangeRates } = payload.settings as Record<
+        string,
+        unknown
+      >
+      const record: SyncedSettingsRecord = {
+        id: 'settings',
+        mainCurrency: isCurrency(mainCurrency) ? mainCurrency : current.mainCurrency,
+        fetchExchangeRates:
+          typeof fetchExchangeRates === 'boolean'
+            ? fetchExchangeRates
+            : current.fetchExchangeRates,
+        updatedAt: now,
+        rev: revs.next(),
+      }
+      entries.push([SYNCED_SETTINGS_KEY, await encryptValue(targetDek, record)])
+      written.push(SYNCED_SETTINGS_KEY)
     }
     if (adopt) {
       const header: VaultHeaderV2 = {
@@ -892,9 +1062,8 @@ export async function restoreBackup(
       }
       entries.push([META_VAULT_KEY, header])
     }
-    const storedRaw = await get<unknown>(META_SETTINGS_KEY, store)
     const settings: Record<string, unknown> = {
-      ...(isObject(storedRaw) ? storedRaw : {}),
+      ...plain,
       lastDataChangeAt: now,
     }
     if (adopt) {
@@ -911,30 +1080,30 @@ export async function restoreBackup(
       if (typeof backupReminderDays === 'number') {
         settings.backupReminderDays = backupReminderDays
       }
-      // Invalid or missing (an older backup): the local values stay.
-      const { mainCurrency, fetchExchangeRates } = payload.settings as Record<
-        string,
-        unknown
-      >
-      if (isCurrency(mainCurrency)) settings.mainCurrency = mainCurrency
-      if (typeof fetchExchangeRates === 'boolean') {
-        settings.fetchExchangeRates = fetchExchangeRates
-      }
+      // The currency settings now live in `syncedSettings`.
+      delete settings.mainCurrency
+      delete settings.fetchExchangeRates
     }
     entries.push([META_SETTINGS_KEY, settings])
+    if (lastRev !== startRev) {
+      entries.push([SYNC_META_KEY, { localRev: lastRev }])
+    }
 
     // One transaction: everything commits or nothing does.
     await setMany(entries, store)
-    return { summary, written: [...plan.writes.keys()] }
+    return { summary, written }
   })
 
   // 7. After commit.
   if (adopt) unlockLocalDb(backupDek)
   if (result.written.length > 0) {
     postChanged(result.written)
-    // Safety net: a no-op whenever the restore wrote incomeCategories. Runs
-    // after the restore lock is released (the lock isn't re-entrant).
-    await ensureIncomeCategories()
+    // Safety net after a replace (a no-op whenever the restore wrote
+    // incomeCategories). Runs after the restore lock is released (the lock
+    // isn't re-entrant). A merge writes only the records that changed: a
+    // device without income categories gets them at the next unlock
+    // (prepareUnlockedVault), so the merge stays one transaction.
+    if (result.summary.mode === 'replace') await ensureIncomeCategories()
     // Records from the backup may be pending (an older backup, or another
     // main currency): convert them in the background.
     requestEntryConversion()

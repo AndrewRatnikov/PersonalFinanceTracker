@@ -30,6 +30,7 @@ const SINGLE_KEY_LABELS: Record<string, MessageKey> = {
   budgets: 'common.storageKeys.budgets',
   incomeCategories: 'common.storageKeys.incomeCategories',
   recurring: 'common.storageKeys.recurring',
+  syncedSettings: 'common.storageKeys.syncedSettings',
 }
 
 // True for the keys that hold user data in the current (v1) format.

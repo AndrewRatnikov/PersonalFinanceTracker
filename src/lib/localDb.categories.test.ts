@@ -1,5 +1,8 @@
 // No CONTRACT_GAPs: addCategory / updateCategory behaviour (#10) is fully
 // specified in the Interface Contract.
+//
+// Every user write now goes through setMany (data key + meta:sync in one
+// transaction), so the idb-keyval mock carries a setMany.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +22,10 @@ vi.mock('idb-keyval', () => ({
   get: (key: string) => Promise.resolve(mockStore.get(key)),
   set: (key: string, value: unknown) => {
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  setMany: (entries: Array<[string, unknown]>) => {
+    for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
   clear: () => {
@@ -59,6 +66,7 @@ describe('localDb categories: trim and uniqueness (#10)', () => {
     it('rejects a case-insensitive, whitespace-insensitive duplicate and stores nothing', async () => {
       await addCategory({ name: 'Food' })
       const before = mockStore.get('categories')
+      const syncBefore = mockStore.get('meta:sync')
 
       await expect(addCategory({ name: ' food ' })).rejects.toThrow(
         /already exists/,
@@ -66,6 +74,7 @@ describe('localDb categories: trim and uniqueness (#10)', () => {
 
       expect(await getAllCategories()).toHaveLength(1)
       expect(mockStore.get('categories')).toBe(before)
+      expect(mockStore.get('meta:sync')).toEqual(syncBefore)
     })
 
     it('rejects an empty or whitespace-only name', async () => {
@@ -123,6 +132,19 @@ describe('localDb categories: trim and uniqueness (#10)', () => {
       const updated = await updateCategory({ id: a.id, name: ' Groceries ' })
 
       expect(updated.name).toBe('Groceries')
+    })
+
+    it('an unknown id is refused before anything is written', async () => {
+      await addCategory({ name: 'Food' })
+      const before = mockStore.get('categories')
+      const syncBefore = mockStore.get('meta:sync')
+
+      await expect(
+        updateCategory({ id: 'missing', name: 'Whatever' }),
+      ).rejects.toMatchObject({ code: 'category-not-found' })
+
+      expect(mockStore.get('categories')).toBe(before)
+      expect(mockStore.get('meta:sync')).toEqual(syncBefore)
     })
   })
 })

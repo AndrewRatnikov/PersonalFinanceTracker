@@ -36,6 +36,7 @@ export const en = {
       budgets: 'Budgets',
       incomeCategories: 'Income categories',
       recurring: 'Recurring',
+      syncedSettings: 'Currency settings',
       expensesMonth: 'Expenses · {month}',
     },
     cancel: 'Cancel',

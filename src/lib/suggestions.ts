@@ -1,6 +1,8 @@
 // Description suggestions, computed in memory from already-decrypted entries.
-// Pure: no IndexedDB, no React. Nothing new is stored.
+// Pure: no IndexedDB, no React. Nothing new is stored. Deleted entries
+// (tombstones) are skipped.
 
+import { isLive } from './syncRecords'
 import type { Currency } from './domain'
 
 export interface SuggestionEntry {
@@ -9,6 +11,8 @@ export interface SuggestionEntry {
   amount: number
   currency: Currency
   createdAt: string
+  /** Set on a soft-deleted entry; such entries are ignored. */
+  deletedAt?: string
 }
 
 export interface DescriptionSuggestion {
@@ -63,6 +67,7 @@ export function suggestDescriptions(
 
   const groups = new Map<string, Group>()
   for (const entry of entries) {
+    if (!isLive(entry)) continue
     const description = entry.description
     if (typeof description !== 'string') continue
     const key = groupKey(description)

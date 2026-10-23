@@ -6,6 +6,7 @@ import { normalizeRange } from './analyticsUtils'
 import { DEFAULT_MAIN_CURRENCY } from './domain'
 import { incomeSourceLabel } from './incomeCategories'
 import { mainAmountOf } from './money'
+import { isLive } from './syncRecords'
 import type { RangeInput } from './analyticsUtils'
 import type {
   AnalyticsRangeSummary,
@@ -18,6 +19,7 @@ import type {
 // Every total sums mainAmountOf() in the main currency. Entries still waiting
 // for a rate are left out and counted in pendingCount; budgets in another
 // currency are left out of the variance and counted in budgetsExcluded.
+// Deleted records (tombstones) never count.
 export type RangeAnalytics = AnalyticsRangeSummary & {
   mainCurrency: Currency
   pendingCount: number
@@ -58,11 +60,14 @@ export async function computeRangeAnalytics(
 ): Promise<RangeAnalytics> {
   const range = normalizeRange(input)
 
-  const [expenses, income, budgets] = await Promise.all([
+  const [allExpenses, allIncome, allBudgets] = await Promise.all([
     getExpensesForRange(range.from, range.to),
     getAllIncome(),
     getAllBudgets(),
   ])
+  const expenses = allExpenses.filter(isLive)
+  const income = allIncome.filter(isLive)
+  const budgets = allBudgets.filter(isLive)
 
   const categoryMap = new Map<string, CategoryBreakdownItem>()
   const timelineMap = new Map<string, number>()

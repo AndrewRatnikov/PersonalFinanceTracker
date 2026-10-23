@@ -1,6 +1,6 @@
 # Moving an expense to another month writes the new chunk before removing it from the old one
 
-- **Status:** Accepted
+- **Status:** Superseded by [2026-10-22-sync-ready-local-data](2026-10-22-sync-ready-local-data.md)
 - **Date:** 2026-09-29
 - **Source:** orchestrator run `run_20260929_221728` (inline editing of expenses)
 - **Code:** `src/lib/localDb.ts` (`updateExpense`)

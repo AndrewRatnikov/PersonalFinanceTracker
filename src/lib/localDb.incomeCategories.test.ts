@@ -2,6 +2,10 @@
 // refusal wording, ensureIncomeCategories and prepareUnlockedVault are fully
 // specified in the Interface Contract (module: localDb). wipeLocalDbKey is an
 // existing localDb export used to simulate a locked app.
+//
+// Deletes are soft (tombstones), counts for the delete refusal include live
+// records only, and every setMany that creates a category also carries
+// meta:sync.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +23,7 @@ import {
   getAllCategories,
   getAllIncome,
   getAllIncomeCategories,
+  getLocalRev,
   prepareUnlockedVault,
   unlockLocalDb,
   updateIncomeCategory,
@@ -206,6 +211,18 @@ describe('income category CRUD: trim and uniqueness', () => {
   it('getAllIncomeCategories returns [] when nothing is stored', async () => {
     expect(await getAllIncomeCategories()).toEqual([])
   })
+
+  it('a deleted income category name can be used again and gets a new id', async () => {
+    const first = await addIncomeCategory({ name: 'Salary' })
+    await deleteIncomeCategory(first.id)
+
+    const second = await addIncomeCategory({ name: 'salary' })
+
+    expect(second.id).not.toBe(first.id)
+    expect((await getAllIncomeCategories()).map((c) => c.id)).toEqual([second.id])
+    const raw = await readStored('incomeCategories')
+    expect(raw.map((c) => c.id)).toEqual([first.id, second.id])
+  })
 })
 
 describe('updateIncomeCategory', () => {
@@ -266,6 +283,18 @@ describe('updateIncomeCategory', () => {
       'Salary',
     )
   })
+
+  it('treats a deleted category like a missing one and writes nothing', async () => {
+    const a = await addIncomeCategory({ name: 'Salary' })
+    await deleteIncomeCategory(a.id)
+    const before = mockStore.get('incomeCategories')
+
+    await expect(
+      updateIncomeCategory({ id: a.id, name: 'Wages' }),
+    ).rejects.toThrow('Category not found')
+
+    expect(mockStore.get('incomeCategories')).toBe(before)
+  })
 })
 
 describe('deleteIncomeCategory', () => {
@@ -308,6 +337,20 @@ describe('deleteIncomeCategory', () => {
     )
   })
 
+  it('does not count deleted entries', async () => {
+    const cat = await addIncomeCategory({ name: 'Salary' })
+    const keep = await addIncome({ categoryId: cat.id, amount: 1, currency: 'UAH' })
+    const drop = await addIncome({ categoryId: cat.id, amount: 2, currency: 'UAH' })
+    await deleteIncome(drop.id)
+
+    await expect(deleteIncomeCategory(cat.id)).rejects.toThrow(
+      '1 income entry uses this category',
+    )
+
+    await deleteIncome(keep.id)
+    await expect(deleteIncomeCategory(cat.id)).resolves.toBeUndefined()
+  })
+
   it('succeeds once no entry uses the category, and removes only that category', async () => {
     const a = await addIncomeCategory({ name: 'Salary' })
     const b = await addIncomeCategory({ name: 'Gifts' })
@@ -330,6 +373,21 @@ describe('deleteIncomeCategory', () => {
     await deleteIncomeCategory(a.id)
 
     expect(await getAllIncomeCategories()).toEqual([])
+  })
+
+  it('keeps the category as a tombstone in the same key', async () => {
+    const a = await addIncomeCategory({ name: 'Salary' })
+    const b = await addIncomeCategory({ name: 'Gifts' })
+    vi.setSystemTime(new Date(T2))
+
+    await deleteIncomeCategory(a.id)
+
+    const raw = await readStored('incomeCategories')
+    expect(raw.map((c) => c.id)).toEqual([a.id, b.id])
+    expect(raw[0].deletedAt).toBe(T2)
+    expect(raw[0].updatedAt).toBe(T2)
+    expect(raw[0].name).toBe('Salary')
+    expect('deletedAt' in raw[1]).toBe(false)
   })
 
   it('does not touch the expense categories', async () => {
@@ -534,6 +592,21 @@ describe('ensureIncomeCategories: legacy conversion', () => {
     }
   })
 
+  it('stamps a rev on each category it creates, but none on the rewritten income records', async () => {
+    await seedLegacyIncome(LEGACY_ROWS)
+
+    await ensureIncomeCategories()
+
+    const categories = await readStored('incomeCategories')
+    expect(categories).toHaveLength(7)
+    const revs = categories.map((c) => c.rev as number).sort((a, b) => a - b)
+    expect(revs).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(await getLocalRev()).toBe(7)
+    for (const record of await readStored('income')) {
+      expect('rev' in record).toBe(false)
+    }
+  })
+
   it('every income entry ends up with a valid categoryId (via getAllIncome too)', async () => {
     await seedLegacyIncome(LEGACY_ROWS)
 
@@ -578,7 +651,7 @@ describe('ensureIncomeCategories: legacy conversion', () => {
     expect(converted?.categoryId).not.toBe('ic-x')
   })
 
-  it('writes both keys in ONE setMany and announces both keys once', async () => {
+  it('writes both keys and meta:sync in ONE setMany and announces both data keys once', async () => {
     await seedLegacyIncome(LEGACY_ROWS)
     const channel = fakeChannel()
     setSyncChannel(channel)
@@ -587,7 +660,7 @@ describe('ensureIncomeCategories: legacy conversion', () => {
 
     expect(ctl.setManyCalls).toHaveLength(1)
     expect([...ctl.setManyCalls[0]].sort()).toEqual(
-      ['income', 'incomeCategories'].sort(),
+      ['income', 'incomeCategories', 'meta:sync'].sort(),
     )
     expect(channel.postMessage).toHaveBeenCalledTimes(1)
     expect([...postedKeys(channel)].sort()).toEqual(
@@ -608,6 +681,7 @@ describe('ensureIncomeCategories: legacy conversion', () => {
     expect(mockStore.get('income')).toBe(incomeBefore)
     expect(Array.from(mockStore.get('income') as Uint8Array)).toEqual(bytesBefore)
     expect(mockStore.has('incomeCategories')).toBe(false)
+    expect(mockStore.has('meta:sync')).toBe(false)
     expect(channel.postMessage).not.toHaveBeenCalled()
   })
 

@@ -38,6 +38,7 @@ export const uk: LocalizedMessages = {
       budgets: 'Бюджети',
       incomeCategories: 'Категорії доходів',
       recurring: 'Регулярні платежі',
+      syncedSettings: 'Налаштування валюти',
       expensesMonth: 'Витрати · {month}',
     },
     cancel: 'Скасувати',

@@ -10,11 +10,15 @@
 // Occurrence k (k = 0, 1, 2, …) is always computed from startDate, so month
 // and year steps clamp to the end of a short month without drifting:
 // Jan 31 monthly gives Feb 28, then Mar 31 again.
+//
+// Deleted items (tombstones, see syncRecords.isLive) are never due, upcoming
+// or counted in a total.
 
 import { plural } from '../i18n/core'
 import { CURRENCIES } from './domain'
 import { formatMoney } from './money'
 import { crossRate } from './rates/types'
+import { isLive } from './syncRecords'
 import type { RateTable } from './rates/types'
 import type {
   Currency,
@@ -241,7 +245,7 @@ export function dueOccurrences(
 ): Array<RecurringOccurrence> {
   const result: Array<RecurringOccurrence> = []
   for (const item of items) {
-    if (item.mode !== 'ask' || item.paused) continue
+    if (item.mode !== 'ask' || item.paused || !isLive(item)) continue
     const ahead = new Set(item.handledAhead)
     for (const date of occurrencesBetween(item, item.handledThrough, today)) {
       if (!ahead.has(date)) result.push({ item, occurrenceDate: date })
@@ -261,7 +265,7 @@ export function upcomingOccurrences(
   const through = addDaysToDate(today, days)
   const result: Array<RecurringOccurrence> = []
   for (const item of items) {
-    if (item.paused) continue
+    if (item.paused || !isLive(item)) continue
     const after =
       item.handledThrough !== null && item.handledThrough > today
         ? item.handledThrough
@@ -308,7 +312,7 @@ export function monthlyTotals(
   const sums = new Map<string, number>()
   const yesterday = addDaysToDate(today, -1)
   for (const item of items) {
-    if (item.paused) continue
+    if (item.paused || !isLive(item)) continue
     if (nextOccurrence(item, yesterday) === null) continue
     const key = `${item.kind}:${item.currency}`
     sums.set(key, (sums.get(key) ?? 0) + monthlyEquivalent(item))
@@ -340,7 +344,7 @@ export function monthlyTotalsInMain(
   const sums = new Map<RecurringKind, { total: number; approximate: boolean }>()
   const yesterday = addDaysToDate(today, -1)
   for (const item of items) {
-    if (item.paused) continue
+    if (item.paused || !isLive(item)) continue
     if (nextOccurrence(item, yesterday) === null) continue
     let rate = 1
     const converted = item.currency !== mainCurrency

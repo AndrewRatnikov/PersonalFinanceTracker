@@ -1,11 +1,15 @@
 // No CONTRACT_GAPs: changeMainCurrency, MainCurrencyChangeError,
 // getConversionStatus, subscribeConversion and CONVERSION_STATUS_QUERY_KEY are
 // fully specified in the Interface Contract (module: conversion) and plan
-// section 5.
+// sections 5 and 7.
 //
 // Integration style: the real localDb with a Map-backed idb-keyval, records
 // seeded encrypted, an injected provider (id 'nbu', vi.fn getRates). The real
 // NBU is never called.
+//
+// The main currency now lives in the encrypted `syncedSettings` record.
+// Seeding the plaintext meta:settings fields still works (legacy fallback);
+// after a change the new value is read back from `syncedSettings`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
@@ -26,11 +30,12 @@ import {
   getConversionStatus,
   subscribeConversion,
 } from '@/lib/conversion'
-import { unlockLocalDb } from '@/lib/localDb'
+import { getLocalRev, unlockLocalDb } from '@/lib/localDb'
 import { RateUnavailableError } from '@/lib/rates/types'
 
-const { mockStore } = vi.hoisted(() => ({
+const { mockStore, ctl } = vi.hoisted(() => ({
   mockStore: new Map<string, unknown>(),
+  ctl: { failSetMany: false },
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -41,6 +46,7 @@ vi.mock('idb-keyval', () => ({
     return Promise.resolve()
   },
   setMany: (entries: Array<[string, unknown]>) => {
+    if (ctl.failSetMany) return Promise.reject(new Error('transaction aborted'))
     for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
@@ -137,9 +143,17 @@ async function readRaw<T>(storageKey: string): Promise<Array<T>> {
   return (await decryptValue(dek, raw)) as Array<T>
 }
 
-function storedMain(): unknown {
-  return (mockStore.get('meta:settings') as Record<string, unknown> | undefined)
-    ?.mainCurrency
+// The synced settings record once it exists, else the legacy plaintext fields.
+async function storedCurrencySettings(): Promise<Record<string, unknown>> {
+  const raw = mockStore.get('syncedSettings')
+  if (raw instanceof Uint8Array) {
+    return (await decryptValue(dek, raw)) as Record<string, unknown>
+  }
+  return (mockStore.get('meta:settings') as Record<string, unknown> | undefined) ?? {}
+}
+
+async function storedMain(): Promise<unknown> {
+  return (await storedCurrencySettings()).mainCurrency
 }
 
 // A realistic mixed vault: main UAH, converted to UAH.
@@ -168,13 +182,15 @@ async function seedMixedVault() {
   })
 }
 
-function snapshotVault() {
-  return Promise.resolve({
+async function snapshotVault() {
+  return {
     chunk: mockStore.get(OCT_CHUNK),
     budgets: mockStore.get('budgets'),
     income: mockStore.get('income'),
-    main: storedMain(),
-  })
+    main: await storedMain(),
+    syncedSettings: mockStore.get('syncedSettings'),
+    rev: await getLocalRev(),
+  }
 }
 
 async function expectRefusal(
@@ -193,6 +209,7 @@ async function expectRefusal(
 
 beforeEach(async () => {
   mockStore.clear()
+  ctl.failSetMany = false
   dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
     'encrypt',
     'decrypt',
@@ -212,7 +229,7 @@ describe('changeMainCurrency: the change', () => {
     const result = await changeMainCurrency('EUR', { provider, today: TODAY })
 
     expect(provider.getRates).toHaveBeenCalledWith(TODAY)
-    expect(storedMain()).toBe('EUR')
+    expect(await storedMain()).toBe('EUR')
 
     const budgets = await readRaw<BudgetEntry>('budgets')
     expect(budgets.every((b) => b.currency === 'EUR')).toBe(true)
@@ -237,6 +254,20 @@ describe('changeMainCurrency: the change', () => {
     expect(result.rateDate).toBe(TODAY)
   })
 
+  it('writes the new currency into syncedSettings and strips it from the plaintext settings', async () => {
+    await seedMixedVault()
+
+    await changeMainCurrency('EUR', { provider: makeProvider(), today: TODAY })
+
+    const synced = await storedCurrencySettings()
+    expect(synced.id).toBe('settings')
+    expect(synced.mainCurrency).toBe('EUR')
+    expect(synced.fetchExchangeRates).toBe(true)
+    const plain = mockStore.get('meta:settings') as Record<string, unknown>
+    expect('mainCurrency' in plain).toBe(false)
+    expect('fetchExchangeRates' in plain).toBe(false)
+  })
+
   it('keeps the other settings', async () => {
     await seedMixedVault()
 
@@ -244,7 +275,34 @@ describe('changeMainCurrency: the change', () => {
 
     const settings = mockStore.get('meta:settings') as Record<string, unknown>
     expect(settings.autoLockMinutes).toBe(5)
-    expect(settings.fetchExchangeRates).toBe(true)
+    expect((await storedCurrencySettings()).fetchExchangeRates).toBe(true)
+  })
+
+  it('bumps updatedAt and rev on the settings record and on every converted budget, and on nothing else', async () => {
+    await seedMixedVault()
+    const revBefore = await getLocalRev()
+
+    await changeMainCurrency('EUR', { provider: makeProvider(), today: TODAY })
+
+    const synced = await storedCurrencySettings()
+    const budgets = await readRaw<BudgetEntry & { rev?: number }>('budgets')
+    expect(typeof synced.rev).toBe('number')
+    expect(synced.updatedAt).not.toBe(OLD)
+    const revs = [synced.rev as number, ...budgets.map((b) => b.rev as number)]
+    expect(new Set(revs).size).toBe(3)
+    expect([...revs].sort((a, b) => a - b)).toEqual([
+      revBefore + 1,
+      revBefore + 2,
+      revBefore + 3,
+    ])
+    expect(budgets.every((b) => b.updatedAt !== OLD)).toBe(true)
+    // The entries were only recalculated: no rev, updatedAt untouched.
+    const expenses = await readRaw<Expense & { rev?: number }>(OCT_CHUNK)
+    for (const e of expenses) {
+      expect(e.rev).toBeUndefined()
+      expect(e.updatedAt).toBe(OLD)
+    }
+    expect(await getLocalRev()).toBe(revBefore + 3)
   })
 
   it('treats all entries as pending first: progress starts at 0 of all entries', async () => {
@@ -307,7 +365,7 @@ describe('changeMainCurrency: the change', () => {
 
     const result = await changeMainCurrency('EUR', { provider, today: TODAY })
 
-    expect(storedMain()).toBe('EUR')
+    expect(await storedMain()).toBe('EUR')
     expect(result.budgetsConverted).toBe(2)
     expect(result.converted).toBe(0)
     expect(result.stillPending).toBe(2)
@@ -332,6 +390,22 @@ describe('changeMainCurrency: the change', () => {
     expect(await snapshotVault()).toEqual(before)
   })
 
+  it('changing to the main currency stored in syncedSettings does nothing either', async () => {
+    await seedMixedVault()
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'EUR',
+      fetchExchangeRates: true,
+      updatedAt: OLD,
+    })
+    const provider = makeProvider()
+
+    const result = await changeMainCurrency('EUR', { provider, today: TODAY })
+
+    expect(result.rateDate).toBeNull()
+    expect(provider.getRates).not.toHaveBeenCalled()
+  })
+
   it('notifies subscribers about the committed change', async () => {
     await seedMixedVault()
     const listener = vi.fn()
@@ -350,10 +424,25 @@ describe('changeMainCurrency: the change', () => {
 
     const back = await changeMainCurrency('UAH', { provider, today: TODAY })
 
-    expect(storedMain()).toBe('UAH')
+    expect(await storedMain()).toBe('UAH')
     expect(back.converted).toBe(2)
     const expenses = await readRaw<Expense>(OCT_CHUNK)
     expect(expenses.every((e) => e.conversion?.mainCurrency === 'UAH')).toBe(true)
+  })
+
+  it('a failed transaction changes neither the budgets, the settings nor the change counter', async () => {
+    await seedMixedVault()
+    const before = await snapshotVault()
+    const settingsBefore = mockStore.get('meta:settings')
+    ctl.failSetMany = true
+
+    await expect(
+      changeMainCurrency('EUR', { provider: makeProvider(), today: TODAY }),
+    ).rejects.toThrow('transaction aborted')
+
+    expect(await snapshotVault()).toEqual(before)
+    expect(mockStore.get('meta:settings')).toBe(settingsBefore)
+    expect(mockStore.has('syncedSettings')).toBe(false)
   })
 })
 
@@ -387,6 +476,26 @@ describe('changeMainCurrency: refusals change nothing', () => {
     )
 
     expect(provider.getRates).not.toHaveBeenCalled()
+    expect(await snapshotVault()).toEqual(before)
+  })
+
+  it('refuses when exchange rates are off in syncedSettings', async () => {
+    await seedMixedVault()
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'UAH',
+      fetchExchangeRates: false,
+      updatedAt: OLD,
+    })
+    const provider = makeProvider()
+    const before = await snapshotVault()
+
+    await expectRefusal(
+      changeMainCurrency('EUR', { provider, today: TODAY }),
+      'rates-off',
+      'Turn on exchange rates from the National Bank of Ukraine to change the main currency.',
+    )
+
     expect(await snapshotVault()).toEqual(before)
   })
 
@@ -443,7 +552,7 @@ describe('changeMainCurrency: when nothing needs a rate', () => {
 
     const result = await changeMainCurrency('EUR', { provider, today: TODAY })
 
-    expect(storedMain()).toBe('EUR')
+    expect(await storedMain()).toBe('EUR')
     expect(result.budgetsConverted).toBe(0)
     expect(provider.getRates).not.toHaveBeenCalled()
   })
@@ -457,7 +566,7 @@ describe('changeMainCurrency: when nothing needs a rate', () => {
 
     const result = await changeMainCurrency('EUR', { provider, today: TODAY })
 
-    expect(storedMain()).toBe('EUR')
+    expect(await storedMain()).toBe('EUR')
     expect(result.converted).toBe(1)
     expect(result.stillPending).toBe(0)
     const [stored] = await readRaw<Expense>(OCT_CHUNK)
@@ -474,10 +583,37 @@ describe('changeMainCurrency: when nothing needs a rate', () => {
 
     const result = await changeMainCurrency('EUR', { provider, today: TODAY })
 
-    expect(storedMain()).toBe('EUR')
+    expect(await storedMain()).toBe('EUR')
     expect(result.converted).toBe(1)
     const [stored] = await readRaw<Expense>(OCT_CHUNK)
     expect(stored.conversion).toMatchObject({ source: 'manual', rate: 0.9, mainAmount: 20 * 0.9 })
+  })
+
+  it('keeps the exchange-rates switch the user had when only the currency changes', async () => {
+    mockStore.set('meta:settings', { mainCurrency: 'UAH', fetchExchangeRates: false })
+    await seed(OCT_CHUNK, [
+      makeExpense({ currency: 'EUR', amount: 12, conversion: conv('UAH', 12, 45.1) }),
+    ])
+
+    await changeMainCurrency('EUR', { provider: makeProvider(), today: TODAY })
+
+    expect((await storedCurrencySettings()).fetchExchangeRates).toBe(false)
+  })
+
+  it('does not count a deleted entry when it decides whether a rate is needed', async () => {
+    mockStore.set('meta:settings', { mainCurrency: 'UAH', fetchExchangeRates: false })
+    await seed(OCT_CHUNK, [
+      makeExpense({ id: 'eur', currency: 'EUR', amount: 12, conversion: conv('UAH', 12, 45.1) }),
+      makeExpense({ id: 'dead', currency: 'USD', deletedAt: OLD }),
+    ])
+    const provider = makeProvider()
+
+    // The only USD entry is deleted, so no rate is needed (rates are off).
+    const result = await changeMainCurrency('EUR', { provider, today: TODAY })
+
+    expect(await storedMain()).toBe('EUR')
+    expect(result.stillPending).toBe(0)
+    expect(provider.getRates).not.toHaveBeenCalled()
   })
 
   it('still refuses offline when one foreign entry has no manual rate', async () => {
@@ -493,7 +629,7 @@ describe('changeMainCurrency: when nothing needs a rate', () => {
       'offline',
       "You're offline. Connect to the internet to change the main currency.",
     )
-    expect(storedMain()).toBe('UAH')
+    expect(await storedMain()).toBe('UAH')
   })
 })
 
@@ -547,6 +683,23 @@ describe('getConversionStatus', () => {
 
     expect(status.mainCurrency).toBe('EUR')
     expect(status.totalEntries).toBe(2)
+    expect(status.pendingEntries).toBe(1)
+  })
+
+  it('reads the currency settings from syncedSettings', async () => {
+    mockStore.set('meta:settings', { mainCurrency: 'USD', fetchExchangeRates: true })
+    await seed('syncedSettings', {
+      id: 'settings',
+      mainCurrency: 'EUR',
+      fetchExchangeRates: false,
+      updatedAt: OLD,
+    })
+    await seed(OCT_CHUNK, [makeExpense({ id: 'usd' })])
+
+    const status = await getConversionStatus()
+
+    expect(status.mainCurrency).toBe('EUR')
+    expect(status.fetchExchangeRates).toBe(false)
     expect(status.pendingEntries).toBe(1)
   })
 })

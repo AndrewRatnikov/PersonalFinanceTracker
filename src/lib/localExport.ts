@@ -10,11 +10,13 @@ import {
   getAllIncome,
 } from './localDb'
 import { mainAmountOf } from './money'
+import { isLive } from './syncRecords'
 import type { Currency, EntryConversion } from './domain'
 
 // CSV is for spreadsheets, not a backup (spec §8): not encrypted, and it
 // drops IDs and the time of day. Every field is quoted, so commas, quotes and
 // newlines inside a value survive a round trip through localImport.
+// Deleted records (tombstones) are never exported, and `rev` has no column.
 
 function csvEscape(value: string | number | null | undefined): string {
   const str = String(value ?? '')
@@ -36,13 +38,18 @@ function csvRow(values: Array<string | number | null | undefined>): string {
 
 // The four CSV files, keyed by file name. Dates are the local calendar date.
 export async function buildCsvFiles(): Promise<Record<string, string>> {
-  const [expenses, categories, income, budgets, settings] = await Promise.all([
-    getAllExpenses(),
-    getAllCategories(),
-    getAllIncome(),
-    getAllBudgets(),
-    getCurrencySettings(),
-  ])
+  const [allExpenses, allCategories, allIncome, allBudgets, settings] =
+    await Promise.all([
+      getAllExpenses(),
+      getAllCategories(),
+      getAllIncome(),
+      getAllBudgets(),
+      getCurrencySettings(),
+    ])
+  const expenses = allExpenses.filter(isLive)
+  const categories = allCategories.filter(isLive)
+  const income = allIncome.filter(isLive)
+  const budgets = allBudgets.filter(isLive)
   const main = settings.mainCurrency
 
   // expenses.csv — date, amount, currency, category, description,

@@ -5,7 +5,8 @@
 // for the entry's local date, each date fetched once per run) and writes back
 // only the `conversion` field, chunk by chunk, under the write lock
 // (localDb.applyEntryConversions). It never throws for missing rates: such
-// entries simply stay pending. A DecryptError propagates.
+// entries simply stay pending. A DecryptError propagates. Deleted entries
+// (tombstones) are never converted or counted.
 //
 // Runs are coalesced per tab: requestConversion() starts a run, or schedules
 // exactly one follow-up while one is running. startAutoConversion() (mounted
@@ -26,6 +27,7 @@ import {
 import { identityConversion, isConverted, mainAmountOf } from './money'
 import { crossRate, rateProvider } from './rates'
 import { toLocalDateString } from './recurrence'
+import { isLive } from './syncRecords'
 import type { Currency, EntryConversion, Expense, IncomeEntry } from './domain'
 import type { EntryConversionUpdate } from './localDb'
 import type { RateProvider, RateTable } from './rates'
@@ -192,7 +194,7 @@ export async function convertPending(
   const pendingGroups = groups
     .map((g) => ({
       storageKey: g.storageKey,
-      records: g.records.filter((r) => !isConverted(r, main)),
+      records: g.records.filter((r) => isLive(r) && !isConverted(r, main)),
     }))
     .filter((g) => g.records.length > 0)
   const total = pendingGroups.reduce((n, g) => n + g.records.length, 0)
@@ -268,7 +270,7 @@ export async function convertPending(
   // One-time fix: budgets saved in another currency are converted at today's
   // rate (only while the stored main currency is still `main`).
   if (!aborted && canFetch && !signal?.aborted && getLocalDbKey()) {
-    const budgets = await getAllBudgets()
+    const budgets = (await getAllBudgets()).filter(isLive)
     if (budgets.some((b) => b.currency !== main)) {
       try {
         const rates = await ratesFor(cache, provider, today)
@@ -386,11 +388,12 @@ export async function getConversionStatus(): Promise<ConversionStatus> {
   let pendingEntries = 0
   for (const group of groups) {
     for (const record of group.records) {
+      if (!isLive(record)) continue
       totalEntries++
       if (mainAmountOf(record, main) === null) pendingEntries++
     }
   }
-  const budgets = await getAllBudgets()
+  const budgets = (await getAllBudgets()).filter(isLive)
   return {
     mainCurrency: main,
     fetchExchangeRates: settings.fetchExchangeRates,
@@ -416,13 +419,16 @@ export async function changeMainCurrency(
   const provider = options.provider ?? rateProvider
   const today = options.today ?? toLocalDateString()
 
-  const budgets = await getAllBudgets()
+  const budgets = (await getAllBudgets()).filter(isLive)
   const groups = await readEntriesForConversion()
   const needsRate =
     budgets.some((b) => b.currency !== next) ||
     groups.some((g) =>
       g.records.some(
-        (r) => r.currency !== next && r.manualRate?.mainCurrency !== next,
+        (r) =>
+          isLive(r) &&
+          r.currency !== next &&
+          r.manualRate?.mainCurrency !== next,
       ),
     )
 

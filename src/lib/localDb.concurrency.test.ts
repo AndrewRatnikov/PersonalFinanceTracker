@@ -1,5 +1,9 @@
 // No CONTRACT_GAPs: write serialization (#3-#5) and the `changed` broadcasts
 // (#14) are fully specified in the Interface Contract.
+//
+// Every user write goes through one setMany that also carries meta:sync, so the
+// idb-keyval mock has a setMany. Deletes are soft: the readers hide the
+// tombstones.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +20,7 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getLocalRev,
   provisionDefaultCategories,
   unlockLocalDb,
   updateCategory,
@@ -33,6 +38,10 @@ vi.mock('idb-keyval', () => ({
   get: (key: string) => Promise.resolve(mockStore.get(key)),
   set: (key: string, value: unknown) => {
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  setMany: (entries: Array<[string, unknown]>) => {
+    for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
   del: (key: string) => {
@@ -158,6 +167,17 @@ describe('localDb write serialization', () => {
       expect(mockStore.has(APRIL_CHUNK)).toBe(true)
     })
 
+    it('writes to different keys still advance the change counter once each', async () => {
+      await Promise.all([
+        addExpense(expenseInput(MARCH)),
+        addIncome({ categoryId: 'ic1', amount: 1, currency: 'UAH' }),
+        addCategory({ name: 'Food' }),
+        upsertBudget({ categoryId: 'c1', monthlyLimit: 1, currency: 'UAH' }),
+      ])
+
+      expect(await getLocalRev()).toBe(4)
+    })
+
     it('3 concurrent addCategory() with distinct names store 3 categories', async () => {
       await Promise.all([
         addCategory({ name: 'Food' }),
@@ -226,7 +246,7 @@ describe('localDb write serialization', () => {
       expect(names).toEqual(['Groceries', 'Rent'])
     })
 
-    it('deleteCategory() racing upsertBudget() leaves no budget for the deleted category', async () => {
+    it('deleteCategory() racing upsertBudget() leaves no live budget for the deleted category', async () => {
       const food = await addCategory({ name: 'Food' })
       const rent = await addCategory({ name: 'Rent' })
       await upsertBudget({
@@ -448,6 +468,21 @@ describe('localDb write serialization', () => {
       setSyncChannel(withoutBudget)
       await deleteCategory(rent.id)
       expect(postedKeys(withoutBudget)).toEqual(['categories'])
+    })
+
+    it('deleting a record that is already deleted posts nothing', async () => {
+      const entry = await addIncome({
+        categoryId: 'ic1',
+        amount: 10,
+        currency: 'UAH',
+      })
+      await deleteIncome(entry.id)
+      const channel = fakeChannel()
+      setSyncChannel(channel)
+
+      await deleteIncome(entry.id)
+
+      expect(channel.postMessage).not.toHaveBeenCalled()
     })
 
     it('posts nothing when the mutation fails', async () => {

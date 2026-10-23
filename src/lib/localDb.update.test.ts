@@ -1,30 +1,41 @@
 // No CONTRACT_GAPs: the Interface Contract for `updateExpense` (src/lib/localDb.ts)
 // fully specifies signature, return shape, chunk-move behavior and throw conditions.
+// A cross-month move is one setMany that carries both chunks and meta:sync (D8).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { decryptValue } from '@/lib/crypto'
 import {
   addCategory,
   addExpense,
+  deleteExpense,
   getAllExpenses,
   getExpensesForRange,
+  getLocalRev,
   unlockLocalDb,
   updateExpense,
 } from '@/lib/localDb'
 
 // In-memory replacement for idb-keyval, hoisted so it exists before the
 // `vi.mock` factory (which itself is hoisted above imports) runs.
-const { mockStore } = vi.hoisted(() => ({
+const { mockStore, ctl } = vi.hoisted(() => ({
   mockStore: new Map<string, unknown>(),
+  ctl: { setManyCalls: [] as Array<Array<string>>, failSetMany: false },
 }))
 
 // vi.mock: idb-keyval is replaced with an in-memory Map-backed implementation
-// of createStore/get/set/clear/keys, per the plan's Tests section.
+// of createStore/get/set/setMany/clear/keys, per the plan's Tests section.
 vi.mock('idb-keyval', () => ({
   createStore: () => 'mock-store',
   get: (key: string) => Promise.resolve(mockStore.get(key)),
   set: (key: string, value: unknown) => {
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  setMany: (entries: Array<[string, unknown]>) => {
+    ctl.setManyCalls.push(entries.map(([key]) => key))
+    if (ctl.failSetMany) return Promise.reject(new Error('transaction aborted'))
+    for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
   clear: () => {
@@ -34,16 +45,25 @@ vi.mock('idb-keyval', () => ({
   keys: () => Promise.resolve(Array.from(mockStore.keys())),
 }))
 
+let dek: CryptoKey
+
+async function readRaw(key: string): Promise<Array<Record<string, unknown>>> {
+  const raw = mockStore.get(key)
+  if (!(raw instanceof Uint8Array)) return []
+  return (await decryptValue(dek, raw)) as Array<Record<string, unknown>>
+}
+
 describe('localDb.updateExpense', () => {
   beforeEach(async () => {
     mockStore.clear()
+    ctl.setManyCalls.length = 0
+    ctl.failSetMany = false
     // Real WebCrypto AES-GCM key, per the plan's unlock procedure.
-    unlockLocalDb(
-      await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
-        'encrypt',
-        'decrypt',
-      ]),
-    )
+    dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+    unlockLocalDb(dek)
   })
 
   describe('criterion 1: same-month update, id unchanged, category resolved', () => {
@@ -121,6 +141,23 @@ describe('localDb.updateExpense', () => {
 
       expect(updated.description).toBeNull()
     })
+
+    it('never returns the local rev', async () => {
+      const food = await addCategory({ name: 'Food' })
+      const created = await addExpense({
+        amount: 10,
+        currency: 'UAH',
+        categoryId: food.id,
+        createdAt: '2026-03-15T12:00:00.000Z',
+      })
+
+      const updated = await updateExpense(created.id, created.createdAt, {
+        amount: 11,
+      })
+
+      expect('rev' in updated).toBe(false)
+      expect('rev' in created).toBe(false)
+    })
   })
 
   describe('criterion 2: cross-month chunk move', () => {
@@ -158,6 +195,72 @@ describe('localDb.updateExpense', () => {
       const all = await getAllExpenses()
       expect(all.filter((e) => e.id === created.id)).toHaveLength(1)
     })
+
+    it('writes the new chunk, the old chunk and meta:sync in ONE setMany', async () => {
+      const food = await addCategory({ name: 'Food' })
+      const created = await addExpense({
+        amount: 10,
+        currency: 'UAH',
+        categoryId: food.id,
+        createdAt: '2026-03-15T12:00:00.000Z',
+      })
+      ctl.setManyCalls.length = 0
+
+      await updateExpense(created.id, created.createdAt, {
+        createdAt: '2026-04-15T12:00:00.000Z',
+      })
+
+      expect(ctl.setManyCalls).toHaveLength(1)
+      expect([...ctl.setManyCalls[0]].sort()).toEqual(
+        ['expenses_2026_03', 'expenses_2026_04', 'meta:sync'].sort(),
+      )
+      expect(await readRaw('expenses_2026_03')).toEqual([])
+      expect((await readRaw('expenses_2026_04')).map((e) => e.id)).toEqual([
+        created.id,
+      ])
+    })
+
+    it('gives the moved record exactly one new rev', async () => {
+      const food = await addCategory({ name: 'Food' })
+      const created = await addExpense({
+        amount: 10,
+        currency: 'UAH',
+        categoryId: food.id,
+        createdAt: '2026-03-15T12:00:00.000Z',
+      })
+      const before = await getLocalRev()
+
+      await updateExpense(created.id, created.createdAt, {
+        createdAt: '2026-04-15T12:00:00.000Z',
+      })
+
+      expect(await getLocalRev()).toBe(before + 1)
+      const [moved] = await readRaw('expenses_2026_04')
+      expect(moved.rev).toBe(before + 1)
+    })
+
+    it('a failed move changes neither chunk nor meta:sync', async () => {
+      const food = await addCategory({ name: 'Food' })
+      const created = await addExpense({
+        amount: 10,
+        currency: 'UAH',
+        categoryId: food.id,
+        createdAt: '2026-03-15T12:00:00.000Z',
+      })
+      const marchBefore = mockStore.get('expenses_2026_03')
+      const syncBefore = mockStore.get('meta:sync')
+      ctl.failSetMany = true
+
+      await expect(
+        updateExpense(created.id, created.createdAt, {
+          createdAt: '2026-04-15T12:00:00.000Z',
+        }),
+      ).rejects.toThrow('transaction aborted')
+
+      expect(mockStore.get('expenses_2026_03')).toBe(marchBefore)
+      expect(mockStore.has('expenses_2026_04')).toBe(false)
+      expect(mockStore.get('meta:sync')).toEqual(syncBefore)
+    })
   })
 
   describe('criterion 3: throws on unknown id, invalid date, unknown categoryId; no writes performed', () => {
@@ -183,6 +286,26 @@ describe('localDb.updateExpense', () => {
       )
       expect(marchExpenses).toHaveLength(1)
       expect(marchExpenses[0].amount).toBe(5)
+    })
+
+    it('throws "not found" for a deleted expense and writes nothing', async () => {
+      const food = await addCategory({ name: 'Food' })
+      const created = await addExpense({
+        amount: 5,
+        currency: 'UAH',
+        categoryId: food.id,
+        createdAt: '2026-03-15T12:00:00.000Z',
+      })
+      await deleteExpense(created.id, created.createdAt)
+      const chunkBefore = mockStore.get('expenses_2026_03')
+      ctl.setManyCalls.length = 0
+
+      await expect(
+        updateExpense(created.id, created.createdAt, { amount: 20 }),
+      ).rejects.toThrow(/not found/i)
+
+      expect(mockStore.get('expenses_2026_03')).toBe(chunkBefore)
+      expect(ctl.setManyCalls).toHaveLength(0)
     })
 
     it('throws when the resulting createdAt is not a valid date', async () => {

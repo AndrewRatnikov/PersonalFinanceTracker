@@ -1,5 +1,9 @@
 // No CONTRACT_GAPs: DecryptError and the mutation behaviour (#1) are fully
 // specified in the Interface Contract.
+//
+// Every user write goes through setMany, so the idb-keyval mock has one. An
+// unreadable blob is never overwritten, and meta:sync stays untouched when a
+// mutation fails.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,6 +36,10 @@ vi.mock('idb-keyval', () => ({
   get: (key: string) => Promise.resolve(mockStore.get(key)),
   set: (key: string, value: unknown) => {
     mockStore.set(key, value)
+    return Promise.resolve()
+  },
+  setMany: (entries: Array<[string, unknown]>) => {
+    for (const [key, value] of entries) mockStore.set(key, value)
     return Promise.resolve()
   },
   clear: () => {
@@ -77,6 +85,7 @@ describe('localDb decrypt failures (#1)', () => {
         await expect(run()).rejects.toBeInstanceOf(DecryptError)
 
         expect(mockStore.get('categories')).toBe(bytes)
+        expect(mockStore.has('meta:sync')).toBe(false)
       },
     )
 
@@ -176,6 +185,7 @@ describe('localDb decrypt failures (#1)', () => {
     it('deleteCategory rejects and keeps both stores when a chunk cannot be read', async () => {
       const food = await addCategory({ name: 'Food' })
       const categoriesBefore = mockStore.get('categories')
+      const syncBefore = mockStore.get('meta:sync')
       const bytes = garbage()
       mockStore.set(CHUNK, bytes)
 
@@ -183,6 +193,7 @@ describe('localDb decrypt failures (#1)', () => {
 
       expect(mockStore.get(CHUNK)).toBe(bytes)
       expect(mockStore.get('categories')).toBe(categoriesBefore)
+      expect(mockStore.get('meta:sync')).toEqual(syncBefore)
     })
 
     it('a value encrypted under a different key is rejected the same way', async () => {

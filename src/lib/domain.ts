@@ -44,6 +44,10 @@ export interface Category {
   updatedAt?: string
   /** Preselected currency when this category is chosen; absent = main currency. */
   defaultCurrency?: Currency
+  /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
+  deletedAt?: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
 }
 
 export interface Expense {
@@ -62,6 +66,10 @@ export interface Expense {
   /** Stored conversion into the main currency; absent = pending. */
   conversion?: EntryConversion
   manualRate?: ManualRate
+  /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
+  deletedAt?: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
   category?: Category
 }
 
@@ -107,6 +115,10 @@ export interface BudgetEntry {
   currency: Currency
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
+  deletedAt?: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
 }
 
 export interface UpsertBudgetInput {
@@ -171,6 +183,10 @@ export interface IncomeEntry {
   /** Stored conversion into the main currency; absent = pending. */
   conversion?: EntryConversion
   manualRate?: ManualRate
+  /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
+  deletedAt?: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
   /** Joined at read time by getAllIncome()/addIncome(); never stored. */
   category?: Category
 }
@@ -249,6 +265,10 @@ export interface RecurringItem {
   occurrenceCount: number
   createdAt: string
   updatedAt: string
+  /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
+  deletedAt?: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
 }
 
 export interface CreateRecurringInput {
@@ -271,3 +291,18 @@ export interface RecurringOccurrence {
 }
 
 export type QuickRepeat = 'none' | 'week' | 'month' | 'year'
+
+// ── Synced settings (storage key `syncedSettings`) ───────────────────────────
+
+/**
+ * The settings that follow the user between devices: one encrypted record.
+ * Per-device settings stay in the plaintext `meta:settings`.
+ */
+export interface SyncedSettingsRecord {
+  id: 'settings'
+  mainCurrency: Currency
+  fetchExchangeRates: boolean
+  updatedAt: string
+  /** Local change sequence number (meta:sync); never leaves the device. */
+  rev?: number
+}

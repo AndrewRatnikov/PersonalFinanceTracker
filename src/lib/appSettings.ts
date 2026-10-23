@@ -7,16 +7,19 @@
 // RecoveryKeySaveStep is confirmed. A missing field means confirmed, so vaults
 // created before the field existed don't nag. Never store the key itself.
 //
-// The currency settings (`mainCurrency`, `fetchExchangeRates`) live in the
-// same object but have their own getter/updater. `mainCurrency` is written
-// only by localDb.convertBudgets, together with the converted budgets, so the
-// budgets and the main currency can never disagree.
+// The currency settings (`mainCurrency`, `fetchExchangeRates`) are synced
+// settings: they live in the encrypted `syncedSettings` record that localDb
+// owns (readSyncedSettings / updateSyncedSettings), not in `meta:settings`.
+// Stores not migrated yet fall back to the legacy plaintext fields inside
+// localDb. `mainCurrency` is written only by localDb.convertBudgets, together
+// with the converted budgets, so the budgets and the main currency can never
+// disagree.
 
 import { get, set } from 'idb-keyval'
 
-import { DEFAULT_MAIN_CURRENCY, isCurrency } from './domain'
-import { getLocalStore } from './localDb'
-import { postChanged } from './syncChannel'
+import { isDecryptError } from './dataErrors'
+import { DEFAULT_MAIN_CURRENCY } from './domain'
+import { getLocalStore, readSyncedSettings, updateSyncedSettings } from './localDb'
 import { META_SETTINGS_KEY } from './vault'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
@@ -117,39 +120,28 @@ function currencyDefaults(): CurrencySettings {
   }
 }
 
-// Never throws: a missing or invalid field reads as its default (also when a
-// test mocks localDb without getLocalStore).
+// Reads the synced settings record (legacy fields or defaults while it does
+// not exist). Throws only a DecryptError, so an unreadable record opens the
+// Data problem screen instead of silently reading as UAH. Any other failure
+// (also a test mocking localDb without readSyncedSettings) gives the defaults.
 export async function getCurrencySettings(): Promise<CurrencySettings> {
   try {
-    const result = currencyDefaults()
-    const store = getLocalStore()
-    if (!store) return result
-    const raw = await readRaw(store)
-    if (!raw) return result
-    if (isCurrency(raw.mainCurrency)) result.mainCurrency = raw.mainCurrency
-    if (typeof raw.fetchExchangeRates === 'boolean') {
-      result.fetchExchangeRates = raw.fetchExchangeRates
+    const record = await readSyncedSettings()
+    return {
+      mainCurrency: record.mainCurrency,
+      fetchExchangeRates: record.fetchExchangeRates,
     }
-    return result
-  } catch {
+  } catch (err) {
+    if (isDecryptError(err)) throw err
     return currencyDefaults()
   }
 }
 
 // Only `fetchExchangeRates` is patchable here; the main currency changes
-// through conversion.changeMainCurrency.
+// through conversion.changeMainCurrency. localDb writes the record (rev +
+// updatedAt) and announces `syncedSettings` after it commits.
 export async function updateCurrencySettings(patch: {
   fetchExchangeRates?: boolean
 }): Promise<void> {
-  const store = getLocalStore()
-  if (!store) return
-  const next: Record<string, unknown> = {}
-  if (typeof patch.fetchExchangeRates === 'boolean') {
-    next.fetchExchangeRates = patch.fetchExchangeRates
-  }
-  await withWriteLock(META_SETTINGS_KEY, async () => {
-    const stored = await readRaw(store)
-    await set(META_SETTINGS_KEY, { ...stored, ...next }, store)
-  })
-  postChanged([META_SETTINGS_KEY])
+  await updateSyncedSettings(patch)
 }
