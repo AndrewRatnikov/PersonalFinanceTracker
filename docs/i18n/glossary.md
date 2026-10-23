@@ -33,6 +33,15 @@ consistently; when a new string needs a term that is not here, add it.
 | Backup | Резервна копія |
 | Restore | Відновити |
 | Remove data from this device | Видалити дані з цього пристрою |
+| Account | Обліковий запис |
+| Sign in | Увійти |
+| Sync | Синхронізація |
+| Plan | Тариф |
+| Beta | Бета |
+| Device | Пристрій |
+| Cloud data | Дані в хмарі |
+| Terms of Use | Умови використання |
+| Privacy Policy | Політика конфіденційності |
 
 ## Style
 
