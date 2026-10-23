@@ -18,6 +18,7 @@ import { requestCreateVault, setVaultPhase } from '@/lib/vaultSession'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
+import { LegalLinks } from '@/components/LegalLinks'
 
 const PROBLEMS: ReadonlyArray<{ title: MessageKey; body: MessageKey }> = [
   { title: 'landing.problems.credentials.title', body: 'landing.problems.credentials.body' },
@@ -522,10 +523,13 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border">
+      <footer data-testid="landing-footer" className="border-t border-border">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <p>{t('landing.footer')}</p>
-          <p>&copy; {new Date().getFullYear()} MinimaSpend</p>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <LegalLinks />
+            <p>&copy; {new Date().getFullYear()} MinimaSpend</p>
+          </div>
         </div>
       </footer>
     </div>
