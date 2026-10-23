@@ -378,7 +378,7 @@ describe('element validation', () => {
     ['record_key with padding', { ...wireRecord(1), record_key: `${'a'.repeat(20)}=` }],
     ['record_key too long', { ...wireRecord(1), record_key: 'a'.repeat(129) }],
     // A JSON number record_key must be rejected: the server requires jsonb_typeof = 'string'.
-    ['record_key not a string', { ...wireRecord(1), record_key: 12345678901234567890 }],
+    ['record_key not a string', { ...wireRecord(1), record_key: 1.2345678901234567e19 }],
     ['empty ciphertext', { ...wireRecord(1), ciphertext: '' }],
     ['ciphertext too long', { ...wireRecord(1), ciphertext: 'c'.repeat(65537) }],
     ['ciphertext not a string', { ...wireRecord(1), ciphertext: 123 }],

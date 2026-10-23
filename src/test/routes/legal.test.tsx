@@ -89,7 +89,7 @@ describe('legal pages render without a session', () => {
     const page = screen.getByTestId(ROUTES[kind].page)
     const doc = legalDocumentFor(lang, kind)
     expect(within(page).getByTestId('legal-title').textContent).toBe(doc.title)
-    expect(within(page).getByTestId('legal-body').textContent?.length).toBeGreaterThan(500)
+    expect(within(page).getByTestId('legal-body').textContent.length).toBeGreaterThan(500)
     expect(within(page).getByTestId('legal-links')).toBeTruthy()
   })
 
@@ -119,7 +119,7 @@ describe('legal pages render without a session', () => {
     expect(screen.getByTestId('legal-title').textContent).toBe('Privacy Policy')
     cleanup()
     render(pageFor('privacy', 'uk'))
-    const ukPrivacy = screen.getByTestId('legal-title').textContent ?? ''
+    const ukPrivacy = screen.getByTestId('legal-title').textContent
     expect(ukPrivacy).toMatch(CYRILLIC)
     expect(ukPrivacy).not.toBe('Privacy Policy')
     cleanup()
@@ -128,7 +128,7 @@ describe('legal pages render without a session', () => {
     expect(screen.getByTestId('legal-title').textContent).toBe('Terms of Use')
     cleanup()
     render(pageFor('terms', 'uk'))
-    const ukTerms = screen.getByTestId('legal-title').textContent ?? ''
+    const ukTerms = screen.getByTestId('legal-title').textContent
     expect(ukTerms).toMatch(CYRILLIC)
     expect(ukTerms).not.toBe(ukPrivacy)
   })

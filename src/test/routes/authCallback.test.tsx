@@ -12,7 +12,7 @@ vi.mock('@/lib/auth', () => ({ exchangeAuthCode: vi.fn() }))
 
 async function runLoader(href: string): Promise<unknown> {
   const loader = Route.options.loader
-  if (!loader) throw new Error('auth callback route has no loader')
+  if (typeof loader !== 'function') throw new Error('auth callback route has no loader')
   try {
     await loader({ location: { href } } as never)
   } catch (err) {

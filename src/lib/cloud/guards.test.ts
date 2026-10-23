@@ -186,9 +186,16 @@ describe('key handling (decisions D1 and D2)', () => {
 })
 
 describe('no secrets', () => {
-  it('no source file mentions a service-role key', () => {
+  it('no source file mentions a privileged server key', () => {
+    // Built from fragments so this file itself never contains the forbidden text.
+    const forbidden = new RegExp(
+      ['service', '[_-]?', 'role', '[_-]?', 'key'].join('') +
+        '|' +
+        ['SUPABASE', 'SERVICE', 'ROLE'].join('_'),
+      'i',
+    )
     const offenders = appSources()
-      .filter((f) => /service[_-]?role[_-]?key|SUPABASE_SERVICE_ROLE/i.test(f.text))
+      .filter((f) => forbidden.test(f.text))
       .map((f) => f.path)
     expect(offenders).toEqual([])
   })
