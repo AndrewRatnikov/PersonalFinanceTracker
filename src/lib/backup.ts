@@ -1098,9 +1098,12 @@ export async function restoreBackup(
   if (adopt) unlockLocalDb(backupDek)
   if (result.written.length > 0) {
     postChanged(result.written)
-    // Safety net: a no-op whenever the restore wrote incomeCategories. Runs
-    // after the restore lock is released (the lock isn't re-entrant).
-    await ensureIncomeCategories()
+    // Safety net after a replace (a no-op whenever the restore wrote
+    // incomeCategories). Runs after the restore lock is released (the lock
+    // isn't re-entrant). A merge writes only the records that changed: a
+    // device without income categories gets them at the next unlock
+    // (prepareUnlockedVault), so the merge stays one transaction.
+    if (result.summary.mode === 'replace') await ensureIncomeCategories()
     // Records from the backup may be pending (an older backup, or another
     // main currency): convert them in the background.
     requestEntryConversion()
