@@ -2,7 +2,9 @@
 // specified in the Interface Contract (route: settings). The tab bodies are
 // replaced by light markers; fake-general-tab, fake-account-tab and
 // fake-storage-status stand in for GeneralTab, AccountTab and the Data tab
-// content.
+// content. Run 3: the featureFlags mock gains ENABLE_SYNC: false (the route now
+// imports it) and SyncTab is replaced by fake-sync-tab; with the flag off the
+// tab list is unchanged. The flag-on cases are in settings.sync.test.tsx.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
@@ -20,7 +22,7 @@ vi.mock('@/lib/accountSession', () => ({
   useAccountsVisible: vi.fn(),
   useAccountSession: vi.fn(),
 }))
-vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: false }))
+vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: false, ENABLE_SYNC: false }))
 vi.mock('@/components/settings/GeneralTab', () => ({
   GeneralTab: () => <div data-testid="fake-general-tab" />,
 }))
@@ -38,6 +40,9 @@ vi.mock('@/components/settings/DataToolsTab', () => ({
 }))
 vi.mock('@/components/settings/AccountTab', () => ({
   AccountTab: () => <div data-testid="fake-account-tab" />,
+}))
+vi.mock('@/components/settings/SyncTab', () => ({
+  SyncTab: () => <div data-testid="fake-sync-tab" />,
 }))
 
 function renderSettings() {
@@ -118,6 +123,21 @@ describe('Settings tabs without accounts', () => {
     expect(screen.queryByTestId('fake-account-tab')).toBeNull()
     expect(screen.queryByTestId('categories-tab')).toBeNull()
   })
+
+  it('falls back to General when the search asks for the hidden Sync tab (flag off)', () => {
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'sync' })
+    renderSettings()
+
+    expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
+    expect(screen.queryByTestId('fake-sync-tab')).toBeNull()
+  })
+
+  it('has no Sync trigger with the flag off', () => {
+    renderSettings()
+
+    expect(screen.queryByTestId('settings-tab-sync')).toBeNull()
+    expect(tabLabels()).not.toContain('Sync')
+  })
 })
 
 describe('Settings tabs with accounts visible', () => {
@@ -149,6 +169,11 @@ describe('Settings tabs with accounts visible', () => {
     expect(screen.getByTestId('fake-account-tab')).toBeTruthy()
     expect(screen.queryByTestId('categories-tab')).toBeNull()
     expect(screen.queryByTestId('fake-general-tab')).toBeNull()
+  })
+
+  it('still hides the Sync tab when only accounts are visible (flag off)', () => {
+    renderSettings()
+    expect(screen.queryByTestId('settings-tab-sync')).toBeNull()
   })
 })
 
@@ -191,7 +216,7 @@ describe('Settings validateSearch', () => {
     search: Record<string, unknown>,
   ) => { tab?: string }
 
-  it.each(['general', 'categories', 'budget', 'security', 'data', 'account'])(
+  it.each(['general', 'categories', 'budget', 'security', 'data', 'account', 'sync'])(
     'accepts tab=%s',
     (tab) => {
       expect(validate({ tab })).toEqual({ tab })

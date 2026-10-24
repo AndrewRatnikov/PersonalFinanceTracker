@@ -1,8 +1,10 @@
 // @vitest-environment node
 // No CONTRACT_GAPs. Source-scanning guards (criteria 23 and 24, decisions D2
-// and D4): this is the one place that reads repo source files; every other test
-// avoids the filesystem. The scanner patterns are proven with positive controls
-// so a guard can't pass just because its regex matches nothing.
+// and D4), updated for run 3 (plan section 12): the sync engine and the sync
+// actions may call the api, and only they. This is the one place that reads
+// repo source files; every other test avoids the filesystem. The scanner
+// patterns are proven with positive controls so a guard can't pass just because
+// its regex matches nothing.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -52,6 +54,18 @@ const RPC_NAMES =
   /['"](?:register_device|list_devices|rename_device|remove_device|create_vault|get_vault|update_vault_header|push_records|pull_records|delete_cloud_data|get_sync_status)['"]/
 const PLAN_ID_COMPARE =
   /plan_id\s*(?:===|!==|==|!=)|(?:===|!==|==|!=)\s*[\w.?]*plan_id\b|switch\s*\([^)]*plan_id/
+const CONSOLE_NOISE = /\bconsole\.(?:log|info|debug)\s*\(/
+const HAS_FEATURE_IMPORT =
+  /import\s*\{[^}]*\bhasFeature\b[^}]*\}\s*from\s*['"]@\/lib\/cloud\/entitlements['"]/
+
+// The only files that may talk to the cloud api (run 3).
+const SYNC_API_USERS = [
+  'lib/sync/actions.ts',
+  'lib/sync/engine.ts',
+  'lib/sync/runtime.ts',
+  'lib/sync/types.ts',
+]
+const SYNC_CALLERS = ['lib/sync/actions.ts', 'lib/sync/engine.ts']
 
 describe('scanner self-check', () => {
   it('the plan_id pattern catches comparisons and ignores plain use', () => {
@@ -67,28 +81,62 @@ describe('scanner self-check', () => {
     expect(API_IMPORT.test("import { createCloudApi } from '@/lib/cloud/api'")).toBe(true)
     expect(API_IMPORT.test("import { x } from '../lib/cloud/api'")).toBe(true)
     expect(API_IMPORT.test("const m = await import('@/lib/cloud/api')")).toBe(true)
+    expect(API_IMPORT.test("import type { CloudApi } from '@/lib/cloud/api'")).toBe(true)
     expect(API_IMPORT.test("import { x } from '@/lib/cloud/types'")).toBe(false)
   })
 
   it('the api method pattern catches member calls only', () => {
     expect(API_METHODS.test('await cloudApi.pushRecords(a, b, c)')).toBe(true)
     expect(API_METHODS.test('api.deleteCloudData()')).toBe(true)
+    expect(API_METHODS.test('await deps.api.pullRecords(a, b, c)')).toBe(true)
     expect(API_METHODS.test('await createVault(password)')).toBe(false)
+  })
+
+  it('the console pattern catches log, info and debug but not warn or error', () => {
+    expect(CONSOLE_NOISE.test('console.log(x)')).toBe(true)
+    expect(CONSOLE_NOISE.test('console.info (x)')).toBe(true)
+    expect(CONSOLE_NOISE.test('console.debug(x)')).toBe(true)
+    expect(CONSOLE_NOISE.test('console.error(err.name)')).toBe(false)
+    expect(CONSOLE_NOISE.test('console.warn(x)')).toBe(false)
+  })
+
+  it('the hasFeature import pattern wants the entitlements module', () => {
+    expect(HAS_FEATURE_IMPORT.test("import { hasFeature } from '@/lib/cloud/entitlements'")).toBe(true)
+    expect(
+      HAS_FEATURE_IMPORT.test("import { a, hasFeature, b } from '@/lib/cloud/entitlements'"),
+    ).toBe(true)
+    expect(HAS_FEATURE_IMPORT.test("import { hasFeature } from '@/lib/cloud/types'")).toBe(false)
+    expect(HAS_FEATURE_IMPORT.test("import { other } from '@/lib/cloud/entitlements'")).toBe(false)
   })
 
   it('finds source files to scan', () => {
     const files = appSources().map((f) => f.path)
     expect(files).toContain('lib/cloud/entitlements.ts')
     expect(files).toContain('lib/cloud/api.ts')
+    expect(files).toContain('lib/sync/engine.ts')
+    expect(files).toContain('lib/sync/actions.ts')
     expect(files.some((p) => p.endsWith('.test.ts'))).toBe(false)
     expect(files.length).toBeGreaterThan(50)
   })
 })
 
 describe('no cloud calls outside the gate (criterion 24)', () => {
-  it('no app file outside src/lib/cloud imports the cloud api', () => {
+  it('outside src/lib/cloud only the sync engine files import the cloud api', () => {
     const offenders = appSources()
       .filter((f) => !f.path.startsWith('lib/cloud/'))
+      .filter((f) => API_IMPORT.test(code(f.text)))
+      .map((f) => f.path)
+      .sort()
+    for (const path of offenders) expect(SYNC_API_USERS, path).toContain(path)
+    // The engine and the actions really do import it (CloudError / toCloudError).
+    expect(offenders).toContain('lib/sync/engine.ts')
+    expect(offenders).toContain('lib/sync/actions.ts')
+  })
+
+  it('no component, route or other lib file imports the cloud api', () => {
+    const offenders = appSources()
+      .filter((f) => !f.path.startsWith('lib/cloud/'))
+      .filter((f) => !SYNC_API_USERS.includes(f.path))
       .filter((f) => API_IMPORT.test(code(f.text)))
       .map((f) => f.path)
     expect(offenders).toEqual([])
@@ -102,28 +150,34 @@ describe('no cloud calls outside the gate (criterion 24)', () => {
     expect(importers).toEqual(['lib/cloud/entitlements.ts'])
   })
 
-  it('createCloudApi is called only by entitlements.ts (and defined in api.ts)', () => {
+  it('createCloudApi is called only by api.ts, entitlements.ts and sync/runtime.ts', () => {
     const callers = appSources()
       .filter((f) => /\bcreateCloudApi\s*\(/.test(code(f.text)))
       .map((f) => f.path)
       .sort()
-    expect(callers).toEqual(['lib/cloud/api.ts', 'lib/cloud/entitlements.ts'])
+    expect(callers).toEqual([
+      'lib/cloud/api.ts',
+      'lib/cloud/entitlements.ts',
+      'lib/sync/runtime.ts',
+    ])
   })
 
-  it('no file calls an API method other than getSyncStatus', () => {
+  it('api methods other than getSyncStatus are called only by the sync engine and actions', () => {
     const offenders = appSources()
       .filter((f) => f.path !== 'lib/cloud/api.ts')
       .filter((f) => API_METHODS.test(code(f.text)))
       .map((f) => f.path)
-    expect(offenders).toEqual([])
+      .sort()
+    expect(offenders).toEqual(SYNC_CALLERS)
   })
 
-  it('getSyncStatus is called only inside entitlements.ts', () => {
+  it('getSyncStatus is called only by entitlements.ts, the engine and the actions', () => {
     const callers = appSources()
       .filter((f) => f.path !== 'lib/cloud/api.ts')
       .filter((f) => /\.getSyncStatus\s*\(/.test(code(f.text)))
       .map((f) => f.path)
-    expect(callers).toEqual(['lib/cloud/entitlements.ts'])
+      .sort()
+    expect(callers).toEqual(['lib/cloud/entitlements.ts', ...SYNC_CALLERS])
   })
 
   it('no file outside api.ts names a sync RPC function', () => {
@@ -131,6 +185,36 @@ describe('no cloud calls outside the gate (criterion 24)', () => {
       .filter((f) => f.path !== 'lib/cloud/api.ts')
       .filter((f) => RPC_NAMES.test(code(f.text)))
       .map((f) => f.path)
+    expect(offenders).toEqual([])
+  })
+})
+
+describe('the engine and the actions go through the permission gate', () => {
+  it.each(SYNC_CALLERS)('%s imports hasFeature from the entitlements module and uses it', (path) => {
+    const text = source(path)
+    expect(text).toMatch(HAS_FEATURE_IMPORT)
+    expect(text).toMatch(/\bhasFeature\s*\(/)
+  })
+
+  it.each(SYNC_CALLERS)('%s asks the server for a fresh status', (path) => {
+    expect(source(path)).toMatch(/\.getSyncStatus\s*\(/)
+  })
+
+  it('every sync file that moves data lives in the two gated files', () => {
+    const movers = appSources()
+      .filter((f) => /\.(?:pushRecords|pullRecords|createVault|registerDevice|updateVaultHeader)\s*\(/.test(code(f.text)))
+      .filter((f) => f.path.startsWith('lib/sync/'))
+      .map((f) => f.path)
+      .sort()
+    expect(movers).toEqual(SYNC_CALLERS)
+  })
+})
+
+describe('sync code never logs plaintext (criterion 26)', () => {
+  it('no src/lib/sync file calls console.log, console.info or console.debug', () => {
+    const files = appSources().filter((f) => f.path.startsWith('lib/sync/'))
+    expect(files.length).toBeGreaterThan(5)
+    const offenders = files.filter((f) => CONSOLE_NOISE.test(code(f.text))).map((f) => f.path)
     expect(offenders).toEqual([])
   })
 })
@@ -162,6 +246,15 @@ describe('key handling (decisions D1 and D2)', () => {
     const imports = text.match(/^import[^\n]*from\s+['"][^'"]*(?:vault|syncRecords)['"]/gm) ?? []
     expect(imports.length).toBeGreaterThan(0)
     for (const line of imports) expect(line).toMatch(/^import type\b/)
+  })
+
+  it('sync/types.ts imports the api, vault and localDb as types only', () => {
+    const text = source('lib/sync/types.ts')
+    // Statements may span lines; the quote exclusion keeps a match inside one statement.
+    const imports =
+      text.match(/^import\b[^;'"]*?\bfrom\s+['"][^'"]*(?:cloud\/api|\/vault|localDb)['"]/gm) ?? []
+    expect(imports.length).toBeGreaterThan(0)
+    for (const statement of imports) expect(statement).toMatch(/^import type\b/)
   })
 
   it('no source file exports a raw key: exportKey is never used', () => {
