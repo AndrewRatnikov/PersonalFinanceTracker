@@ -13,9 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IncomeRouteImport } from './routes/income'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as RecurringRouteImport } from './routes/recurring'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TransactionsRouteImport } from './routes/transactions'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
@@ -39,6 +41,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -52,6 +59,11 @@ const RecurringRoute = RecurringRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TransactionsRoute = TransactionsRouteImport.update({
@@ -70,9 +82,11 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/income': typeof IncomeRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/transactions': typeof TransactionsRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
@@ -81,9 +95,11 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/income': typeof IncomeRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/transactions': typeof TransactionsRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
@@ -93,9 +109,11 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/income': typeof IncomeRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/transactions': typeof TransactionsRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
@@ -106,9 +124,11 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/income'
     | '/login'
+    | '/privacy'
     | '/profile'
     | '/recurring'
     | '/settings'
+    | '/terms'
     | '/transactions'
     | '/auth/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -117,9 +137,11 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/income'
     | '/login'
+    | '/privacy'
     | '/profile'
     | '/recurring'
     | '/settings'
+    | '/terms'
     | '/transactions'
     | '/auth/callback'
   id:
@@ -128,9 +150,11 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/income'
     | '/login'
+    | '/privacy'
     | '/profile'
     | '/recurring'
     | '/settings'
+    | '/terms'
     | '/transactions'
     | '/auth/callback'
   fileRoutesById: FileRoutesById
@@ -140,9 +164,11 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   IncomeRoute: typeof IncomeRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   RecurringRoute: typeof RecurringRoute
   SettingsRoute: typeof SettingsRoute
+  TermsRoute: typeof TermsRoute
   TransactionsRoute: typeof TransactionsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
 }
@@ -177,6 +203,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile': {
       id: '/profile'
       path: '/profile'
@@ -196,6 +229,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/transactions': {
@@ -220,9 +260,11 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   IncomeRoute: IncomeRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   RecurringRoute: RecurringRoute,
   SettingsRoute: SettingsRoute,
+  TermsRoute: TermsRoute,
   TransactionsRoute: TransactionsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
 }

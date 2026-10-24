@@ -9,8 +9,17 @@
 // held by localDb (`unlockLocalDb`); its raw bytes only exist while a vault is
 // created or re-wrapped and are zeroed afterwards. The header lives in the
 // same IndexedDB store as the data under `meta:vault`; the brute-force counter
-// lives under `meta:settings`. This module keeps no state of its own and does
-// nothing at import time.
+// lives under `meta:settings`. The only state this module keeps is a WeakMap of
+// HKDF material keyed by the in-use DEK (for getSyncKeys); it does nothing at
+// import time.
+//
+// Sync keys (docs/free-tier-spec.md §18, src/lib/cloud/types.ts): importDek,
+// the one place raw DEK bytes become the in-use DEK (create, v1 migration,
+// every unlock and openHeaderWithSecret), imports the same bytes a second time
+// as non-extractable HKDF material. getSyncKeys() derives K_index / K_data from
+// it for the DEK currently held by localDb. The DEK stays a non-extractable
+// AES-GCM key and is never exported; only the two purpose-bound keys leave
+// this module.
 //
 // Every operation that produces a new recovery key (createVault, the v1
 // migration, regenerateRecoveryKey) writes `recoveryKeyConfirmed: false` into
@@ -31,8 +40,10 @@ import {
   parseRecoveryKey,
   readDeviceSalt,
 } from './crypto'
+import { deriveSyncKeys } from './cloud/recordCrypto'
 import { isDataStorageKey } from './dataErrors'
 import {
+  getLocalDbKey,
   getLocalStore,
   hasLocalData,
   unlockLocalDb,
@@ -40,6 +51,7 @@ import {
 } from './localDb'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
+import type { SyncKeys } from './cloud/types'
 
 export const META_VAULT_KEY = 'meta:vault'
 export const META_SETTINGS_KEY = 'meta:settings'
@@ -276,11 +288,24 @@ async function open(
   }
 }
 
-function importDek(dekBytes: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', dekBytes, 'AES-GCM', false, [
+// HKDF material for the sync keys, keyed by the in-use DEK. Filled by
+// importDek; an entry goes away with its DEK.
+const syncKeyMaterial = new WeakMap<
+  CryptoKey,
+  { base: CryptoKey; keys?: Promise<SyncKeys> }
+>()
+
+async function importDek(dekBytes: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+  const dek = await crypto.subtle.importKey('raw', dekBytes, 'AES-GCM', false, [
     'encrypt',
     'decrypt',
   ])
+  // The same bytes again, before the caller zeroes them, as HKDF material.
+  const base = await crypto.subtle.importKey('raw', dekBytes, 'HKDF', false, [
+    'deriveKey',
+  ])
+  syncKeyMaterial.set(dek, { base })
+  return dek
 }
 
 async function wrapWithPassword(
@@ -691,6 +716,25 @@ export async function regenerateRecoveryKey(
 
 export function lockVault(): void {
   wipeLocalDbKey()
+}
+
+// K_index / K_data of the unlocked vault (format in src/lib/cloud/types.ts).
+// The same keys object for the whole session. Rejects with
+// VaultError('invalid-state') while locked.
+export async function getSyncKeys(): Promise<SyncKeys> {
+  const dek = getLocalDbKey()
+  if (!dek) throw new VaultError('invalid-state', 'Vault is locked')
+  const entry = syncKeyMaterial.get(dek)
+  if (!entry) throw new VaultError('invalid-state', 'Sync keys are not available')
+  if (!entry.keys) {
+    const derived = deriveSyncKeys(entry.base)
+    entry.keys = derived
+    // A failed derivation is not cached, so the next call tries again.
+    derived.catch(() => {
+      if (entry.keys === derived) entry.keys = undefined
+    })
+  }
+  return entry.keys
 }
 
 // Removes the v1 localStorage keys (§4.5 step 5). Does nothing until the v2

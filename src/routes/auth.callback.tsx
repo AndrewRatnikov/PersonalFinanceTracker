@@ -8,14 +8,20 @@ export const Route = createFileRoute('/auth/callback')({
     const url = new URL(location.href, 'http://localhost')
     const code = url.searchParams.get('code')
     const raw = url.searchParams.get('redirect_to') ?? ''
-    const redirectTo = raw.startsWith('/') ? raw : '/'
+    // Same-origin paths only: "//host" and "/\host" would leave the site.
+    const redirectTo =
+      raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\')
+        ? raw
+        : '/'
 
     if (code) {
       // Execute the server function to swap the code for cookies
       await exchangeAuthCode({ data: { code } })
     }
 
-    // Always redirect back to the app to clear the callback URL parameters
-    throw redirect({ to: redirectTo })
+    // Always redirect back to the app to clear the callback URL parameters.
+    // `href` keeps a redirect's own query string (e.g. /settings?tab=account),
+    // which `to` would not parse; only same-origin paths get here.
+    throw redirect({ href: redirectTo })
   },
 })

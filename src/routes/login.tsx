@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useT } from '@/i18n'
@@ -15,6 +15,8 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export const Route = createFileRoute('/login')({
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
+    typeof search.redirect === 'string' ? { redirect: search.redirect } : {},
   component: Login,
 })
 
@@ -85,7 +87,23 @@ function Login() {
           </Button>
 
           <p className="mt-8 text-center text-xs text-muted-foreground">
-            {t('login.terms')}
+            {t('login.agree.prefix')}
+            <Link
+              to="/terms"
+              data-testid="login-terms-link"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              {t('login.agree.terms')}
+            </Link>
+            {t('login.agree.and')}
+            <Link
+              to="/privacy"
+              data-testid="login-privacy-link"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              {t('login.agree.privacy')}
+            </Link>
+            {t('login.agree.suffix')}
           </p>
         </CardContent>
       </Card>

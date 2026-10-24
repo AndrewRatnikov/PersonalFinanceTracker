@@ -23,6 +23,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-20](2026-10-20-category-default-currency-stored-on-category.md) | A category's default currency is an optional field on the category record | Accepted |
 | [2026-10-21](2026-10-21-custom-typed-i18n-catalog-cookie-localstorage.md) | Custom typed i18n catalog, language via cookie + localStorage | Accepted |
 | [2026-10-22](2026-10-22-sync-ready-local-data.md) | Sync-ready local data: tombstones, local rev, deterministic occurrence ids, synced settings record | Accepted |
+| [2026-10-23](2026-10-23-encrypted-sync-server-opaque-keys-plan-permissions.md) | Encrypted sync server: opaque record keys, server-ordered pulls, plan-based permissions with a beta switch | Accepted |
 
 ## Where else decisions live
 

@@ -7,8 +7,9 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setLang } from '@/i18n/core'
 import { DeleteAccountDialog } from '@/components/settings/DeleteAccountDialog'
 
 const {
@@ -58,6 +59,10 @@ function tickRemoveLocal() {
   )
 }
 
+afterEach(() => {
+  setLang('en', { persist: false })
+})
+
 describe('DeleteAccountDialog (#4, #12, #13)', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -83,6 +88,24 @@ describe('DeleteAccountDialog (#4, #12, #13)', () => {
     expect(screen.getByTestId('delete-account-dialog').textContent).toContain(
       'Also remove data from this device',
     )
+  })
+
+  it('says that the encrypted cloud data is deleted too (criterion 28)', () => {
+    setLang('en', { persist: false })
+    renderDialog()
+
+    const text = screen.getByTestId('delete-account-dialog').textContent
+    expect(text).toContain('encrypted cloud data')
+    expect(text).toContain('Data on this device is kept')
+  })
+
+  it('says it in Ukrainian too', () => {
+    setLang('uk', { persist: false })
+    renderDialog()
+
+    const text = screen.getByTestId('delete-account-dialog').textContent
+    expect(text).toContain('хмар')
+    expect(text).not.toContain('encrypted cloud data')
   })
 
   it('unticked: deletes the account, signs out, keeps local data and navigates to /', async () => {
