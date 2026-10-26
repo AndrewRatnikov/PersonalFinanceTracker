@@ -218,7 +218,7 @@ describe('the gate in front of every data-moving action', () => {
     ['fetchCloudVault', (x) => x.actions.fetchCloudVault()],
     [
       'restoreFromCloud',
-      async (x) => {
+      (x) => {
         x.vault.getVaultState.mockResolvedValue('none')
         return x.actions.restoreFromCloud(cloudVault('cloud'), { password: 'pw' })
       },
@@ -624,7 +624,7 @@ describe('header changes', () => {
     expect(s.engine.requestCycle).not.toHaveBeenCalled()
   })
 
-  it('connectHeaderChanges subscribes to the vault and forwards each event', async () => {
+  it('connectHeaderChanges subscribes to the vault and forwards each event', () => {
     let fire: () => void = () => undefined
     const off = vi.fn()
     s.vault.onHeaderChange.mockImplementation((listener: () => void) => {
