@@ -46,12 +46,15 @@ import {
   getLocalDbKey,
   getLocalStore,
   hasLocalData,
+  rekeyLiveData,
   unlockLocalDb,
   wipeLocalDbKey,
 } from './localDb'
+import { postLock } from './syncChannel'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
 import type { SyncKeys } from './cloud/types'
+import type { RekeyResult } from './localDb'
 
 export const META_VAULT_KEY = 'meta:vault'
 export const META_SETTINGS_KEY = 'meta:settings'
@@ -92,6 +95,16 @@ export interface UnlockResult {
   // Non-null only when this unlock migrated a v1 store.
   recoveryKey: string | null
 }
+
+// The secret that opens a cloud vault header on a fresh device: the password,
+// or the recovery key plus the new password the DEK is re-wrapped with.
+export type CloudVaultSecret =
+  | { password: string }
+  | { recoveryKey: string; newPassword: string }
+
+export type HeaderAdoption = 'adopted' | 'unchanged' | 'mismatch'
+
+export type JoinCloudVaultResult = RekeyResult
 
 export type VaultErrorCode =
   | 'incorrect-password'
@@ -654,6 +667,7 @@ export async function resetPasswordWithRecoveryKey(
   })
   await recordSuccess(store)
   unlockLocalDb(dek)
+  emitHeaderChange()
 }
 
 export async function changePassword(
@@ -679,6 +693,7 @@ export async function changePassword(
     }
   })
   await recordSuccess(store)
+  emitHeaderChange()
 }
 
 export async function regenerateRecoveryKey(
@@ -711,6 +726,7 @@ export async function regenerateRecoveryKey(
     }
   })
   await recordSuccess(store)
+  emitHeaderChange()
   return { recoveryKey }
 }
 
@@ -735,6 +751,187 @@ export async function getSyncKeys(): Promise<SyncKeys> {
     })
   }
   return entry.keys
+}
+
+// ── Header changes and cloud vaults (sync, spec §19) ──────────────────────────
+
+const headerListeners = new Set<() => void>()
+
+// Called after a committed changePassword, regenerateRecoveryKey or
+// resetPasswordWithRecoveryKey (the sync actions push the new header). Never
+// for create, unlock or a header adopted from the cloud.
+export function subscribeHeaderChanges(listener: () => void): () => void {
+  headerListeners.add(listener)
+  return () => {
+    headerListeners.delete(listener)
+  }
+}
+
+function emitHeaderChange(): void {
+  for (const listener of Array.from(headerListeners)) {
+    try {
+      listener()
+    } catch (err) {
+      console.error(
+        'Header change listener failed:',
+        err instanceof Error ? err.name : typeof err,
+      )
+    }
+  }
+}
+
+// Whether `header`'s verifier opens to the sentinel with `dek`.
+async function verifierMatches(
+  dek: CryptoKey,
+  header: Pick<VaultHeaderV2, 'verifier'>,
+): Promise<boolean> {
+  try {
+    const plain = await open(dek, header.verifier)
+    return plain !== null && new TextDecoder().decode(plain) === VERIFIER_SENTINEL
+  } catch {
+    return false
+  }
+}
+
+// JSON with keys sorted recursively, for comparing headers.
+function canonicalJson(value: unknown): string {
+  const sort = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sort)
+    if (v !== null && typeof v === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const k of Object.keys(v).sort()) {
+        out[k] = sort((v as Record<string, unknown>)[k])
+      }
+      return out
+    }
+    return v
+  }
+  return JSON.stringify(sort(value))
+}
+
+// A fresh device (state 'none') adopts a header downloaded from the cloud.
+// The secret is checked with this device's brute-force counter and the same
+// delay as an unlock. A recovery key re-wraps the DEK with the new password
+// (headerChanged: true; the caller pushes it). Nothing is written before the
+// secret is verified; then `meta:vault` and `meta:settings` (without
+// recoveryKeyConfirmed: the key belongs to the cloud vault) are written in one
+// setMany and localDb is unlocked.
+export async function adoptCloudVault(
+  header: VaultHeaderV2,
+  secret: CloudVaultSecret,
+): Promise<{ header: VaultHeaderV2; headerChanged: boolean }> {
+  const store = requireStore()
+  const notFresh = () =>
+    new VaultError('invalid-state', 'A vault already exists on this device')
+  if ((await getVaultState()) !== 'none') throw notFresh()
+  if (!isHeader(header)) throw damaged()
+
+  const dekBytes = await unwrapDek(
+    store,
+    header,
+    'password' in secret
+      ? { password: secret.password }
+      : { recoveryKey: secret.recoveryKey },
+  )
+  try {
+    const dek = await openDek(header, dekBytes)
+    let adopted = header
+    let headerChanged = false
+    if (!('password' in secret)) {
+      const pw = await wrapWithPassword(secret.newPassword, dekBytes)
+      adopted = { ...header, kdf: pw.kdf, wrappedByPassword: pw.wrappedByPassword }
+      headerChanged = true
+    }
+    // Same nesting order (vault, then settings) as regenerateRecoveryKey.
+    await withWriteLock(META_VAULT_KEY, async () => {
+      if ((await getVaultState()) !== 'none') throw notFresh()
+      await withWriteLock(META_SETTINGS_KEY, async () => {
+        const settings: StoredSettings = { ...(await readSettingsRaw(store)) }
+        delete settings.recoveryKeyConfirmed
+        await setMany(
+          [
+            [META_VAULT_KEY, adopted],
+            [META_SETTINGS_KEY, settings],
+          ],
+          store,
+        )
+      })
+    })
+    await recordSuccess(store)
+    unlockLocalDb(dek)
+    return { header: adopted, headerChanged }
+  } finally {
+    dekBytes.fill(0)
+  }
+}
+
+// "Join cloud data and keep this device's entries": this unlocked device
+// moves to the cloud vault. The cloud password is checked with this device's
+// counter (same delay as an unlock); then localDb.rekeyLiveData re-encrypts
+// the live records under the cloud DEK and writes them, the cloud header,
+// meta:settings (without recoveryKeyConfirmed) and the sync fields in ONE
+// setMany. A wrong password or any failure before that commit leaves the old
+// vault exactly as it was. Afterwards every other tab is told to lock (they
+// still hold the old DEK); this tab stays unlocked with the cloud DEK.
+export async function joinCloudVault(
+  header: VaultHeaderV2,
+  password: string,
+  syncPatch: Record<string, unknown>,
+): Promise<JoinCloudVaultResult> {
+  const store = requireStore()
+  if (!getLocalDbKey() || (await getVaultState()) !== 'v2') {
+    throw new VaultError('invalid-state', 'Unlock this device first')
+  }
+  if (!isHeader(header)) throw damaged()
+
+  const dekBytes = await unwrapDek(store, header, { password })
+  let cloudDek: CryptoKey
+  try {
+    cloudDek = await openDek(header, dekBytes)
+  } finally {
+    dekBytes.fill(0)
+  }
+  await recordSuccess(store)
+
+  const settings: StoredSettings = { ...(await readSettingsRaw(store)) }
+  delete settings.recoveryKeyConfirmed
+  const result = await rekeyLiveData(cloudDek, {
+    plain: [
+      [META_VAULT_KEY, header],
+      [META_SETTINGS_KEY, settings],
+    ],
+    syncPatch,
+  })
+  postLock()
+  return result
+}
+
+// A header seen in the cloud is adopted only when it belongs to this vault and
+// wraps the DEK in use (its verifier opens with it). 'unchanged' when it is
+// the local header; 'mismatch' changes nothing. meta:settings (the
+// brute-force counters) is never touched. Needs the vault unlocked.
+export async function adoptHeaderIfSameDek(
+  header: VaultHeaderV2,
+): Promise<HeaderAdoption> {
+  const dek = getLocalDbKey()
+  if (!dek) throw new VaultError('invalid-state', 'Vault is locked')
+  const store = requireStore()
+  return withWriteLock(META_VAULT_KEY, async () => {
+    const local = await readHeader(store)
+    if (!isHeader(header) || header.vaultId !== local.vaultId) return 'mismatch'
+    if (!(await verifierMatches(dek, header))) return 'mismatch'
+    if (canonicalJson(header) === canonicalJson(local)) return 'unchanged'
+    await writeHeader(store, header)
+    return 'adopted'
+  })
+}
+
+// Whether a header wraps the DEK in use (the verifier check alone, no write).
+export async function headerMatchesDek(header: VaultHeaderV2): Promise<boolean> {
+  const dek = getLocalDbKey()
+  if (!dek) throw new VaultError('invalid-state', 'Vault is locked')
+  if (!isHeader(header)) return false
+  return verifierMatches(dek, header)
 }
 
 // Removes the v1 localStorage keys (§4.5 step 5). Does nothing until the v2
