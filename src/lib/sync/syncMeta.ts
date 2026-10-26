@@ -25,8 +25,6 @@ export const SYNC_FIELD_NAMES: ReadonlyArray<keyof SyncFields> = [
   'headerPending',
 ]
 
-const FIELD_SET = new Set<string>(SYNC_FIELD_NAMES)
-
 function asObject(raw: unknown): Record<string, unknown> | null {
   return raw !== null && typeof raw === 'object' && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)
@@ -115,8 +113,9 @@ export async function updateSyncMeta(
   return withWriteLock(SYNC_META_KEY, async () => {
     const raw = asObject(await get<unknown>(SYNC_META_KEY, store)) ?? {}
     const next: Record<string, unknown> = { ...raw }
-    for (const [key, value] of Object.entries(patch)) {
-      if (!FIELD_SET.has(key)) continue
+    for (const key of SYNC_FIELD_NAMES) {
+      if (!Object.hasOwn(patch, key)) continue
+      const value = patch[key]
       if (value === undefined) delete next[key]
       else next[key] = value
     }
