@@ -10,11 +10,14 @@ import { updateAppSettings } from '@/lib/appSettings'
 import { formatRestoreSummary } from '@/lib/backup'
 import { clearLegacyKeys, getVaultState } from '@/lib/vault'
 import { clearLocalDb } from '@/lib/localDb'
+import { ENABLE_SYNC } from '@/lib/featureFlags'
+import { consumeSyncRestoreRequest } from '@/lib/sync/restoreRequest'
 import { RemoveDataDialog } from '@/components/RemoveDataDialog'
 import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 import { CreateVaultScreen } from '@/components/vault/CreateVaultScreen'
 import { RecoverScreen } from '@/components/vault/RecoverScreen'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
+import { SyncRestoreScreen } from '@/components/vault/SyncRestoreScreen'
 import { UnlockScreen } from '@/components/vault/UnlockScreen'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,6 +43,8 @@ interface PasswordUnlockDialogProps {
 // recover   -> "Forgot password?" (v2 only)
 // remove    -> "I've lost both" from recover: remove all data (typed DELETE)
 // migrated  -> a v1 unlock migrated the store; show the new recovery key
+// sync-restore -> no vault, "Already use MinimaSpend sync?" (or a pending
+//              ?restore=sync request): restore this device from the cloud
 // recovery  -> data keys without a vault ('orphaned') or the state check
 //              failed: never offer "Create password" over data that may exist.
 //              Offers "Restore from backup" (replace only; the existing data
@@ -47,6 +52,7 @@ interface PasswordUnlockDialogProps {
 type Mode =
   | { kind: 'checking' }
   | { kind: 'create' }
+  | { kind: 'sync-restore' }
   | { kind: 'unlock'; legacy: boolean }
   | { kind: 'recover' }
   | { kind: 'remove' }
@@ -74,7 +80,12 @@ export function PasswordUnlockDialog({
       .then(
         (state) => {
           if (cancelled) return
-          if (state === 'none') setMode({ kind: 'create' })
+          if (state === 'none') {
+            // A restore requested before sign-in (?restore=sync) opens straight
+            // on the sync restore screen, once.
+            const restore = consumeSyncRestoreRequest() && ENABLE_SYNC
+            setMode({ kind: restore ? 'sync-restore' : 'create' })
+          }
           else if (state === 'v1') setMode({ kind: 'unlock', legacy: true })
           else if (state === 'v2') setMode({ kind: 'unlock', legacy: false })
           else setMode({ kind: 'recovery' })
@@ -149,6 +160,17 @@ export function PasswordUnlockDialog({
         <CreateVaultScreen
           onCreated={() => onUnlocked({ isNewVault: true })}
           onCancel={onCancelCreate}
+          onRestoreFromSync={
+            ENABLE_SYNC ? () => setMode({ kind: 'sync-restore' }) : undefined
+          }
+        />
+      )
+    case 'sync-restore':
+      // The restore pulled everything; the normal unlocked flow runs after it.
+      return (
+        <SyncRestoreScreen
+          onRestored={() => onUnlocked({ isNewVault: false })}
+          onCancel={() => setMode({ kind: 'create' })}
         />
       )
     case 'unlock':
