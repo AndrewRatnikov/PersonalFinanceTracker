@@ -24,6 +24,8 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-21](2026-10-21-custom-typed-i18n-catalog-cookie-localstorage.md) | Custom typed i18n catalog, language via cookie + localStorage | Accepted |
 | [2026-10-22](2026-10-22-sync-ready-local-data.md) | Sync-ready local data: tombstones, local rev, deterministic occurrence ids, synced settings record | Accepted |
 | [2026-10-23](2026-10-23-encrypted-sync-server-opaque-keys-plan-permissions.md) | Encrypted sync server: opaque record keys, server-ordered pulls, plan-based permissions with a beta switch | Accepted |
+| [2026-10-24](2026-10-24-sync-engine-pull-push-server-wins-ties-linking.md) | Sync engine: pull then push, server-ordered cursors, server wins exact ties, linking flows | Accepted |
+| [2026-10-24](2026-10-24-sync-permission-gate-covers-data-movement-only.md) | The sync permission gate covers calls that move data or keys; deleting cloud data and managing devices stay open | Accepted |
 
 ## Where else decisions live
 
