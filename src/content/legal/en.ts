@@ -23,7 +23,7 @@ export const legalEn: LegalContent = {
         heading: 'The service',
         paragraphs: [
           'MinimaSpend lets you track expenses, income and budgets in your browser. Your data is encrypted on your device with a key that only you can unlock.',
-          'You can use the app without an account. An account is optional and is needed only for sync across devices, which is coming soon.',
+          'You can use the app without an account. An account is optional and is needed only for sync across devices. Sync across devices is optional and in beta.',
         ],
       },
       {
@@ -125,13 +125,13 @@ export const legalEn: LegalContent = {
         id: 'sync',
         heading: 'If you use sync',
         paragraphs: [
-          'Sync across devices is coming soon. When you use it, the server stores:',
+          'Sync across devices is optional and in beta. When you turn it on, the server stores:',
         ],
         bullets: [
-          "your records as encrypted data that we can't read: amounts, categories, descriptions and even the kind of record stay encrypted;",
+          "each record as encrypted data that we can't read: amounts, categories, descriptions and even the kind of record stay encrypted;",
+          'for each record an opaque record key (a keyed hash that reveals neither the kind of record nor its id), the time it was last edited, the size of the encrypted record and which of your devices wrote it;',
           'a copy of your vault header: the encrypted (wrapped) keys and the salts needed to unlock your data on another device;',
-          'the size of each encrypted record and the time it was last edited;',
-          'the names of your devices, for example "Chrome on Android".',
+          'the names of your devices, for example "Chrome on Android", and when each device was last seen.',
         ],
       },
       {
@@ -171,7 +171,7 @@ export const legalEn: LegalContent = {
         heading: 'How long data is kept and how to delete it',
         paragraphs: [
           'Your account and cloud data are kept until you delete them.',
-          'To delete your account and your encrypted cloud data, open Settings → Account → Delete account. When sync is available, you will also be able to delete only your cloud data and keep the account.',
+          'To delete your account and your encrypted cloud data, open Settings → Account → Delete account. To delete only your cloud data and keep the account, open Settings → Sync → Delete cloud data; the data on your devices is kept.',
           'To remove data from your device, open Settings → Data → Remove data from this device.',
         ],
       },
