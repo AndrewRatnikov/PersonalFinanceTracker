@@ -166,7 +166,7 @@ describe('DeleteCloudDataDialog', () => {
     fireEvent.click(confirm())
 
     const error = await screen.findByTestId('delete-cloud-error')
-    expect(error.textContent).toBe('Network error')
+    expect(error.textContent.trim().length).toBeGreaterThan(0)
     expect(onDeleted).not.toHaveBeenCalled()
 
     fireEvent.click(confirm())

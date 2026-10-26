@@ -11,7 +11,7 @@ import type { SimDevice, SyncedPair } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { startDb } from '@/test/sql/harness'
 import { failNextSetMany } from '@/test/sync/memoryIdb'
-import { createSimDevice, createSyncedPair } from '@/test/sync/simDevice'
+import { cloudVaultOf, createSimDevice, createSyncedPair } from '@/test/sync/simDevice'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 })
@@ -312,7 +312,7 @@ describe('Replace cloud data with this device', () => {
 
     const fresh = await createSimDevice({ name: 'N', rpc: s.p.rpc, userId: s.p.userId })
     devices.push(fresh)
-    const cloud = await fresh.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(fresh)
     await fresh.actions.restoreFromCloud(cloud, { password: LOCAL_PW })
 
     const byId = new Map((await fresh.localDb.getAllExpenses()).map((e) => [e.id, e]))

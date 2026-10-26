@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import type { SimDevice } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { setFreeForAll, startDb } from '@/test/sql/harness'
-import { createSimDevice, createSyncedPair } from '@/test/sync/simDevice'
+import { cloudVaultOf, createSimDevice, createSyncedPair } from '@/test/sync/simDevice'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 })
@@ -344,7 +344,7 @@ describe('"Remove data from this device"', () => {
     p.b.vault.lockVault()
     await p.b.localDb.clearLocalDb()
 
-    const cloud = await p.b.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(p.b)
     const restored = await p.b.actions.restoreFromCloud(cloud, { password: PW })
 
     expect(restored.status).toBe('synced')

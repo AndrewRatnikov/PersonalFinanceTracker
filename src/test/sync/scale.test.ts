@@ -11,7 +11,7 @@ import type { SyncRecord } from '@/lib/syncRecords'
 import type { SimDevice } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { startDb } from '@/test/sql/harness'
-import { createSimDevice } from '@/test/sync/simDevice'
+import { cloudVaultOf, createSimDevice } from '@/test/sync/simDevice'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 })
@@ -106,7 +106,7 @@ describe('20,000 records', () => {
 
     // ── Download on a fresh device ────────────────────────────────────────────
     const b = await createSimDevice({ name: 'B', rpc, userId })
-    const cloud = await b.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(b)
     const restored = await b.actions.restoreFromCloud(cloud, { password: PW })
 
     expect(restored.status).toBe('synced')

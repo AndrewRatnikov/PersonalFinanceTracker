@@ -258,8 +258,12 @@ describe('dedupeOccurrences', () => {
 
   it('keeps the record whose id is the deterministic occurrence id and tombstones the other', async () => {
     const canonical = await occurrenceRecordId(RID, DATE)
+    // A rival that always sorts before the canonical id, so the smallest-id
+    // rule alone would keep the wrong record.
+    const rival = '!-smaller-than-any-uuid'
+    expect(rival < canonical).toBe(true)
     await applyIncomingRecords([
-      occurrence('aaaa-small-id', RID, DATE),
+      occurrence(rival, RID, DATE),
       occurrence(canonical, RID, DATE),
     ])
     expect(await liveExpenseIds()).toHaveLength(2)
@@ -592,13 +596,21 @@ describe('onLocalChange / notifyLocalChange', () => {
   it('a merge restore notifies', async () => {
     await addExpense({ amount: 1, currency: 'UAH', categoryId: 'c1', description: 'one' })
     const file = serializeBackup(await createBackup())
+    // A different local database that does not have "one", so the merge writes.
+    lockVault()
+    mockStore.clear()
+    await createVault(PW)
     setNow(T1)
     await addExpense({ amount: 2, currency: 'UAH', categoryId: 'c1', description: 'two' })
+    const revBefore = await getLocalRev()
     const listener = vi.fn()
     listen(listener)
 
     await restoreBackup(file, PW, 'merge')
 
+    const descriptions = (await getAllExpenses()).map((e) => e.description).sort()
+    expect(descriptions).toEqual(['one', 'two'])
+    expect(await getLocalRev()).toBeGreaterThan(revBefore)
     expect(listener).toHaveBeenCalled()
   })
 })

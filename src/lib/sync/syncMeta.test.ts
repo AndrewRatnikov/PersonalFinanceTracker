@@ -11,6 +11,7 @@ import {
   addCategory,
   addExpense,
   deleteExpense,
+  getAllExpenses,
   getLocalRev,
   syncMetaEntry,
 } from '@/lib/localDb'
@@ -259,6 +260,11 @@ describe('user writes keep the sync fields', () => {
   it('a merge restore keeps the sync fields and bumps localRev', async () => {
     await addExpense({ amount: 100, currency: 'UAH', categoryId: 'c1', description: 'one' })
     const file = serializeBackup(await createBackup())
+    // A different local database that does not have "one", so the merge writes.
+    lockVault()
+    mockStore.clear()
+    await createVault(PW)
+    await updateSyncMeta(SYNC_ONLY)
     vi.setSystemTime(new Date('2026-10-24T09:30:00.000Z'))
     await addExpense({ amount: 300, currency: 'UAH', categoryId: 'c1', description: 'two' })
     const before = await getLocalRev()
@@ -266,7 +272,9 @@ describe('user writes keep the sync fields', () => {
     await restoreBackup(file, PW, 'merge')
 
     expect(stored()).toMatchObject(SYNC_ONLY)
-    expect(stored().localRev).toBeGreaterThanOrEqual(before)
+    expect(stored().localRev as number).toBeGreaterThan(before)
+    const descriptions = (await getAllExpenses()).map((e) => e.description).sort()
+    expect(descriptions).toEqual(['one', 'two'])
   })
 })
 

@@ -168,7 +168,7 @@ describe('a header change that cannot be pushed yet', () => {
 
     p.a.state.online = true
     const result = await p.a.actions.syncNow()
-    if (result.ran) expect(result.status).toBe('synced')
+    expect(result).toMatchObject({ ran: true, status: 'synced' })
     await until(async () => (await serverHeader(p.userId)).rev === 2, 'header rev 2')
     await until(async () => (await p.a.syncMeta.readSyncMeta()).headerPending === false, 'pending cleared')
   })

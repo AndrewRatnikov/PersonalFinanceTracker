@@ -8,7 +8,12 @@ import type { SeedResult, SimDevice } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { startDb } from '@/test/sql/harness'
 import { storeState } from '@/test/sync/memoryIdb'
-import { PLAINTEXT_MARKERS, createSimDevice, seedSampleData } from '@/test/sync/simDevice'
+import {
+  PLAINTEXT_MARKERS,
+  cloudVaultOf,
+  createSimDevice,
+  seedSampleData,
+} from '@/test/sync/simDevice'
 import { recordKeyFor } from '@/lib/cloud/recordCrypto'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
@@ -178,8 +183,7 @@ describe('a second device restores from the cloud', () => {
   it('refuses a wrong password, registers nothing and writes nothing', async () => {
     d2 = await createSimDevice({ name: 'Phone', rpc, userId })
     expect(await d2.vault.getVaultState()).toBe('none')
-    const cloud = await d2.actions.fetchCloudVault()
-    expect(cloud).not.toBeNull()
+    const cloud = await cloudVaultOf(d2)
     const devicesBefore = await activeDevices()
 
     expect(await codeOf(d2.actions.restoreFromCloud(cloud, { password: 'wrong password' }))).toBe(
@@ -194,7 +198,7 @@ describe('a second device restores from the cloud', () => {
   })
 
   it('with the password it restores identical live data', async () => {
-    const cloud = await d2.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(d2)
     const before = await serverCount()
     const result = await d2.actions.restoreFromCloud(cloud, { password: PW })
 
@@ -271,7 +275,7 @@ describe('a second device restores from the cloud', () => {
 
   it('a wrong password keeps being refused with the unlock delay, then the right one works', async () => {
     const d3 = await createSimDevice({ name: 'Tablet', rpc, userId })
-    const cloud = await d3.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(d3)
     for (let i = 0; i < 5; i++) {
       expect(await codeOf(d3.actions.restoreFromCloud(cloud, { password: `wrong ${i}` }))).toBe(
         'incorrect-password',
@@ -289,7 +293,7 @@ describe('a second device restores from the cloud', () => {
 
   it('the recovery key works too and sets a new password that is pushed as the cloud header', async () => {
     const d4 = await createSimDevice({ name: 'Desktop', rpc, userId })
-    const cloud = await d4.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(d4)
     expect(await codeOf(d4.actions.restoreFromCloud(cloud, {
       recoveryKey: 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF-GG',
       newPassword: NEW_PW,

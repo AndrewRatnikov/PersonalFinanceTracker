@@ -10,7 +10,7 @@ import type { SyncRecord } from '@/lib/syncRecords'
 import type { SimDevice } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { startDb, wireRecord } from '@/test/sql/harness'
-import { createSimDevice } from '@/test/sync/simDevice'
+import { cloudVaultOf, createSimDevice } from '@/test/sync/simDevice'
 import { deriveSyncKeys, encryptSyncRecord } from '@/lib/cloud/recordCrypto'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
@@ -163,7 +163,7 @@ describe('an interrupted pull resumes from pullCursor', () => {
       pulls++
       return pulls === 2 ? NETWORK_DOWN : undefined
     }
-    const cloud = await b.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(b)
     const result = await b.actions.restoreFromCloud(cloud, { password: PW })
 
     expect(result.status).toBe('error')
@@ -195,7 +195,7 @@ describe('an interrupted pull resumes from pullCursor', () => {
 
   it('applying the same page twice (a crash before the cursor was saved) changes nothing', async () => {
     const b = await newDevice('B2', userId)
-    const cloud = await b.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(b)
     await b.actions.restoreFromCloud(cloud, { password: PW })
     const before = await b.snapshot()
 
@@ -247,7 +247,7 @@ describe('an undecryptable row is skipped, counted and reported', () => {
 
     // A second device that also has a good new record waiting on the server.
     const b = await newDevice('B', userId)
-    const cloud = await b.actions.fetchCloudVault()
+    const cloud = await cloudVaultOf(b)
     const restored = await b.actions.restoreFromCloud(cloud, { password: PW })
 
     expect(restored.status).toBe('synced')

@@ -227,10 +227,13 @@ describe('renaming', () => {
     const input = await startRename()
     fireEvent.change(input, { target: { value: 'x'.repeat(70) } })
     fireEvent.click(within(rowOf('dev-a')).getByTestId('sync-device-rename-save'))
-    await Promise.resolve()
 
-    const sent = actions.renameDevice.mock.calls[0]?.[1] as string | undefined
-    expect(input.maxLength === 60 || sent === undefined || sent.length <= 60).toBe(true)
+    await waitFor(() => {
+      expect(actions.renameDevice).toHaveBeenCalledTimes(1)
+    })
+    const sent = actions.renameDevice.mock.calls[0]?.[1] as string
+    expect(sent.length).toBeLessThanOrEqual(60)
+    expect(sent.length).toBeGreaterThan(0)
   })
 
   it('cancel closes the input without a call', async () => {

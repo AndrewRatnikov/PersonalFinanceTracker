@@ -22,6 +22,7 @@ import type * as LocalDbModule from '@/lib/localDb'
 import type * as VaultModule from '@/lib/vault'
 import type * as SyncMetaModule from '@/lib/sync/syncMeta'
 import type { CloudApi, RpcFn, RpcResponse } from '@/lib/cloud/api'
+import type { CloudVault } from '@/lib/cloud/types'
 import type {
   DeviceIdPort,
   SyncActions,
@@ -274,6 +275,14 @@ export async function seedSampleData(device: SimDevice): Promise<SeedResult> {
   }
 }
 
+// The device's cloud vault, failing loudly when there is none (fetchCloudVault
+// returns CloudVault | null; restoreFromCloud needs a CloudVault).
+export async function cloudVaultOf(d: SimDevice): Promise<CloudVault> {
+  const c = await d.actions.fetchCloudVault()
+  if (!c) throw new Error('no cloud vault')
+  return c
+}
+
 export interface SyncedPair {
   userId: string
   rpc: RpcFn
@@ -298,8 +307,7 @@ export async function createSyncedPair(
   const seed = withData ? await seedSampleData(a) : null
   await a.actions.turnOn()
   const b = await createSimDevice({ name: 'B', rpc, userId })
-  const cloud = await b.actions.fetchCloudVault()
-  if (!cloud) throw new Error('createSyncedPair: no cloud vault after turnOn')
+  const cloud = await cloudVaultOf(b)
   await b.actions.restoreFromCloud(cloud, { password })
   return { userId, rpc, a, b, seed, recoveryKey }
 }

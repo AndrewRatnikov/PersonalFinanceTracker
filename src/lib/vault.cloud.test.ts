@@ -134,7 +134,17 @@ beforeEach(() => {
   setSyncChannel(null)
 })
 
+// Header listeners live in the module, so every test removes the ones it added.
+const unsubscribers: Array<() => void> = []
+
+function listen(listener: () => void): () => void {
+  const off = subscribeHeaderChanges(listener)
+  unsubscribers.push(off)
+  return off
+}
+
 afterEach(() => {
+  for (const off of unsubscribers.splice(0)) off()
   vi.useRealTimers()
   vi.restoreAllMocks()
   setSyncChannel(undefined)
@@ -247,7 +257,7 @@ describe('adoptCloudVault on a fresh device', () => {
   it('emits no header-change event', async () => {
     const cloud = await makeCloud()
     const listener = vi.fn()
-    subscribeHeaderChanges(listener)
+    listen(listener)
     await adoptCloudVault(cloud.header, { password: CLOUD_PW })
     expect(listener).not.toHaveBeenCalled()
   })
@@ -257,7 +267,7 @@ describe('subscribeHeaderChanges', () => {
   it('fires after changePassword, regenerateRecoveryKey and resetPasswordWithRecoveryKey', async () => {
     const { recoveryKey } = await createVault(LOCAL_PW)
     const listener = vi.fn()
-    const off = subscribeHeaderChanges(listener)
+    const off = listen(listener)
 
     await changePassword(LOCAL_PW, NEW_PW)
     expect(listener).toHaveBeenCalledTimes(1)
@@ -278,7 +288,7 @@ describe('subscribeHeaderChanges', () => {
   it('does not fire when the change fails', async () => {
     await createVault(LOCAL_PW)
     const listener = vi.fn()
-    subscribeHeaderChanges(listener)
+    listen(listener)
 
     expect(await codeOf(changePassword('not the password', NEW_PW))).toBe('incorrect-password')
     expect(await codeOf(regenerateRecoveryKey('not the password'))).toBe('incorrect-password')
@@ -287,7 +297,7 @@ describe('subscribeHeaderChanges', () => {
 
   it('does not fire for create or unlock', async () => {
     const listener = vi.fn()
-    subscribeHeaderChanges(listener)
+    listen(listener)
     await createVault(LOCAL_PW)
     lockVault()
     await unlockWithPassword(LOCAL_PW)
@@ -298,10 +308,10 @@ describe('subscribeHeaderChanges', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     await createVault(LOCAL_PW)
     const good = vi.fn()
-    subscribeHeaderChanges(() => {
+    listen(() => {
       throw new TypeError('private detail 987')
     })
-    subscribeHeaderChanges(good)
+    listen(good)
 
     await changePassword(LOCAL_PW, NEW_PW)
 
@@ -384,7 +394,7 @@ describe('adoptHeaderIfSameDek and headerMatchesDek', () => {
   it('emits no header-change event', async () => {
     const { h2 } = await twoHeaders()
     const listener = vi.fn()
-    subscribeHeaderChanges(listener)
+    listen(listener)
     await adoptHeaderIfSameDek(h2)
     expect(listener).not.toHaveBeenCalled()
   })

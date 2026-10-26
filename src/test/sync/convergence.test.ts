@@ -9,7 +9,7 @@ import type { RateProvider, RateTable } from '@/lib/rates/types'
 import type { SimDevice } from '@/test/sync/simDevice'
 import type { SqlTestDb } from '@/test/sql/harness'
 import { startDb } from '@/test/sql/harness'
-import { createSimDevice } from '@/test/sync/simDevice'
+import { cloudVaultOf, createSimDevice } from '@/test/sync/simDevice'
 import { decryptSyncRecord, encryptSyncRecord } from '@/lib/cloud/recordCrypto'
 
 vi.mock('idb-keyval', () => import('@/test/sync/memoryIdb'))
@@ -75,7 +75,7 @@ async function pair(): Promise<Pair> {
 
   const b = await createSimDevice({ name: 'B', rpc, userId })
   devices.push(b)
-  const cloud = await b.actions.fetchCloudVault()
+  const cloud = await cloudVaultOf(b)
   await b.actions.restoreFromCloud(cloud, { password: PW })
   return { userId, rpc, a, b, categoryId: category.id }
 }
@@ -495,7 +495,7 @@ describe('three devices', () => {
     const p = await pair()
     const c = await createSimDevice({ name: 'C', rpc: p.rpc, userId: p.userId })
     devices.push(c)
-    await c.actions.restoreFromCloud((await c.actions.fetchCloudVault()), { password: PW })
+    await c.actions.restoreFromCloud((await cloudVaultOf(c)), { password: PW })
 
     at(T1)
     const ea = await p.a.localDb.addExpense({ amount: 1, currency: 'UAH', categoryId: p.categoryId, description: 'from A', createdAt: T1 })
