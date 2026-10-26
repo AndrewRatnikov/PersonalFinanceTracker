@@ -67,7 +67,7 @@ export function SyncLinkDialog({ open, cloud, onOpenChange, onLinked }: SyncLink
     (choice === 'join' ? password !== '' : confirmText === REPLACE_CONFIRMATION)
 
   const handleConfirm = async () => {
-    if (!canConfirm || cloud === null) return
+    if (!canConfirm) return
     setPending(true)
     setError(null)
     try {
