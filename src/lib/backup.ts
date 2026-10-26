@@ -1087,15 +1087,15 @@ export async function restoreBackup(
       delete settings.fetchExchangeRates
     }
     entries.push([META_SETTINGS_KEY, settings])
-    const stamped = lastRev !== startRev
-    if (stamped) {
+    const revAdvanced = lastRev !== startRev
+    if (revAdvanced) {
       // The stored sync fields of meta:sync stay; only localRev advances.
       entries.push(await syncMetaEntry(lastRev))
     }
 
     // One transaction: everything commits or nothing does.
     await setMany(entries, store)
-    return { summary, written, stamped }
+    return { summary, written, stamped: revAdvanced }
   })
 
   // 7. After commit.
