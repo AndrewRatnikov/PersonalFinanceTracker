@@ -82,7 +82,10 @@ export const ENABLE_SUPABASE_SYNC = false
 //   creates, changes, deletes or undeletes, and writes the data keys and
 //   `meta:sync` in ONE setMany. A write that sets `updatedAt` stamps `rev`;
 //   derived writes (conversion, quarantine, migrations, incoming records,
-//   compaction) stamp neither and never touch `meta:sync`.
+//   compaction) stamp neither and never touch `meta:sync`. `meta:sync` also
+//   holds the sync engine's fields (src/lib/sync/syncMeta.ts); a user write
+//   keeps them and only replaces localRev, then calls the onLocalChange
+//   listeners (the engine's debounced trigger).
 // - Records generated for a recurring occurrence get the deterministic id
 //   occurrenceRecordId(recurringId, occurrenceDate).
 //
@@ -103,7 +106,7 @@ interface LocalDbMap {
 
 type LocalDbKey = keyof LocalDbMap
 
-/** Plaintext `{ localRev: number }`; a missing or invalid value means 0. */
+/** Plaintext `{ localRev: number, ...sync fields }`; a missing or invalid localRev means 0. */
 export const SYNC_META_KEY = 'meta:sync'
 /** The encrypted synced settings record. */
 export const SYNCED_SETTINGS_KEY = 'syncedSettings'
@@ -180,12 +183,16 @@ interface RevCounter {
   next: () => number
   readonly changed: boolean
   readonly last: number
+  /** The stored meta:sync object (its sync fields are written back unchanged). */
+  readonly base: Record<string, unknown>
 }
 
 // Only called inside a lock that includes SYNC_META_KEY. Nothing is written
 // until writeKeysMany commits the counter together with the data.
 async function openRevCounter(): Promise<RevCounter> {
-  const start = await getLocalRev()
+  const raw = store ? await get<unknown>(SYNC_META_KEY, store) : undefined
+  const start = parseLocalRev(raw)
+  const base = asObject(raw) ?? {}
   let last = start
   return {
     next: () => ++last,
@@ -195,6 +202,46 @@ async function openRevCounter(): Promise<RevCounter> {
     get last() {
       return last
     },
+    base,
+  }
+}
+
+// The meta:sync entry for a write that advanced the counter to `localRev`:
+// the stored object (sync fields kept) with localRev replaced. Exactly
+// `{ localRev }` when nothing else is stored. Must be called inside a lock that
+// holds SYNC_META_KEY.
+export async function syncMetaEntry(
+  localRev: number,
+): Promise<[string, Record<string, unknown>]> {
+  const raw = store ? await get<unknown>(SYNC_META_KEY, store) : undefined
+  return [SYNC_META_KEY, { ...(asObject(raw) ?? {}), localRev }]
+}
+
+// ── Local change hook (user writes, for the sync engine) ──────────────────────
+
+const localChangeListeners = new Set<() => void>()
+
+// Called after every committed user write (a write that stamped revs). Not
+// after incoming records, compaction or conversion writes.
+export function onLocalChange(listener: () => void): () => void {
+  localChangeListeners.add(listener)
+  return () => {
+    localChangeListeners.delete(listener)
+  }
+}
+
+// Calls every listener synchronously; a throwing listener is logged by its
+// error name only and never fails the write.
+export function notifyLocalChange(): void {
+  for (const listener of Array.from(localChangeListeners)) {
+    try {
+      listener()
+    } catch (err) {
+      console.error(
+        'Local change listener failed:',
+        err instanceof Error ? err.name : typeof err,
+      )
+    }
   }
 }
 
@@ -231,10 +278,11 @@ async function writeKeysMany(
   }
   entries.push(...plain)
   if (counter?.changed) {
-    entries.push([SYNC_META_KEY, { localRev: counter.last }])
+    entries.push([SYNC_META_KEY, { ...counter.base, localRev: counter.last }])
   }
   if (entries.length === 0) return
   await setMany(entries, store)
+  if (counter?.changed) notifyLocalChange()
 }
 
 // ── Expense chunk helpers ─────────────────────────────────────────────────────
@@ -2041,6 +2089,11 @@ export interface ApplyIncomingResult {
   conflicts: number
 }
 
+export interface ApplyIncomingOptions {
+  /** An equal updatedAt with different content takes the incoming record. */
+  preferIncomingOnTie?: boolean
+}
+
 type StoredRecord = Record<string, unknown> & { id: string }
 
 const SINGLE_KEY_TYPES: Array<[Exclude<SyncRecordType, 'expense' | 'settings'>, SingleListKey]> = [
@@ -2175,8 +2228,13 @@ function liveList(state: KeyState): Array<StoredRecord> {
 // synced settings record. A malformed record rejects the whole batch before
 // anything is read. Everything changed is written in ONE setMany, then the
 // usual commit hook runs. A DecryptError propagates and nothing is written.
+//
+// `preferIncomingOnTie` (the sync engine, for the server copy of a 'stale' push
+// result): an equal updatedAt with different content takes the incoming record
+// (still counted as a conflict), so every device converges on the server copy.
 export async function applyIncomingRecords(
   records: Array<SyncRecord>,
+  options: ApplyIncomingOptions = {},
 ): Promise<ApplyIncomingResult> {
   records.forEach((record, index) => {
     if (!isValidIncoming(record)) {
@@ -2266,7 +2324,9 @@ export async function applyIncomingRecords(
           let take = decision === 'take-incoming'
           if (decision === 'conflict-same-time' && local) {
             result.conflicts++
-            take = sameTimeWinner(local, incoming) === 'incoming'
+            take =
+              options.preferIncomingOnTie === true ||
+              sameTimeWinner(local, incoming) === 'incoming'
           }
           if (!take) {
             result.kept++
@@ -2344,17 +2404,22 @@ export async function applyIncomingRecords(
 }
 
 // Really removes the tombstones whose deletedAt is strictly older than
-// `olderThan` from every list (records and revs otherwise untouched). Only the
-// changed keys are written, in one setMany, and announced to other tabs; no
-// lastDataChangeAt, no conversion request. Returns how many records it
-// removed. Called by the sync engine once the server has the tombstones;
-// nothing in the app calls it yet.
-export async function compactTombstones(olderThan: string): Promise<number> {
+// `olderThan` from every list (records and revs otherwise untouched). With
+// `maxRev`, only tombstones whose rev is at most maxRev (already pushed to the
+// server) are removed. Only the changed keys are written, in one setMany, and
+// announced to other tabs; no lastDataChangeAt, no conversion request, no
+// local-change notification. Returns how many records it removed. Called by
+// the sync engine after a cycle.
+export async function compactTombstones(
+  olderThan: string,
+  options: { maxRev?: number } = {},
+): Promise<number> {
   const cutoff = Date.parse(olderThan)
   if (Number.isNaN(cutoff)) {
     throw new Error(`compactTombstones: invalid date "${olderThan}"`)
   }
   if (!_key || !store) return 0
+  const { maxRev } = options
   const singleKeys: Array<SingleListKey> = [
     'categories',
     'incomeCategories',
@@ -2375,7 +2440,12 @@ export async function compactTombstones(olderThan: string): Promise<number> {
       let count = 0
       for (const [key, list] of lists) {
         const kept = list.filter(
-          (r) => !(r.deletedAt && Date.parse(r.deletedAt) < cutoff),
+          (r) =>
+            !(
+              r.deletedAt &&
+              Date.parse(r.deletedAt) < cutoff &&
+              (maxRev === undefined || (r.rev ?? 0) <= maxRev)
+            ),
         )
         if (kept.length !== list.length) {
           count += list.length - kept.length
@@ -2388,4 +2458,236 @@ export async function compactTombstones(olderThan: string): Promise<number> {
   )
   if (written.length > 0) postChanged(written)
   return removed
+}
+
+// ── Legacy duplicate occurrences (sync) ───────────────────────────────────────
+
+interface OccurrenceSlot {
+  key: string
+  index: number
+  id: string
+}
+
+// Reduces duplicate live occurrences of the given recurring items (records
+// from before deterministic ids: random ids, same recurringId +
+// occurrenceDate, both live) to one. In each group the record whose id equals
+// occurrenceRecordId(recurringId, occurrenceDate) is kept, else the smallest
+// id (plain string order); the others become tombstones as a user write
+// (deletedAt = updatedAt = now, a fresh rev), so the cleanup syncs. One lock,
+// one setMany. Returns how many records were tombstoned; nothing to do writes
+// nothing.
+export async function dedupeOccurrences(
+  recurringIds: Array<string>,
+): Promise<number> {
+  const wanted = new Set(
+    recurringIds.filter((id) => typeof id === 'string' && id !== ''),
+  )
+  if (wanted.size === 0 || !_key || !store) return 0
+
+  for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
+    const chunkKeys = await allExpenseChunkKeys()
+    const outcome = await withWriteLock(
+      ['income', SYNC_META_KEY, ...chunkKeys],
+      async (): Promise<
+        { status: 'retry' } | { status: 'done'; removed: number; written: Array<string> }
+      > => {
+        const locked = new Set(chunkKeys)
+        if ((await allExpenseChunkKeys()).some((k) => !locked.has(k))) {
+          return { status: 'retry' }
+        }
+        const lists = new Map<string, Array<StoredRecord>>()
+        for (const key of chunkKeys) {
+          lists.set(key, (await readChunk(key)) as unknown as Array<StoredRecord>)
+        }
+        lists.set(
+          'income',
+          ((await readStore('income')) ?? []) as unknown as Array<StoredRecord>,
+        )
+
+        // Groups by kind, recurringId and occurrenceDate (live records only).
+        const groups = new Map<
+          string,
+          { recurringId: string; date: string; slots: Array<OccurrenceSlot> }
+        >()
+        for (const [key, list] of lists) {
+          const kind = key === 'income' ? 'income' : 'expense'
+          list.forEach((record, index) => {
+            if (!isLive(record as Revisioned)) return
+            const recurringId = record.recurringId
+            const date = record.occurrenceDate
+            if (typeof recurringId !== 'string' || !wanted.has(recurringId)) return
+            if (typeof date !== 'string') return
+            const groupKey = `${kind}\u0000${recurringId}\u0000${date}`
+            const group = groups.get(groupKey) ?? { recurringId, date, slots: [] }
+            group.slots.push({ key, index, id: record.id })
+            groups.set(groupKey, group)
+          })
+        }
+
+        const doomed: Array<OccurrenceSlot> = []
+        for (const group of groups.values()) {
+          if (group.slots.length < 2) continue
+          const canonical = await occurrenceRecordId(group.recurringId, group.date)
+          const keep =
+            group.slots.find((s) => s.id === canonical) ??
+            group.slots.reduce((min, s) => (s.id < min.id ? s : min))
+          for (const slot of group.slots) if (slot !== keep) doomed.push(slot)
+        }
+        if (doomed.length === 0) return { status: 'done', removed: 0, written: [] }
+
+        const counter = await openRevCounter()
+        const now = nowIso()
+        const values: Record<string, Array<StoredRecord>> = {}
+        for (const slot of doomed) {
+          const list = values[slot.key] ?? [...(lists.get(slot.key) ?? [])]
+          list[slot.index] = {
+            ...list[slot.index],
+            deletedAt: now,
+            updatedAt: now,
+            rev: counter.next(),
+          }
+          values[slot.key] = list
+        }
+        await writeKeysMany(values, counter)
+        return { status: 'done', removed: doomed.length, written: Object.keys(values) }
+      },
+    )
+    if (outcome.status === 'retry') continue
+    if (outcome.written.length > 0) await afterCommit(outcome.written)
+    return outcome.removed
+  }
+  throw new Error('dedupeOccurrences: storage kept changing')
+}
+
+// ── Re-key (sync: "Join cloud data and keep this device's entries") ──────────
+
+export interface RekeyResult {
+  /** Records re-stamped (live records plus the settings record). */
+  records: number
+  /** localRev before the re-stamp. */
+  startRev: number
+  /** localRev after it. */
+  localRev: number
+}
+
+const REKEY_SINGLE_KEYS: Array<SingleListKey> = [
+  'categories',
+  'incomeCategories',
+  'income',
+  'budgets',
+  'recurring',
+]
+
+// Re-encrypts this device's LIVE data under `newKey` (used only by
+// vault.joinCloudVault). Under one lock: everything is read with the current
+// key (a DecryptError propagates and nothing is written), tombstones are
+// dropped (they belong to the old vault), every kept record and the settings
+// record gets a fresh rev (id, updatedAt, createdAt and conversion kept), and
+// ONE setMany writes every data key (expenses regrouped into the chunk of their
+// createdAt; a key left empty gets an encrypted []), the `plain` entries
+// verbatim and meta:sync = { ...stored, ...syncPatch, localRev } (plus
+// pushedRev = startRev when the patch enables sync, so every re-inserted record
+// is pushed). quarantine:* keys are left alone. Only after the commit does the
+// in-memory key switch; a failure before leaves the store and the key as they
+// were.
+export async function rekeyLiveData(
+  newKey: CryptoKey,
+  extra: {
+    plain?: Array<[string, unknown]>
+    syncPatch?: Record<string, unknown>
+  } = {},
+): Promise<RekeyResult> {
+  const s = store
+  if (!_key || !s) throw new Error('LocalDb not initialized')
+  const plain = extra.plain ?? []
+  const syncPatch = extra.syncPatch ?? {}
+
+  for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
+    const chunkKeys = await allExpenseChunkKeys()
+    const outcome = await withWriteLock(
+      [
+        ...chunkKeys,
+        ...REKEY_SINGLE_KEYS,
+        SYNCED_SETTINGS_KEY,
+        SYNC_META_KEY,
+        ...plain.map(([key]) => key),
+      ],
+      async (): Promise<
+        { status: 'retry' } | { status: 'done'; result: RekeyResult; written: Array<string> }
+      > => {
+        const locked = new Set(chunkKeys)
+        if ((await allExpenseChunkKeys()).some((k) => !locked.has(k))) {
+          return { status: 'retry' }
+        }
+
+        // Read everything with the current key first.
+        const chunks = new Map<string, Array<Expense>>()
+        for (const key of chunkKeys) chunks.set(key, await readChunk(key))
+        const singles = new Map<string, Array<Revisioned>>()
+        for (const key of REKEY_SINGLE_KEYS) {
+          const raw = await get<unknown>(key, s)
+          if (raw === undefined) continue
+          singles.set(key, ((await readStore(key)) ?? []) as Array<Revisioned>)
+        }
+        const settings = await readStore('syncedSettings')
+
+        const counter = await openRevCounter()
+        const startRev = counter.last
+        const values = new Map<string, unknown>()
+
+        const regrouped = new Map<string, Array<Expense>>(
+          chunkKeys.map((key) => [key, []]),
+        )
+        for (const list of chunks.values()) {
+          for (const expense of list) {
+            if (!isLive(expense)) continue
+            const target = expenseChunkKey(expense.createdAt)
+            const bucket = regrouped.get(target) ?? []
+            bucket.push({ ...expense, rev: counter.next() })
+            regrouped.set(target, bucket)
+          }
+        }
+        for (const [key, list] of regrouped) values.set(key, list)
+        for (const [key, list] of singles) {
+          values.set(
+            key,
+            list.filter(isLive).map((r) => ({ ...r, rev: counter.next() })),
+          )
+        }
+        if (settings !== undefined) {
+          values.set(SYNCED_SETTINGS_KEY, { ...settings, rev: counter.next() })
+        }
+
+        const entries: Array<[IDBValidKey, unknown]> = []
+        for (const [key, value] of values) {
+          entries.push([key, await encryptValue(newKey, value)])
+        }
+        entries.push(...plain)
+        const meta: Record<string, unknown> = {
+          ...counter.base,
+          ...syncPatch,
+          localRev: counter.last,
+        }
+        if (syncPatch.enabled === true) meta.pushedRev = startRev
+        entries.push([SYNC_META_KEY, meta])
+
+        await setMany(entries, s)
+        return {
+          status: 'done',
+          result: {
+            records: counter.last - startRev,
+            startRev,
+            localRev: counter.last,
+          },
+          written: [...values.keys()],
+        }
+      },
+    )
+    if (outcome.status === 'retry') continue
+    _key = newKey
+    await afterCommit(outcome.written)
+    notifyLocalChange()
+    return outcome.result
+  }
+  throw new Error('rekeyLiveData: storage kept changing')
 }
