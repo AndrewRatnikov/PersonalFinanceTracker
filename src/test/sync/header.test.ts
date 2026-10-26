@@ -259,7 +259,10 @@ describe('a cloud header that wraps another key', () => {
     await plantForeignHeader(p)
     await p.a.vault.changePassword(PW, PW_A)
 
-    await until(async () => p.a.engine.getState().status === 'vault-mismatch', 'vault-mismatch')
+    await until(
+      () => Promise.resolve(p.a.engine.getState().status === 'vault-mismatch'),
+      'vault-mismatch',
+    )
 
     expect(updateCalls(p.a)).toHaveLength(1)
     expect((await serverHeader(p.userId)).rev).toBe(2)

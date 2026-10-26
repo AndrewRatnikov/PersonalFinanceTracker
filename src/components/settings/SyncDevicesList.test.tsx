@@ -90,7 +90,7 @@ afterEach(() => {
 })
 
 describe('loading and errors', () => {
-  it('shows a loading marker first', async () => {
+  it('shows a loading marker first', () => {
     actions.listDevices.mockReturnValue(new Promise(() => undefined))
     renderList()
     expect(screen.getByTestId('sync-devices-loading')).toBeTruthy()

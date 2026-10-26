@@ -105,16 +105,16 @@ export function set(key: string, value: unknown, store?: UseStore): Promise<void
 
 // All entries or none, like an IndexedDB transaction.
 export function setMany(
-  entries: Array<[string, unknown]>,
+  pairs: Array<[string, unknown]>,
   store?: UseStore,
 ): Promise<void> {
   const state = stateOf(store)
-  state.setManyCalls.push(entries.map(([k]) => k))
+  state.setManyCalls.push(pairs.map(([k]) => k))
   if (state.failSetMany > 0) {
     state.failSetMany--
     return Promise.reject(new Error('transaction aborted'))
   }
-  for (const [k, v] of entries) state.data.set(k, clone(v))
+  for (const [k, v] of pairs) state.data.set(k, clone(v))
   return Promise.resolve()
 }
 

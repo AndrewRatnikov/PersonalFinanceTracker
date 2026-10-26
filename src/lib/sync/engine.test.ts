@@ -184,21 +184,21 @@ function createHarness(
   const state = { userId: USER as string | null, online: true, unlocked: true, visible: true }
 
   const api = {
-    getSyncStatus: vi.fn(async () => syncStatus()),
-    getVault: vi.fn(async () => null),
+    getSyncStatus: vi.fn(() => Promise.resolve(syncStatus())),
+    getVault: vi.fn(() => Promise.resolve(null)),
     registerDevice: vi.fn(),
     listDevices: vi.fn(),
     renameDevice: vi.fn(),
     removeDevice: vi.fn(),
     createVault: vi.fn(),
-    updateVaultHeader: vi.fn(async () => ({ vault_id: VAULT, header_rev: 2 })),
-    pushRecords: vi.fn(async (_d: string, _v: string, recs: Array<EncryptedSyncRecord>) => {
+    updateVaultHeader: vi.fn(() => Promise.resolve({ vault_id: VAULT, header_rev: 2 })),
+    pushRecords: vi.fn((_d: string, _v: string, recs: Array<EncryptedSyncRecord>) => {
       order.push('push')
-      return accepted(recs)
+      return Promise.resolve(accepted(recs))
     }),
-    pullRecords: vi.fn(async () => {
+    pullRecords: vi.fn(() => {
       order.push('pull')
-      return page([], false)
+      return Promise.resolve(page([], false))
     }),
     deleteCloudData: vi.fn(),
   }
@@ -206,15 +206,17 @@ function createHarness(
   const local = {
     isUnlocked: vi.fn(() => state.unlocked),
     listChangedRecords: vi.fn(
-      async (): Promise<ChangedRecords> => ({ maxRev: 9, records: [] }),
+      (): Promise<ChangedRecords> => Promise.resolve({ maxRev: 9, records: [] }),
     ),
-    applyIncomingRecords: vi.fn(async (recs: Array<SyncRecord>) => ({
-      applied: recs.length,
-      kept: 0,
-      conflicts: 0,
-    })),
-    compactTombstones: vi.fn(async () => 0),
-    dedupeOccurrences: vi.fn(async () => 0),
+    applyIncomingRecords: vi.fn((recs: Array<SyncRecord>) =>
+      Promise.resolve({
+        applied: recs.length,
+        kept: 0,
+        conflicts: 0,
+      }),
+    ),
+    compactTombstones: vi.fn(() => Promise.resolve(0)),
+    dedupeOccurrences: vi.fn(() => Promise.resolve(0)),
     onLocalChange: vi.fn((listener: () => void) => {
       localListener = listener
       return () => {
@@ -226,11 +228,11 @@ function createHarness(
   let localListener: (() => void) | null = null
 
   const vault = {
-    getSyncKeys: vi.fn(async () => ({}) as never),
-    getVaultHeader: vi.fn(async () => HEADER),
-    getVaultState: vi.fn(async () => 'v2' as const),
-    adoptHeaderIfSameDek: vi.fn(async () => 'unchanged' as const),
-    headerMatchesDek: vi.fn(async () => true),
+    getSyncKeys: vi.fn(() => Promise.resolve({} as never)),
+    getVaultHeader: vi.fn(() => Promise.resolve(HEADER)),
+    getVaultState: vi.fn(() => Promise.resolve('v2' as const)),
+    adoptHeaderIfSameDek: vi.fn(() => Promise.resolve('unchanged' as const)),
+    headerMatchesDek: vi.fn(() => Promise.resolve(true)),
     adoptCloudVault: vi.fn(),
     joinCloudVault: vi.fn(),
     verifyPassword: vi.fn(),
@@ -238,16 +240,16 @@ function createHarness(
   }
 
   const meta = {
-    read: vi.fn(async () => ({ ...metaValue })),
-    update: vi.fn(async (patch: Partial<SyncMeta>) => {
+    read: vi.fn(() => Promise.resolve({ ...metaValue })),
+    update: vi.fn((patch: Partial<SyncMeta>) => {
       if ('pushedRev' in patch) order.push('meta:pushedRev')
       if ('pullCursor' in patch) order.push('meta:pullCursor')
       metaValue = { ...metaValue, ...patch }
-      return { ...metaValue }
+      return Promise.resolve({ ...metaValue })
     }),
-    clear: vi.fn(async () => {
+    clear: vi.fn(() => {
       metaValue = { localRev: metaValue.localRev }
-      return { ...metaValue }
+      return Promise.resolve({ ...metaValue })
     }),
   }
 
@@ -595,13 +597,13 @@ describe('a normal cycle', () => {
       }),
     )
     h.api.pullRecords
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         h.order.push('pull')
-        return page([row(record('a'), 11), row(record('b'), 12)], true)
+        return Promise.resolve(page([row(record('a'), 11), row(record('b'), 12)], true))
       })
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         h.order.push('pull')
-        return page([row(record('c'), 20)], false)
+        return Promise.resolve(page([row(record('c'), 20)], false))
       })
     h.local.listChangedRecords.mockResolvedValue({ maxRev: 9, records: [record('mine')] })
 
@@ -681,7 +683,9 @@ describe('a normal cycle', () => {
     const many = Array.from({ length: 501 }, (_, i) => record(`r${i}`))
     h.local.listChangedRecords.mockResolvedValue({ maxRev: 77, records: many })
     h.api.pushRecords
-      .mockImplementationOnce(async (_d: string, _v: string, recs: Array<EncryptedSyncRecord>) => accepted(recs))
+      .mockImplementationOnce((_d: string, _v: string, recs: Array<EncryptedSyncRecord>) =>
+        Promise.resolve(accepted(recs)),
+      )
       .mockRejectedValueOnce(new CloudError('network'))
     // start() runs the first cycle (and arms the retry timer) on its own.
     h.engine.start()
@@ -789,10 +793,14 @@ describe('bad rows and bad data', () => {
     h.api.pullRecords.mockResolvedValueOnce(
       page([row(record('a'), 11), row(record('bad'), 12), row(record('c'), 13)], false),
     )
-    h.local.applyIncomingRecords.mockImplementation(async (recs: Array<SyncRecord>) => {
-      if (recs.length > 1) throw new Error('applyIncomingRecords: invalid record 1')
-      if (recs[0].id === 'bad') throw new Error('applyIncomingRecords: invalid record 0')
-      return { applied: 1, kept: 0, conflicts: 0 }
+    h.local.applyIncomingRecords.mockImplementation((recs: Array<SyncRecord>) => {
+      if (recs.length > 1) {
+        return Promise.reject(new Error('applyIncomingRecords: invalid record 1'))
+      }
+      if (recs[0].id === 'bad') {
+        return Promise.reject(new Error('applyIncomingRecords: invalid record 0'))
+      }
+      return Promise.resolve({ applied: 1, kept: 0, conflicts: 0 })
     })
     const result = await h.engine.runCycle()
 
@@ -827,13 +835,17 @@ describe('recurring duplicates', () => {
     const withRecurring = (id: string, recurringId: string) =>
       record(id, { data: { id, createdAt: '2026-10-20T10:00:00.000Z', recurringId } })
     h.api.pullRecords
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         h.order.push('pull')
-        return page([row(withRecurring('a', 'r1'), 11), row(withRecurring('b', 'r1'), 12)], true)
+        return Promise.resolve(
+          page([row(withRecurring('a', 'r1'), 11), row(withRecurring('b', 'r1'), 12)], true),
+        )
       })
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(() => {
         h.order.push('pull')
-        return page([row(withRecurring('c', 'r2'), 13), row(record('d'), 14)], false)
+        return Promise.resolve(
+          page([row(withRecurring('c', 'r2'), 13), row(record('d'), 14)], false),
+        )
       })
     h.local.listChangedRecords.mockResolvedValue({ maxRev: 9, records: [record('mine')] })
     h.local.dedupeOccurrences.mockResolvedValue(1)
@@ -997,9 +1009,9 @@ describe('locking, cross-tab and re-entry', () => {
   it('stops at the next checkpoint when the vault is locked mid-cycle: nothing is pushed', async () => {
     const h = createHarness()
     h.local.listChangedRecords.mockResolvedValue({ maxRev: 9, records: [record('x')] })
-    h.api.pullRecords.mockImplementationOnce(async () => {
+    h.api.pullRecords.mockImplementationOnce(() => {
       h.state.unlocked = false
-      return page([], false)
+      return Promise.resolve(page([], false))
     })
     await h.engine.runCycle()
 
@@ -1010,9 +1022,9 @@ describe('locking, cross-tab and re-entry', () => {
 
   it('does not push anything when the vault is locked before the push', async () => {
     const h = createHarness()
-    h.local.listChangedRecords.mockImplementation(async () => {
+    h.local.listChangedRecords.mockImplementation(() => {
       h.state.unlocked = false
-      return { maxRev: 9, records: [record('x')] }
+      return Promise.resolve({ maxRev: 9, records: [record('x')] })
     })
     await h.engine.runCycle()
     expect(h.api.pushRecords).not.toHaveBeenCalled()

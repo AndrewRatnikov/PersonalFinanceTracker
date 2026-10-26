@@ -120,24 +120,26 @@ interface Setup {
 function setup(): Setup {
   const user: { id: string | null } = { id: USER }
   const api = {
-    getSyncStatus: vi.fn(async () => status()),
-    getVault: vi.fn(async (): Promise<CloudVault | null> => null),
-    registerDevice: vi.fn(async (id: string) => device(id)),
-    listDevices: vi.fn(async () => [device('a'), device('b')]),
-    renameDevice: vi.fn(async (id: string) => device(id)),
-    removeDevice: vi.fn(async (id: string) => device(id)),
-    createVault: vi.fn(async (_d: string, vaultId: string) => ({ vault_id: vaultId, header_rev: 1 })),
+    getSyncStatus: vi.fn(() => Promise.resolve(status())),
+    getVault: vi.fn((): Promise<CloudVault | null> => Promise.resolve(null)),
+    registerDevice: vi.fn((id: string) => Promise.resolve(device(id))),
+    listDevices: vi.fn(() => Promise.resolve([device('a'), device('b')])),
+    renameDevice: vi.fn((id: string) => Promise.resolve(device(id))),
+    removeDevice: vi.fn((id: string) => Promise.resolve(device(id))),
+    createVault: vi.fn((_d: string, vaultId: string) =>
+      Promise.resolve({ vault_id: vaultId, header_rev: 1 }),
+    ),
     updateVaultHeader: vi.fn(),
     pushRecords: vi.fn(),
     pullRecords: vi.fn(),
-    deleteCloudData: vi.fn(async () => ({ deleted_records: 0 })),
+    deleteCloudData: vi.fn(() => Promise.resolve({ deleted_records: 0 })),
   }
   const engine = {
     getState: vi.fn(),
     subscribe: vi.fn(),
     onEvent: vi.fn(),
-    refreshFromMeta: vi.fn(async () => ({})),
-    runCycle: vi.fn(async () => cycle()),
+    refreshFromMeta: vi.fn(() => Promise.resolve({})),
+    runCycle: vi.fn(() => Promise.resolve(cycle())),
     requestCycle: vi.fn(),
     start: vi.fn(),
     stop: vi.fn(),
@@ -145,19 +147,23 @@ function setup(): Setup {
   const local = { isUnlocked: vi.fn(() => true) }
   const vault = {
     getSyncKeys: vi.fn(),
-    getVaultHeader: vi.fn(async () => LOCAL_HEADER),
-    getVaultState: vi.fn(async () => 'v2' as const),
-    adoptHeaderIfSameDek: vi.fn(async () => 'adopted' as const),
+    getVaultHeader: vi.fn(() => Promise.resolve(LOCAL_HEADER)),
+    getVaultState: vi.fn(() => Promise.resolve('v2' as const)),
+    adoptHeaderIfSameDek: vi.fn(() => Promise.resolve('adopted' as const)),
     headerMatchesDek: vi.fn(),
-    adoptCloudVault: vi.fn(async () => ({ header: LOCAL_HEADER, headerChanged: false })),
-    joinCloudVault: vi.fn(async () => ({ records: 3, startRev: 4, localRev: 7 })),
-    verifyPassword: vi.fn(async () => undefined),
+    adoptCloudVault: vi.fn(() =>
+      Promise.resolve({ header: LOCAL_HEADER, headerChanged: false }),
+    ),
+    joinCloudVault: vi.fn(() =>
+      Promise.resolve({ records: 3, startRev: 4, localRev: 7 }),
+    ),
+    verifyPassword: vi.fn(() => Promise.resolve(undefined)),
     onHeaderChange: vi.fn(() => () => undefined),
   }
   const meta = {
-    read: vi.fn(async () => ({ ...ON_META })),
-    update: vi.fn(async () => ({ ...ON_META })),
-    clear: vi.fn(async () => ({ localRev: 4 })),
+    read: vi.fn(() => Promise.resolve({ ...ON_META })),
+    update: vi.fn(() => Promise.resolve({ ...ON_META })),
+    clear: vi.fn(() => Promise.resolve({ localRev: 4 })),
   }
   const deviceIds = {
     get: vi.fn(() => DEVICE),
@@ -337,7 +343,7 @@ describe('turnOn', () => {
   it('a removed device registers again with a new device id', async () => {
     s.api.registerDevice
       .mockRejectedValueOnce(new CloudError('device_removed'))
-      .mockImplementation(async (id: string) => device(id))
+      .mockImplementation((id: string) => Promise.resolve(device(id)))
     await s.actions.turnOn()
 
     expect(s.deviceIds.reset).toHaveBeenCalledTimes(1)
@@ -541,7 +547,7 @@ describe('fetchCloudVault and restoreFromCloud', () => {
     s.vault.getVaultState.mockResolvedValue('none')
     s.api.registerDevice
       .mockRejectedValueOnce(new CloudError('device_removed'))
-      .mockImplementation(async (id: string) => device(id))
+      .mockImplementation((id: string) => Promise.resolve(device(id)))
     await s.actions.restoreFromCloud(cloudVault('cloud'), { password: 'pw' })
 
     expect(s.deviceIds.reset).toHaveBeenCalledTimes(1)
@@ -625,7 +631,7 @@ describe('header changes', () => {
       fire = listener
       return off
     })
-    const actions = { handleLocalHeaderChange: vi.fn(async () => undefined) }
+    const actions = { handleLocalHeaderChange: vi.fn(() => Promise.resolve(undefined)) }
     const dispose = connectHeaderChanges(s.ports, actions as never)
 
     expect(s.vault.onHeaderChange).toHaveBeenCalledTimes(1)
