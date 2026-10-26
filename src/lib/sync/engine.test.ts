@@ -826,8 +826,15 @@ describe('recurring duplicates', () => {
     const withRecurring = (id: string, recurringId: string) =>
       record(id, { data: { id, createdAt: '2026-10-20T10:00:00.000Z', recurringId } })
     h.api.pullRecords
-      .mockResolvedValueOnce(page([row(withRecurring('a', 'r1'), 11), row(withRecurring('b', 'r1'), 12)], true))
-      .mockResolvedValueOnce(page([row(withRecurring('c', 'r2'), 13), row(record('d'), 14)], false))
+      .mockImplementationOnce(async () => {
+        h.order.push('pull')
+        return page([row(withRecurring('a', 'r1'), 11), row(withRecurring('b', 'r1'), 12)], true)
+      })
+      .mockImplementationOnce(async () => {
+        h.order.push('pull')
+        return page([row(withRecurring('c', 'r2'), 13), row(record('d'), 14)], false)
+      })
+    h.local.listChangedRecords.mockResolvedValue({ maxRev: 9, records: [record('mine')] })
     h.local.dedupeOccurrences.mockResolvedValue(1)
     const result = await h.engine.runCycle()
 
@@ -1114,7 +1121,8 @@ describe('triggers', () => {
       await h.timers.advance(500)
     }
     expect(h.api.getSyncStatus).not.toHaveBeenCalled()
-    await h.timers.advance(SYNC_DEBOUNCE_MS - 1)
+    // The last change was 500 ms ago (virtual time 2500, debounce fires at 4000).
+    await h.timers.advance(SYNC_DEBOUNCE_MS - 500 - 1)
     expect(h.api.getSyncStatus).not.toHaveBeenCalled()
     await h.timers.advance(1)
     expect(h.api.getSyncStatus).toHaveBeenCalledTimes(1)

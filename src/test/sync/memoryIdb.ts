@@ -44,8 +44,36 @@ function stateOf(store?: UseStore | null): MemoryStoreState {
   return state
 }
 
+// Realm-safe deep clone: under jsdom `structuredClone` returns typed arrays from
+// another realm (so `instanceof Uint8Array` fails), so binary data is rebuilt
+// with this realm's constructors.
 function clone<T>(value: T): T {
-  return typeof structuredClone === 'function' ? structuredClone(value) : value
+  return cloneAny(value) as T
+}
+
+function cloneAny(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (value instanceof Uint8Array) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) {
+    const view = value
+    return new Uint8Array(
+      view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength),
+    )
+  }
+  if (value instanceof ArrayBuffer) return value.slice(0)
+  if (value instanceof Date) return new Date(value.getTime())
+  if (Array.isArray(value)) return value.map(cloneAny)
+  if (value instanceof Map) {
+    return new Map(
+      Array.from(value.entries()).map(([k, v]) => [cloneAny(k), cloneAny(v)]),
+    )
+  }
+  if (value instanceof Set) return new Set(Array.from(value).map(cloneAny))
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = cloneAny(v)
+  }
+  return out
 }
 
 export function createStore(_dbName?: string, _storeName?: string): UseStore {

@@ -315,7 +315,11 @@ describe('recurring occurrences', () => {
     const legacyDevice = crypto.randomUUID()
     await p.rpc('register_device', { p_device_id: legacyDevice, p_label: 'Legacy phone' })
 
-    const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+    const ids: Array<string> = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ]
     const records = ids.map((id) => ({
       type: 'expense' as const,
       id,
@@ -371,7 +375,7 @@ describe('recurring occurrences', () => {
     const header = await p.a.vault.getVaultHeader()
     const legacyDevice = crypto.randomUUID()
     await p.rpc('register_device', { p_device_id: legacyDevice, p_label: 'Legacy phone' })
-    const ids = [crypto.randomUUID(), crypto.randomUUID()]
+    const ids: Array<string> = [crypto.randomUUID(), crypto.randomUUID()]
     const wire = await Promise.all(
       ids.map((id) =>
         encryptSyncRecord(keys, {
