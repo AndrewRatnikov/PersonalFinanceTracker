@@ -170,7 +170,7 @@ describe('adoptCloudVault on a fresh device', () => {
     const cloud = await makeCloud()
     await adoptCloudVault(cloud.header, { password: CLOUD_PW })
 
-    expect('recoveryKeyConfirmed' in (raw(META_SETTINGS_KEY) ?? {})).toBe(false)
+    expect('recoveryKeyConfirmed' in (raw(META_SETTINGS_KEY))).toBe(false)
     lockVault()
     expect(getLocalDbKey()).toBeNull()
     await unlockWithPassword(CLOUD_PW)

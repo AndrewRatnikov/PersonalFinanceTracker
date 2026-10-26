@@ -277,7 +277,8 @@ function createHarness(
       for (;;) {
         const due = Array.from(scheduled.entries())
           .filter(([, t]) => t.at <= target)
-          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0]
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])
+          .shift()
         if (!due) break
         scheduled.delete(due[0])
         virtual = Math.max(virtual, due[1].at)
