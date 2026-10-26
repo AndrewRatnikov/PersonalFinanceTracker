@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RestoreBackupDialog } from '@/components/RestoreBackupDialog'
 import { LegalLinks } from '@/components/LegalLinks'
+import { SyncAvailable } from '@/components/SyncAvailable'
 
 const PROBLEMS: ReadonlyArray<{ title: MessageKey; body: MessageKey }> = [
   { title: 'landing.problems.credentials.title', body: 'landing.problems.credentials.body' },
@@ -388,13 +389,23 @@ export default function LandingPage() {
               {t('landing.privacy.ratesNote')}
             </p>
 
-            <div className="flex flex-col gap-3">
+            <div data-testid="landing-privacy-bullets" className="flex flex-col gap-3">
               {PRIVACY_BULLETS.map((b) => (
                 <div key={b} className="flex items-center gap-3">
                   <span className="flex items-center justify-center h-5 w-5 rounded-full bg-[#6366f1]/10 shrink-0">
                     <Check className="h-3 w-3 text-[#6366f1]" />
                   </span>
-                  <span className="text-sm">{t(b)}</span>
+                  <span className="text-sm">
+                    {b === 'landing.privacy.bullet2' ? (
+                      // With sync available: "Optional encrypted sync" replaces
+                      // "Zero financial data on MinimaSpend servers".
+                      <SyncAvailable fallback={t(b)}>
+                        {t('landing.privacy.bullet2Sync')}
+                      </SyncAvailable>
+                    ) : (
+                      t(b)
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
@@ -417,6 +428,14 @@ export default function LandingPage() {
               </h2>
             </div>
             <p className="text-muted-foreground max-w-sm">{t('landing.features.body')}</p>
+            <SyncAvailable>
+              <p
+                data-testid="landing-sync-feature"
+                className="text-sm font-medium text-[#6366f1] max-w-sm"
+              >
+                {t('landing.features.syncLine')}
+              </p>
+            </SyncAvailable>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-border rounded-xl overflow-hidden">
