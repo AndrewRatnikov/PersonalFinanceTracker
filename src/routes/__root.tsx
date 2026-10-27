@@ -26,6 +26,7 @@ import { prepareUnlockedVault } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { recurringCreatedMessage } from '../lib/recurrence'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
+import { requestSyncRestoreFromUrl } from '../lib/sync/restoreRequest'
 import { listenForChanges } from '../lib/syncChannel'
 import { getVaultState } from '../lib/vault'
 import {
@@ -34,6 +35,7 @@ import {
   connectOtherTabs,
   isDataRoute,
   phaseForVaultState,
+  requestCreateVault,
   setVaultPhase,
   startTabAutoLock,
   useVaultSession,
@@ -45,6 +47,7 @@ import NotFoundPage from '../components/NotFoundPage'
 import { DataProblemGate } from '../components/DataProblemGate'
 import { RecurringScheduler } from '../components/RecurringScheduler'
 import { ConversionRunner } from '../components/ConversionRunner'
+import { SyncRunner } from '../components/SyncRunner'
 
 import appCss from '../styles.css?url'
 import type { Lang } from '../i18n/lang'
@@ -180,6 +183,15 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     }
   }, [phase, pathname, router])
 
+  // Back from "Sign in to restore your data" (/?restore=sync) on a device
+  // without a vault: open the gate on the sync restore screen. Only with
+  // ENABLE_SYNC (requestSyncRestoreFromUrl checks it).
+  useEffect(() => {
+    if (phase === 'none' && requestSyncRestoreFromUrl(window.location.search)) {
+      requestCreateVault()
+    }
+  }, [phase])
+
   // Other tabs announce committed writes; refresh the affected queries.
   useEffect(() => listenForChanges(queryClient), [])
 
@@ -235,6 +247,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <AutoLock unlocked={phase === 'unlocked'} />
           <RecurringScheduler unlocked={phase === 'unlocked'} />
           <ConversionRunner />
+          <SyncRunner unlocked={phase === 'unlocked'} />
           {showGate && (
             <PasswordUnlockDialog
               onUnlocked={(result) => void handleUnlocked(result)}

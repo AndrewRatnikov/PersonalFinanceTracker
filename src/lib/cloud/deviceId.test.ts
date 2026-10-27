@@ -1,7 +1,7 @@
 // No CONTRACT_GAPs: deviceId exports, the storage key and the label rules are
 // specified in plan section 7 and the Interface Contract (module: deviceId).
 // idb-keyval is mocked (localWipe pulls in the local store) and no network or
-// real storage is touched.
+// real storage is touched. Run 3 adds resetDeviceId (plan section 5).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +10,7 @@ import {
   DEVICE_ID_STORAGE_KEY,
   defaultDeviceLabel,
   getDeviceId,
+  resetDeviceId,
 } from '@/lib/cloud/deviceId'
 import { removeMinimaLocalStorageKeys } from '@/lib/localWipe'
 
@@ -115,6 +116,51 @@ describe('getDeviceId', () => {
   })
 })
 
+describe('resetDeviceId', () => {
+  it('stores and returns a new UUID that getDeviceId then returns', () => {
+    const before = getDeviceId()
+    const next = resetDeviceId()
+
+    expect(next).toMatch(UUID_RE)
+    expect(next).not.toBe(before)
+    expect(localStorage.getItem('minima_device_id')).toBe(next)
+    expect(getDeviceId()).toBe(next)
+  })
+
+  it('works when no id was stored yet', () => {
+    expect(localStorage.getItem('minima_device_id')).toBeNull()
+    const next = resetDeviceId()
+    expect(next).toMatch(UUID_RE)
+    expect(localStorage.getItem('minima_device_id')).toBe(next)
+  })
+
+  it('gives a different id every time', () => {
+    const a = resetDeviceId()
+    const b = resetDeviceId()
+    const c = resetDeviceId()
+    expect(new Set([a, b, c]).size).toBe(3)
+    expect(getDeviceId()).toBe(c)
+  })
+
+  it('falls back to a new in-memory UUID when localStorage throws', () => {
+    const memoryBefore = (() => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied')
+      })
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('denied')
+      })
+      return getDeviceId()
+    })()
+
+    const next = resetDeviceId()
+
+    expect(next).toMatch(UUID_RE)
+    expect(next).not.toBe(memoryBefore)
+    expect(getDeviceId()).toBe(next)
+  })
+})
+
 describe('"Remove data" clears the device id', () => {
   it('removeMinimaLocalStorageKeys removes minima_device_id', () => {
     const id = getDeviceId()
@@ -125,6 +171,13 @@ describe('"Remove data" clears the device id', () => {
 
     expect(localStorage.getItem('minima_device_id')).toBeNull()
     expect(localStorage.getItem('other_app_key')).toBe('keep')
+  })
+
+  it('also removes a reset id', () => {
+    const id = resetDeviceId()
+    expect(localStorage.getItem('minima_device_id')).toBe(id)
+    removeMinimaLocalStorageKeys()
+    expect(localStorage.getItem('minima_device_id')).toBeNull()
   })
 })
 

@@ -8,6 +8,7 @@ import { updateAppSettings } from '@/lib/appSettings'
 import { requestPersistentStorage } from '@/lib/storagePersistence'
 import { VaultError, createVault } from '@/lib/vault'
 import { LanguageToggle } from '@/components/LanguageToggle'
+import { SyncAvailable } from '@/components/SyncAvailable'
 import { RecoveryKeySaveStep } from '@/components/vault/RecoveryKeySaveStep'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,6 +26,9 @@ interface CreateVaultScreenProps {
   onCreated: () => void
   // Renders a "Back" button on the password step.
   onCancel?: () => void
+  // "Already use MinimaSpend sync?": shown only when given and sync is
+  // available (ENABLE_SYNC and visible accounts).
+  onRestoreFromSync?: () => void
 }
 
 const MIN_PASSWORD_LENGTH = 8
@@ -38,6 +42,7 @@ function strengthKey(password: string): MessageKey {
 export function CreateVaultScreen({
   onCreated,
   onCancel,
+  onRestoreFromSync,
 }: CreateVaultScreenProps) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -194,6 +199,20 @@ export function CreateVaultScreen({
                   >
                     {t('common.back')}
                   </Button>
+                )}
+                {onRestoreFromSync && (
+                  <SyncAvailable>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full whitespace-normal h-auto"
+                      data-testid="create-vault-sync-restore"
+                      onClick={onRestoreFromSync}
+                      disabled={pending}
+                    >
+                      {t('sync.restore.entry')}
+                    </Button>
+                  </SyncAvailable>
                 )}
               </CardFooter>
             </form>

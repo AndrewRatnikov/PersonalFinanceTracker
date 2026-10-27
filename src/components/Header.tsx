@@ -12,6 +12,7 @@ import {
 import { BrandIcon } from './BrandIcon'
 import { LanguageToggle } from './LanguageToggle'
 import { LockButton } from './LockButton'
+import { SyncIndicator } from './SyncIndicator'
 import type { MessageKey } from '@/i18n'
 import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
@@ -238,7 +239,8 @@ export default function Header() {
             MinimaSpend
           </Link>
         </h1>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <SyncIndicator />
           <LockButton />
         </div>
       </div>

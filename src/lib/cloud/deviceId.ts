@@ -31,6 +31,23 @@ export function getDeviceId(): string {
   }
 }
 
+// Stores and returns a new random id. A device removed from sync can never
+// register again with its old id, so "Turn sync on again" uses a new one.
+export function resetDeviceId(): string {
+  const id = crypto.randomUUID()
+  try {
+    if (typeof localStorage === 'undefined') {
+      memoryId = id
+      return id
+    }
+    localStorage.setItem(DEVICE_ID_STORAGE_KEY, id)
+    return id
+  } catch {
+    memoryId = id
+    return id
+  }
+}
+
 // First match wins: Edge, Opera and Samsung Internet also say "Chrome", and
 // Chrome also says "Safari".
 const BROWSERS: ReadonlyArray<[RegExp, string]> = [

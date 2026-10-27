@@ -40,6 +40,11 @@ consistently; when a new string needs a term that is not here, add it.
 | Beta | Бета |
 | Device | Пристрій |
 | Cloud data | Дані в хмарі |
+| Sync now | Синхронізувати зараз |
+| Last synced | Остання синхронізація |
+| Turn on sync | Увімкнути синхронізацію |
+| This device | Цей пристрій |
+| Delete cloud data | Видалити дані з хмари |
 | Terms of Use | Умови використання |
 | Privacy Policy | Політика конфіденційності |
 

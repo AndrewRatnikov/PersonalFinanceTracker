@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Coins, Database, Shield, Tag, UserRound, Wallet } from 'lucide-react'
+import { Cloud, Coins, Database, Shield, Tag, UserRound, Wallet } from 'lucide-react'
 
 import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
+import { ENABLE_SYNC } from '@/lib/featureFlags'
 import { getAllCategories } from '@/lib/localDb'
 import { AccountTab } from '@/components/settings/AccountTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
@@ -11,12 +12,19 @@ import { DataToolsTab } from '@/components/settings/DataToolsTab'
 import { GeneralTab } from '@/components/settings/GeneralTab'
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import { SecurityTab } from '@/components/settings/SecurityTab'
+import { SyncTab } from '@/components/settings/SyncTab'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export type SettingsTab =
-  'general' | 'categories' | 'budget' | 'security' | 'data' | 'account'
+  | 'general'
+  | 'categories'
+  | 'budget'
+  | 'security'
+  | 'data'
+  | 'account'
+  | 'sync'
 
 export type SettingsSearch = {
   tab?: SettingsTab
@@ -29,6 +37,7 @@ const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
   'security',
   'data',
   'account',
+  'sync',
 ]
 
 export const Route = createFileRoute('/settings')({
@@ -45,9 +54,17 @@ function SettingsPage() {
   const search = Route.useSearch()
   const accountsVisible = useAccountsVisible()
   const { t } = useT()
+  // Settings → Sync only with ENABLE_SYNC and visible accounts.
+  const syncVisible = ENABLE_SYNC && accountsVisible
   const requestedTab = search.tab ?? 'general'
   const initialTab =
-    requestedTab === 'account' && !accountsVisible ? 'general' : requestedTab
+    (requestedTab === 'account' && !accountsVisible) ||
+    (requestedTab === 'sync' && !syncVisible)
+      ? 'general'
+      : requestedTab
+  const columns = 5 + (accountsVisible ? 1 : 0) + (syncVisible ? 1 : 0)
+  const gridClass =
+    columns === 7 ? 'grid-cols-7' : columns === 6 ? 'grid-cols-6' : 'grid-cols-5'
   const categoriesQuery = useQuery({
     queryKey: ['categories'],
     queryFn: getAllCategories,
@@ -61,14 +78,14 @@ function SettingsPage() {
           {t('settings.title')}
         </h1>
 
-        {/* Remounts when the Account tab appears (the session loads async). */}
+        {/* Remounts when the Account or Sync tab appears (the session loads async). */}
         <Tabs
-          key={accountsVisible ? 'with-account' : 'without-account'}
+          key={`${accountsVisible ? 'with-account' : 'without-account'}-${syncVisible ? 'with-sync' : 'without-sync'}`}
           defaultValue={initialTab}
           className="w-full"
         >
           <TabsList
-            className={`grid w-full ${accountsVisible ? 'grid-cols-6' : 'grid-cols-5'}`}
+            className={`grid w-full ${gridClass}`}
           >
             <TabsTrigger value="general" data-testid="settings-tab-general">
               <Coins size={16} className="mr-2 hidden sm:block" />
@@ -96,6 +113,12 @@ function SettingsPage() {
                   {t('settings.tabs.account')}
               </TabsTrigger>
             )}
+            {syncVisible && (
+              <TabsTrigger value="sync" data-testid="settings-tab-sync">
+                <Cloud size={16} className="mr-2 hidden sm:block" />
+                {t('settings.tabs.sync')}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="general" className="mt-6">
@@ -120,6 +143,11 @@ function SettingsPage() {
           {accountsVisible && (
             <TabsContent value="account" className="mt-6">
               <AccountTab />
+            </TabsContent>
+          )}
+          {syncVisible && (
+            <TabsContent value="sync" className="mt-6">
+              <SyncTab />
             </TabsContent>
           )}
         </Tabs>

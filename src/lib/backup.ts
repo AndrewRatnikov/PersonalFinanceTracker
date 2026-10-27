@@ -60,8 +60,10 @@ import {
   getLocalDbKey,
   getLocalRev,
   getLocalStore,
+  notifyLocalChange,
   readSyncedSettings,
   requestEntryConversion,
+  syncMetaEntry,
   unlockLocalDb,
 } from './localDb'
 import { postChanged } from './syncChannel'
@@ -1016,7 +1018,7 @@ export async function restoreBackup(
     // A merge that changes nothing (no added, no updated, no tie won by the
     // backup) writes nothing.
     if (effectiveMode === 'merge' && plan.writes.size === 0) {
-      return { summary, written: [] as Array<string> }
+      return { summary, written: [] as Array<string>, stamped: false }
     }
 
     // 6. Write once.
@@ -1085,17 +1087,21 @@ export async function restoreBackup(
       delete settings.fetchExchangeRates
     }
     entries.push([META_SETTINGS_KEY, settings])
-    if (lastRev !== startRev) {
-      entries.push([SYNC_META_KEY, { localRev: lastRev }])
+    const revAdvanced = lastRev !== startRev
+    if (revAdvanced) {
+      // The stored sync fields of meta:sync stay; only localRev advances.
+      entries.push(await syncMetaEntry(lastRev))
     }
 
     // One transaction: everything commits or nothing does.
     await setMany(entries, store)
-    return { summary, written }
+    return { summary, written, stamped: revAdvanced }
   })
 
   // 7. After commit.
   if (adopt) unlockLocalDb(backupDek)
+  // The restored records carry fresh revs: a user write the sync engine pushes.
+  if (result.stamped) notifyLocalChange()
   if (result.written.length > 0) {
     postChanged(result.written)
     // Safety net after a replace (a no-op whenever the restore wrote
