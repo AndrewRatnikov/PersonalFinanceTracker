@@ -12,7 +12,7 @@ import {
   drawerInitialFromSearch,
   validateTransactionsSearch,
 } from '@/lib/expenseDraft'
-import { deleteExpense, getAllCategories, getAllExpenses } from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
@@ -44,9 +44,12 @@ function Transactions() {
   const mainCurrency =
     useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const categories = useMemo(
     () => categoriesQuery.data ?? [],
@@ -54,8 +57,8 @@ function Transactions() {
   )
 
   const expensesQuery = useQuery({
-    queryKey: ['expenses'],
-    queryFn: getAllExpenses,
+    queryKey: spaceQueryKey(spaceId, 'expenses'),
+    queryFn: () => db.getAllExpenses(),
   })
   const { isLoading, isError } = expensesQuery
   const allExpenses = useMemo(
@@ -87,7 +90,7 @@ function Transactions() {
 
   const deleteMutation = useMutation({
     mutationFn: ({ id, createdAt }: { id: string; createdAt: string }) =>
-      deleteExpense(id, createdAt),
+      db.deleteExpense(id, createdAt),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success(t('toasts.transactionDeleted'))
