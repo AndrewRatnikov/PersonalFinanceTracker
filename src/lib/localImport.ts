@@ -1,20 +1,16 @@
 import dayjs from 'dayjs'
 
-import {
-  addCategory,
-  addExpense,
-  addIncome,
-  addIncomeCategory,
-  getAllCategories,
-  getAllExpenses,
-  getAllIncome,
-  getAllIncomeCategories,
-  upsertBudget,
-} from './localDb'
 import { AppError } from './appErrors'
 import { CURRENCIES } from './domain'
+import { dbFor, spaceArgs } from './spaces/spaceDb'
+import { PERSONAL_SPACE_ID } from './spaces/types'
 import { isLive } from './syncRecords'
 import type { Category, Currency } from './domain'
+import type { SpaceOption } from './spaces/spaceDb'
+import type { SpaceId } from './spaces/types'
+
+// Every import writes to one space (personal by default) through
+// dbFor(spaceId); the UI passes the active space.
 
 // Deleted records (tombstones) are never matched: a row equal to a deleted
 // entry is not a duplicate, and a deleted category's name is unknown.
@@ -54,6 +50,8 @@ export interface ImportOptions {
   allowDuplicates?: boolean
   // When set, only these row numbers are processed.
   rows?: Array<number>
+  // The space to import into; defaults to personal.
+  spaceId?: SpaceId
 }
 
 // ── CSV parsing ───────────────────────────────────────────────────────────────
@@ -256,9 +254,11 @@ function wantsRow(options: ImportOptions, rowNumber: number): boolean {
 
 export async function importCategoriesFromCSV(
   csv: string,
+  opts?: SpaceOption,
 ): Promise<ImportResult> {
+  const db = dbFor(opts?.spaceId)
   const rows = parseCSV(csv)
-  const existing = (await getAllCategories()).filter(isLive)
+  const existing = (await db.getAllCategories()).filter(isLive)
   const existingNames = new Set(
     existing.map((c) => c.name.trim().toLowerCase()),
   )
@@ -279,7 +279,7 @@ export async function importCategoriesFromCSV(
       result.skipped++
       continue
     }
-    await addCategory({ name, icon: icon || null })
+    await db.addCategory({ name, icon: icon || null })
     existingNames.add(name.toLowerCase())
     result.inserted++
   }
@@ -291,7 +291,8 @@ export async function importExpensesFromCSV(
   csv: string,
   options: ImportOptions = {},
 ): Promise<ImportResult> {
-  const categories = (await getAllCategories()).filter(isLive)
+  const db = dbFor(options.spaceId)
+  const categories = (await db.getAllCategories()).filter(isLive)
   if (categories.length === 0) {
     throw new AppError(
       'import-needs-categories',
@@ -307,7 +308,7 @@ export async function importExpensesFromCSV(
   const existing = new Set<string>()
   if (!options.allowDuplicates) {
     const nameById = new Map(categories.map((c) => [c.id, c.name]))
-    for (const e of (await getAllExpenses()).filter(isLive)) {
+    for (const e of (await db.getAllExpenses()).filter(isLive)) {
       existing.add(
         expenseFingerprint({
           createdAt: e.createdAt,
@@ -390,7 +391,7 @@ export async function importExpensesFromCSV(
       continue
     }
 
-    await addExpense({
+    await db.addExpense({
       amount,
       currency: currency as Currency,
       categoryId: category.id,
@@ -407,15 +408,16 @@ export async function importIncomeFromCSV(
   csv: string,
   options: ImportOptions = {},
 ): Promise<ImportResult> {
+  const db = dbFor(options.spaceId)
   const categoryMap = new Map<string, Category>(
-    (await getAllIncomeCategories())
+    (await db.getAllIncomeCategories())
       .filter(isLive)
       .map((c) => [c.name.trim().toLowerCase(), c]),
   )
 
   const existing = new Set<string>()
   if (!options.allowDuplicates) {
-    for (const i of (await getAllIncome()).filter(isLive)) {
+    for (const i of (await db.getAllIncome()).filter(isLive)) {
       existing.add(
         incomeFingerprint({
           createdAt: i.createdAt,
@@ -496,12 +498,12 @@ export async function importIncomeFromCSV(
 
     // Only a valid, non-duplicate row creates its category.
     if (!category) {
-      category = await addIncomeCategory({ name, icon: null })
+      category = await db.addIncomeCategory({ name, icon: null })
       categoryMap.set(name.toLowerCase(), category)
       createdCategories++
     }
 
-    await addIncome({
+    await db.addIncome({
       categoryId: category.id,
       amount,
       currency: currency as Currency,
@@ -515,8 +517,12 @@ export async function importIncomeFromCSV(
   return result
 }
 
-export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
-  const categories = (await getAllCategories()).filter(isLive)
+export async function importBudgetsFromCSV(
+  csv: string,
+  opts?: SpaceOption,
+): Promise<ImportResult> {
+  const db = dbFor(opts?.spaceId)
+  const categories = (await db.getAllCategories()).filter(isLive)
   if (categories.length === 0) {
     throw new AppError(
       'import-needs-categories',
@@ -566,7 +572,7 @@ export async function importBudgetsFromCSV(csv: string): Promise<ImportResult> {
       continue
     }
 
-    await upsertBudget({
+    await db.upsertBudget({
       categoryId,
       monthlyLimit,
       currency: currency as Currency,
@@ -583,9 +589,11 @@ export async function importLocalDataFile(
 ): Promise<{ type: string; result: ImportResult }> {
   const text = await file.text()
   const filename = file.name.toLowerCase()
+  // Categories and budgets take only the space (personal: no argument).
+  const space = spaceArgs(options.spaceId ?? PERSONAL_SPACE_ID)
 
   if (filename.includes('categories')) {
-    return { type: 'categories', result: await importCategoriesFromCSV(text) }
+    return { type: 'categories', result: await importCategoriesFromCSV(text, ...space) }
   }
   if (filename.includes('expenses')) {
     return {
@@ -597,7 +605,7 @@ export async function importLocalDataFile(
     return { type: 'income', result: await importIncomeFromCSV(text, options) }
   }
   if (filename.includes('budgets')) {
-    return { type: 'budgets', result: await importBudgetsFromCSV(text) }
+    return { type: 'budgets', result: await importBudgetsFromCSV(text, ...space) }
   }
 
   // Header-sniff fallback
@@ -615,7 +623,7 @@ export async function importLocalDataFile(
     return { type: 'income', result: await importIncomeFromCSV(text, options) }
   }
   if (headers.includes('monthly_limit')) {
-    return { type: 'budgets', result: await importBudgetsFromCSV(text) }
+    return { type: 'budgets', result: await importBudgetsFromCSV(text, ...space) }
   }
   if (headers.includes('category')) {
     return {
@@ -624,7 +632,7 @@ export async function importLocalDataFile(
     }
   }
   if (headers.includes('name') && headers.includes('icon')) {
-    return { type: 'categories', result: await importCategoriesFromCSV(text) }
+    return { type: 'categories', result: await importCategoriesFromCSV(text, ...space) }
   }
 
   throw new AppError(
