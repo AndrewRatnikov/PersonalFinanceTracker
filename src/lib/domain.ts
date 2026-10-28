@@ -44,6 +44,9 @@ export interface Category {
   updatedAt?: string
   /** Preselected currency when this category is chosen; absent = main currency. */
   defaultCurrency?: Currency
+  /** Family space only: the member who created / last changed it. */
+  createdBy?: string
+  updatedBy?: string
   /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
@@ -70,6 +73,10 @@ export interface Expense {
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
   rev?: number
+  /** Family space only: member ids (absent = unknown; never on personal records). */
+  createdBy?: string
+  updatedBy?: string
+  paidBy?: string
   category?: Category
 }
 
@@ -115,6 +122,9 @@ export interface BudgetEntry {
   currency: Currency
   /** ISO timestamp of the last create/update. */
   updatedAt?: string
+  /** Family space only: the member who created / last changed it. */
+  createdBy?: string
+  updatedBy?: string
   /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
@@ -159,6 +169,8 @@ export interface CreateExpenseInput {
   categoryId: string
   description?: string
   createdAt?: string
+  /** Family space only (default: the creating member); ignored in personal. */
+  paidBy?: string
 }
 
 export interface IncomeEntry {
@@ -187,6 +199,10 @@ export interface IncomeEntry {
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
   rev?: number
+  /** Family space only: member ids (absent = unknown; never on personal records). */
+  createdBy?: string
+  updatedBy?: string
+  paidBy?: string
   /** Joined at read time by getAllIncome()/addIncome(); never stored. */
   category?: Category
 }
@@ -197,6 +213,8 @@ export interface CreateIncomeInput {
   currency: Currency
   description?: string
   createdAt?: string
+  /** Family space only (default: the creating member); ignored in personal. */
+  paidBy?: string
 }
 
 export interface CreateCategoryInput {
@@ -218,6 +236,8 @@ export interface UpdateExpenseInput {
   categoryId?: string
   description?: string
   createdAt?: string
+  /** Family space only: changes paidBy; ignored in personal. */
+  paidBy?: string
 }
 
 // ── Recurring items (storage key `recurring`) ────────────────────────────────
@@ -265,6 +285,9 @@ export interface RecurringItem {
   occurrenceCount: number
   createdAt: string
   updatedAt: string
+  /** Family space only: the member who created / last changed it. */
+  createdBy?: string
+  updatedBy?: string
   /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
@@ -303,6 +326,8 @@ export interface SyncedSettingsRecord {
   mainCurrency: Currency
   fetchExchangeRates: boolean
   updatedAt: string
+  /** Family space only: the member who last changed it. */
+  updatedBy?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
   rev?: number
 }
