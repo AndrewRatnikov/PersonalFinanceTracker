@@ -24,14 +24,9 @@ import {
   createdAtForDate,
   parseDraftAmount,
 } from '@/lib/expenseDraft'
-import {
-  addExpense,
-  addRepeatingExpense,
-  deleteExpense,
-  updateExpense,
-} from '@/lib/localDb'
 import { formatMoney } from '@/lib/money'
 import { createExpenseSchema, updateExpenseSchema } from '@/lib/schemas'
+import { useSpaceDb } from '@/lib/spaces/react'
 import { cn } from '@/lib/utils'
 import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
@@ -225,6 +220,7 @@ function ExpenseDrawerForm({
   amountRef,
 }: FormProps) {
   const queryClient = useQueryClient()
+  const db = useSpaceDb()
   const { t } = useT()
   const record = mode === 'edit' ? expense : undefined
   const isEdit = record !== undefined
@@ -305,7 +301,7 @@ function ExpenseDrawerForm({
 
   const addMutation = useMutation({
     mutationFn: ({ input, repeat: unit }: AddVariables) =>
-      unit === 'none' ? addExpense(input) : addRepeatingExpense(input, unit),
+      unit === 'none' ? db.addExpense(input) : db.addRepeatingExpense(input, unit),
     onSuccess: (_saved, { repeat: unit, another }) => {
       invalidateData(unit !== 'none')
       toast.success(t('toasts.expenseSaved'))
@@ -336,7 +332,7 @@ function ExpenseDrawerForm({
       id: string
       originalCreatedAt: string
       patch: UpdateExpenseInput
-    }) => updateExpense(id, originalCreatedAt, patch),
+    }) => db.updateExpense(id, originalCreatedAt, patch),
     onSuccess: () => {
       invalidateData(false)
       toast.success(t('toasts.transactionUpdated'))
@@ -352,7 +348,7 @@ function ExpenseDrawerForm({
 
   const deleteMutation = useMutation({
     mutationFn: ({ id, createdAt }: { id: string; createdAt: string }) =>
-      deleteExpense(id, createdAt),
+      db.deleteExpense(id, createdAt),
     onSuccess: () => {
       invalidateData(false)
       toast.success(t('toasts.transactionDeleted'))
