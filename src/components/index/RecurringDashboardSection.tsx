@@ -7,13 +7,7 @@ import type { Category, RecurringItem } from '@/lib/domain'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { currencyLabel, formatFullDate } from '@/i18n/format'
-import {
-  confirmRecurringOccurrence,
-  getAllCategories,
-  getAllIncomeCategories,
-  getAllRecurring,
-  skipRecurringOccurrence,
-} from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import {
   dueOccurrences,
   formatRecurringAmount,
@@ -53,17 +47,20 @@ export default function RecurringDashboardSection({
     {},
   )
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const recurringQuery = useQuery({
-    queryKey: ['recurring'],
-    queryFn: getAllRecurring,
+    queryKey: spaceQueryKey(spaceId, 'recurring'),
+    queryFn: () => db.getAllRecurring(),
   })
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const incomeCategoriesQuery = useQuery({
-    queryKey: ['incomeCategories'],
-    queryFn: getAllIncomeCategories,
+    queryKey: spaceQueryKey(spaceId, 'incomeCategories'),
+    queryFn: () => db.getAllIncomeCategories(),
   })
   const queries = [recurringQuery, categoriesQuery, incomeCategoriesQuery]
   const failedQueries = queries.filter((q) => q.isError)
@@ -94,7 +91,7 @@ export default function RecurringDashboardSection({
       date: string
       amount: number
     }) =>
-      confirmRecurringOccurrence(
+      db.confirmRecurringOccurrence(
         item.id,
         date,
         amount === item.amount ? undefined : { amount },
@@ -105,7 +102,7 @@ export default function RecurringDashboardSection({
 
   const skipMutation = useMutation({
     mutationFn: ({ item, date }: { item: RecurringItem; date: string }) =>
-      skipRecurringOccurrence(item.id, date),
+      db.skipRecurringOccurrence(item.id, date),
     onSuccess: onDone,
     onError: onFailed,
   })
