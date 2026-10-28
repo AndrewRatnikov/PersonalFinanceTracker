@@ -20,10 +20,13 @@ import { get, set } from 'idb-keyval'
 import { isDecryptError } from './dataErrors'
 import { DEFAULT_MAIN_CURRENCY } from './domain'
 import { getLocalStore, readSyncedSettings, updateSyncedSettings } from './localDb'
+import { dbFor } from './spaces/spaceDb'
+import { PERSONAL_SPACE_ID } from './spaces/types'
 import { META_SETTINGS_KEY } from './vault'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
 import type { Currency } from './domain'
+import type { SpaceOption } from './spaces/spaceDb'
 
 export type AutoLockMinutes = 0 | 1 | 5 | 15 | 60 // 0 = Off
 
@@ -124,9 +127,17 @@ function currencyDefaults(): CurrencySettings {
 // not exist). Throws only a DecryptError, so an unreadable record opens the
 // Data problem screen instead of silently reading as UAH. Any other failure
 // (also a test mocking localDb without readSyncedSettings) gives the defaults.
-export async function getCurrencySettings(): Promise<CurrencySettings> {
+// `{ spaceId }` reads that space's own record (each space has its own main
+// currency and rates switch); without it, personal.
+export async function getCurrencySettings(
+  opts?: SpaceOption,
+): Promise<CurrencySettings> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
   try {
-    const record = await readSyncedSettings()
+    const record =
+      spaceId === PERSONAL_SPACE_ID
+        ? await readSyncedSettings()
+        : await dbFor(spaceId).readSyncedSettings()
     return {
       mainCurrency: record.mainCurrency,
       fetchExchangeRates: record.fetchExchangeRates,
@@ -140,8 +151,11 @@ export async function getCurrencySettings(): Promise<CurrencySettings> {
 // Only `fetchExchangeRates` is patchable here; the main currency changes
 // through conversion.changeMainCurrency. localDb writes the record (rev +
 // updatedAt) and announces `syncedSettings` after it commits.
-export async function updateCurrencySettings(patch: {
-  fetchExchangeRates?: boolean
-}): Promise<void> {
-  await updateSyncedSettings(patch)
+export async function updateCurrencySettings(
+  patch: { fetchExchangeRates?: boolean },
+  opts?: SpaceOption,
+): Promise<void> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  if (spaceId === PERSONAL_SPACE_ID) await updateSyncedSettings(patch)
+  else await dbFor(spaceId).updateSyncedSettings(patch)
 }
