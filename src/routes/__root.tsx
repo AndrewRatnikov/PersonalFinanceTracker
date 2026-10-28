@@ -25,6 +25,7 @@ import { reportDataProblem } from '../lib/dataProblem'
 import { prepareUnlockedVault } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { recurringCreatedMessage } from '../lib/recurrence'
+import { SpaceProvider } from '../lib/spaces/react'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
 import { requestSyncRestoreFromUrl } from '../lib/sync/restoreRequest'
 import { listenForChanges } from '../lib/syncChannel'
@@ -242,20 +243,23 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <AppBody>
         <QueryClientProvider client={queryClient}>
-          <Header />
-          <OfflineBanner />
-          <AutoLock unlocked={phase === 'unlocked'} />
-          <RecurringScheduler unlocked={phase === 'unlocked'} />
-          <ConversionRunner />
-          <SyncRunner unlocked={phase === 'unlocked'} />
-          {showGate && (
-            <PasswordUnlockDialog
-              onUnlocked={(result) => void handleUnlocked(result)}
-              onCancelCreate={phase === 'none' ? cancelCreateVault : undefined}
-            />
-          )}
-          <DataProblemGate>{showChildren && children}</DataProblemGate>
-          <Toaster richColors position="bottom-center" />
+          {/* The active space: always personal until a switcher exists. */}
+          <SpaceProvider>
+            <Header />
+            <OfflineBanner />
+            <AutoLock unlocked={phase === 'unlocked'} />
+            <RecurringScheduler unlocked={phase === 'unlocked'} />
+            <ConversionRunner />
+            <SyncRunner unlocked={phase === 'unlocked'} />
+            {showGate && (
+              <PasswordUnlockDialog
+                onUnlocked={(result) => void handleUnlocked(result)}
+                onCancelCreate={phase === 'none' ? cancelCreateVault : undefined}
+              />
+            )}
+            <DataProblemGate>{showChildren && children}</DataProblemGate>
+            <Toaster richColors position="bottom-center" />
+          </SpaceProvider>
         </QueryClientProvider>
         <TanStackDevtools
           config={{
