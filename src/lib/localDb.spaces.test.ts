@@ -24,6 +24,7 @@ import type { SpaceKeyEntry } from '@/lib/spaces/types'
 import { getAccountSession } from '@/lib/accountSession'
 import { base64ToBytes, bytesToBase64, decryptValue, encryptValue } from '@/lib/crypto'
 import { DecryptError } from '@/lib/dataErrors'
+import { computeRangeAnalytics } from '@/lib/localAnalytics'
 import {
   IDENTITY_KEY,
   MEMBER_PROFILES_KEY,
@@ -418,6 +419,74 @@ describe('isolation: a Family write', () => {
 
     expect(sum(await getAllExpenses())).toBe(30)
     expect(sum(await spaceDb(space.id).getAllExpenses())).toBe(1000)
+  })
+
+  describe('computeRangeAnalytics per space', () => {
+    const RANGE = { from: '2026-05-01T00:00:00.000Z', to: '2026-05-31T23:59:59.999Z' }
+
+    async function seed() {
+      const space = await newSpace()
+      await addPersonalExpense(10)
+      await addPersonalExpense(20)
+      await addFamilyExpense(space.id, 1000)
+      const personalCategory = (await getAllCategories())[0]
+      const familyCategory = await familyCategoryId(space.id)
+      await spaceDb('personal').upsertBudget({
+        categoryId: personalCategory.id,
+        monthlyLimit: 500,
+        currency: 'UAH',
+      })
+      await spaceDb(space.id).upsertBudget({
+        categoryId: familyCategory,
+        monthlyLimit: 5000,
+        currency: 'UAH',
+      })
+      return { space, personalCategory: personalCategory.id, familyCategory }
+    }
+
+    const spent = (r: Awaited<ReturnType<typeof computeRangeAnalytics>>) =>
+      r.categoryBreakdown.reduce((n, c) => n + c.total, 0)
+
+    it('totals and budgets of each space come only from that space', async () => {
+      const { space, personalCategory, familyCategory } = await seed()
+
+      const personal = await computeRangeAnalytics(RANGE, 'UAH')
+      const family = await computeRangeAnalytics(RANGE, 'UAH', { spaceId: space.id })
+
+      expect(spent(personal)).toBe(30)
+      expect(personal.budgetVariance.map((b) => b.categoryId)).toEqual([personalCategory])
+      expect(spent(family)).toBe(1000)
+      expect(family.budgetVariance.map((b) => b.categoryId)).toEqual([familyCategory])
+      expect(personal.budgetVariance[0].budget).not.toBe(family.budgetVariance[0].budget)
+    })
+
+    it('a second Family write leaves the personal result deep-equal', async () => {
+      const { space } = await seed()
+      const personalBefore = await computeRangeAnalytics(RANGE, 'UAH')
+      const familyBefore = await computeRangeAnalytics(RANGE, 'UAH', { spaceId: space.id })
+
+      await addFamilyExpense(space.id, 400)
+
+      expect(await computeRangeAnalytics(RANGE, 'UAH')).toEqual(personalBefore)
+      const familyAfter = await computeRangeAnalytics(RANGE, 'UAH', { spaceId: space.id })
+      expect(spent(familyAfter)).toBe(1400)
+      expect(familyAfter).not.toEqual(familyBefore)
+    })
+
+    it('a second personal write leaves the Family result deep-equal', async () => {
+      const { space } = await seed()
+      const personalBefore = await computeRangeAnalytics(RANGE, 'UAH')
+      const familyBefore = await computeRangeAnalytics(RANGE, 'UAH', { spaceId: space.id })
+
+      await addPersonalExpense(7)
+
+      expect(await computeRangeAnalytics(RANGE, 'UAH', { spaceId: space.id })).toEqual(
+        familyBefore,
+      )
+      const personalAfter = await computeRangeAnalytics(RANGE, 'UAH')
+      expect(spent(personalAfter)).toBe(37)
+      expect(personalAfter).not.toEqual(personalBefore)
+    })
   })
 
   it('income, categories and budgets of the two spaces do not mix', async () => {
@@ -1641,10 +1710,12 @@ describe('forgetLocalSpace', () => {
   it('needs only the DEK: it works when the space key cannot be read', async () => {
     const space = await newSpace()
     await addFamilyExpense(space.id, 5)
-    const entries = await personalSpaceKeys()
-    // Corrupt nothing in the personal record; drop the keyring only.
-    clearKeyring()
-    expect(entries).toHaveLength(1)
+    // The space key cannot decrypt this blob any more; forgetting must not need it.
+    mockStore.set(
+      `space:${space.id}:${MAY_CHUNK}`,
+      new Uint8Array([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]),
+    )
+    mockStore.set(`space:${space.id}:categories`, new Uint8Array([1, 2, 3]))
 
     await forgetLocalSpace(space.id)
 

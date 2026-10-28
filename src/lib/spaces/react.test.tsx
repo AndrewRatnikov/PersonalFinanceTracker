@@ -18,11 +18,17 @@ import {
   useSpaceDb,
 } from '@/lib/spaces/react'
 import { dbFor, spaceArgs, withSpaceOption } from '@/lib/spaces/spaceDb'
+import { getCurrencySettings } from '@/lib/appSettings'
 import { getAllExpenses, spaceDb } from '@/lib/localDb'
+import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 vi.mock('@/lib/localDb', () => ({
   getAllExpenses: vi.fn(),
   spaceDb: vi.fn(),
+}))
+vi.mock('@/lib/appSettings', () => ({
+  CURRENCY_SETTINGS_QUERY_KEY: ['settings', 'currency'],
+  getCurrencySettings: vi.fn(),
 }))
 
 const FAMILY = '3f2b1c4e-0000-4000-8000-00000000aaaa'
@@ -225,6 +231,57 @@ describe('personal and Family caches never mix', () => {
       expect(family.result.current.data).toEqual([{ id: 'family-3' }])
     })
     expect(getAllExpenses).not.toHaveBeenCalled()
+  })
+})
+
+describe('useCurrencySettings', () => {
+  const PERSONAL_SETTINGS = { mainCurrency: 'UAH', fetchExchangeRates: true }
+  const FAMILY_SETTINGS = { mainCurrency: 'USD', fetchExchangeRates: false }
+
+  beforeEach(() => {
+    vi.mocked(getCurrencySettings).mockImplementation(((opts?: { spaceId?: string }) =>
+      Promise.resolve(
+        opts?.spaceId ? FAMILY_SETTINGS : PERSONAL_SETTINGS,
+      )) as never)
+  })
+
+  it('personal: calls getCurrencySettings with no arguments and caches under the personal key', async () => {
+    const { result } = renderHook(() => useCurrencySettings(), { wrapper: wrapperFor() })
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(PERSONAL_SETTINGS)
+    })
+
+    expect(getCurrencySettings).toHaveBeenCalledWith()
+    expect(client.getQueryData(['settings', 'currency', 'personal'])).toEqual(PERSONAL_SETTINGS)
+  })
+
+  it('family: passes { spaceId } and caches under the Family key', async () => {
+    const { result } = renderHook(() => useCurrencySettings(), {
+      wrapper: wrapperFor(FAMILY),
+    })
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(FAMILY_SETTINGS)
+    })
+
+    expect(getCurrencySettings).toHaveBeenCalledWith({ spaceId: FAMILY })
+    expect(client.getQueryData(['settings', 'currency', FAMILY])).toEqual(FAMILY_SETTINGS)
+  })
+
+  it('the two caches differ and neither overwrites the other', async () => {
+    const personal = renderHook(() => useCurrencySettings(), { wrapper: wrapperFor() })
+    const family = renderHook(() => useCurrencySettings(), { wrapper: wrapperFor(FAMILY) })
+    await waitFor(() => {
+      expect(personal.result.current.data).toBeDefined()
+      expect(family.result.current.data).toBeDefined()
+    })
+
+    expect(client.getQueryData(['settings', 'currency', 'personal'])).toEqual(PERSONAL_SETTINGS)
+    expect(client.getQueryData(['settings', 'currency', FAMILY])).toEqual(FAMILY_SETTINGS)
+    expect(client.getQueryData(['settings', 'currency', 'personal'])).not.toEqual(
+      client.getQueryData(['settings', 'currency', FAMILY]),
+    )
   })
 })
 

@@ -147,13 +147,21 @@ describe('subscribeActiveSpace', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
-  it('does not call a listener that subscribed after a change', () => {
-    setActiveSpaceId('personal')
+  it('a late subscriber misses earlier changes and hears later ones', async () => {
+    setKeyring([await held(FAMILY)])
+    const early = vi.fn()
+    const offEarly = subscribeActiveSpace(early)
+    setActiveSpaceId(FAMILY)
     const late = vi.fn()
-
-    subscribeActiveSpace(late)
+    const offLate = subscribeActiveSpace(late)
 
     expect(late).not.toHaveBeenCalled()
+    setActiveSpaceId('personal')
+
+    expect(early).toHaveBeenCalledTimes(2)
+    expect(late).toHaveBeenCalledTimes(1)
+    offEarly()
+    offLate()
   })
 })
 
