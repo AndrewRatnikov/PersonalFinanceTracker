@@ -8,10 +8,15 @@ import {
   getAllCategories,
   getAllExpenses,
   getAllIncome,
+  getSpaceInfo,
+  listLocalSpaces,
 } from './localDb'
 import { mainAmountOf } from './money'
+import { dbFor, spaceArgs } from './spaces/spaceDb'
+import { PERSONAL_SPACE_ID } from './spaces/types'
 import { isLive } from './syncRecords'
 import type { Currency, EntryConversion } from './domain'
+import type { SpaceOption } from './spaces/spaceDb'
 
 // CSV is for spreadsheets, not a backup (spec §8): not encrypted, and it
 // drops IDs and the time of day. Every field is quoted, so commas, quotes and
@@ -36,15 +41,18 @@ function csvRow(values: Array<string | number | null | undefined>): string {
   return values.map(csvEscape).join(',')
 }
 
-// The four CSV files, keyed by file name. Dates are the local calendar date.
-export async function buildCsvFiles(): Promise<Record<string, string>> {
+// The four CSV files of one space (personal by default), keyed by file name.
+// Dates are the local calendar date.
+export async function buildCsvFiles(opts?: SpaceOption): Promise<Record<string, string>> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  const db = spaceId === PERSONAL_SPACE_ID ? null : dbFor(spaceId)
   const [allExpenses, allCategories, allIncome, allBudgets, settings] =
     await Promise.all([
-      getAllExpenses(),
-      getAllCategories(),
-      getAllIncome(),
-      getAllBudgets(),
-      getCurrencySettings(),
+      db ? db.getAllExpenses() : getAllExpenses(),
+      db ? db.getAllCategories() : getAllCategories(),
+      db ? db.getAllIncome() : getAllIncome(),
+      db ? db.getAllBudgets() : getAllBudgets(),
+      getCurrencySettings(...spaceArgs(spaceId)),
     ])
   const expenses = allExpenses.filter(isLive)
   const categories = allCategories.filter(isLive)
@@ -105,9 +113,10 @@ export async function buildCsvFiles(): Promise<Record<string, string>> {
   }
 }
 
-// One zip with the four CSV files.
-export async function buildCsvZip(): Promise<Uint8Array> {
-  const files = await buildCsvFiles()
+// One zip with the four CSV files of the space.
+export async function buildCsvZip(opts?: SpaceOption): Promise<Uint8Array> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  const files = await buildCsvFiles(...spaceArgs(spaceId))
   return zipSync(
     Object.fromEntries(
       Object.entries(files).map(([name, content]) => [name, strToU8(content)]),
@@ -115,15 +124,47 @@ export async function buildCsvZip(): Promise<Uint8Array> {
   )
 }
 
-export function csvZipFileName(now = new Date()): string {
-  return `minima-csv-${dayjs(now).format('YYYY-MM-DD')}.zip`
+const SLUG_MAX = 40
+
+// The space name in a file name: lowercase, every run of characters other
+// than a-z, 0-9 and Cyrillic letters becomes "-", trimmed of "-", at most 40
+// characters, "family" when nothing is left.
+function spaceSlug(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9Ѐ-ӿ]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, SLUG_MAX)
+    .replace(/-+$/g, '')
+  return slug || 'family'
 }
 
-// A single download of minima-csv-YYYY-MM-DD.zip.
-export async function exportAllLocalData(): Promise<void> {
-  const zip = await buildCsvZip()
-  await saveFile(
-    new Blob([new Uint8Array(zip)], { type: 'application/zip' }),
-    csvZipFileName(),
-  )
+// Personal: minima-csv-YYYY-MM-DD.zip. With a (Family) space name:
+// minima-csv-<slug>-YYYY-MM-DD.zip.
+export function csvZipFileName(now = new Date(), spaceName?: string): string {
+  const date = dayjs(now).format('YYYY-MM-DD')
+  if (spaceName === undefined) return `minima-csv-${date}.zip`
+  return `minima-csv-${spaceSlug(spaceName)}-${date}.zip`
+}
+
+async function familySpaceName(spaceId: string): Promise<string> {
+  try {
+    const info = await getSpaceInfo(spaceId)
+    if (info?.name) return info.name
+  } catch {
+    // Fall back to the name in the space keys.
+  }
+  const listed = (await listLocalSpaces()).find((s) => s.id === spaceId)
+  return listed?.name ?? ''
+}
+
+// A single download of the space's zip (personal: minima-csv-YYYY-MM-DD.zip).
+export async function exportAllLocalData(opts?: SpaceOption): Promise<void> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  const zip = await buildCsvZip(...spaceArgs(spaceId))
+  const filename =
+    spaceId === PERSONAL_SPACE_ID
+      ? csvZipFileName()
+      : csvZipFileName(new Date(), await familySpaceName(spaceId))
+  await saveFile(new Blob([new Uint8Array(zip)], { type: 'application/zip' }), filename)
 }
