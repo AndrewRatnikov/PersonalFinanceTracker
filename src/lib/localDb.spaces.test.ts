@@ -543,10 +543,12 @@ describe('revs per space', () => {
     const space = await newSpace()
     const familyBefore = familyRev(space.id)
     const familyMeta = mockStore.get(`space:${space.id}:meta:sync`)
+    // Warm-up: the first write also creates the default personal category (a rev too).
+    await addPersonalExpense(1)
     const personalBefore = personalRev()
 
-    await addPersonalExpense(1)
     await addPersonalExpense(2)
+    await addPersonalExpense(3)
 
     expect(personalRev()).toBe(personalBefore + 2)
     expect(await getLocalRev()).toBe(personalBefore + 2)

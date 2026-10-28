@@ -286,7 +286,11 @@ describe('convertPending({ spaceId })', () => {
 describe('getConversionStatus', () => {
   it('reports the Family space’s own main currency and counts', async () => {
     const space = await familySpace({ mainCurrency: 'USD', fetchExchangeRates: true })
-    await seedPersonal([makeExpense('p1'), makeExpense('p2')])
+    // USD entries differ from the personal main (UAH), so they are pending.
+    await seedPersonal([
+      makeExpense('p1', { currency: 'USD' }),
+      makeExpense('p2', { currency: 'USD' }),
+    ])
     await seedFamily(space.id, [makeExpense('f1')])
 
     const family = await getConversionStatus({ spaceId: space.id })
