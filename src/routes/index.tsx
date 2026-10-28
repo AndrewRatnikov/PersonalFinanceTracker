@@ -23,14 +23,7 @@ import { ExpenseDrawer } from '@/components/transactions/ExpenseDrawer'
 import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import {
-  addExpense,
-  addRepeatingExpense,
-  getAllBudgets,
-  getAllCategories,
-  getAllIncome,
-  getExpensesForRange,
-} from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { useVaultSession } from '@/lib/vaultSession'
 
@@ -65,27 +58,30 @@ function Dashboard() {
     [todayStr],
   )
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const categories = categoriesQuery.data ?? []
 
   const expensesQuery = useQuery({
-    queryKey: ['expenses', from, to],
-    queryFn: () => getExpensesForRange(from, to),
+    queryKey: spaceQueryKey(spaceId, 'expenses', from, to),
+    queryFn: () => db.getExpensesForRange(from, to),
   })
   const expenses = expensesQuery.data ?? []
 
   const incomeQuery = useQuery({
-    queryKey: ['income'],
-    queryFn: getAllIncome,
+    queryKey: spaceQueryKey(spaceId, 'income'),
+    queryFn: () => db.getAllIncome(),
   })
   const income = incomeQuery.data ?? []
 
   const budgetsQuery = useQuery({
-    queryKey: ['budgets'],
-    queryFn: getAllBudgets,
+    queryKey: spaceQueryKey(spaceId, 'budgets'),
+    queryFn: () => db.getAllBudgets(),
   })
   const budgets = budgetsQuery.data ?? []
 
@@ -126,7 +122,9 @@ function Dashboard() {
       data: CreateExpenseInput
       repeat: QuickRepeat
     }) =>
-      repeat === 'none' ? addExpense(data) : addRepeatingExpense(data, repeat),
+      repeat === 'none'
+        ? db.addExpense(data)
+        : db.addRepeatingExpense(data, repeat),
     onSuccess: (_saved, { repeat }) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       // A repeat also created a recurring item.
