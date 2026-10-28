@@ -29,6 +29,10 @@ const SYNC_RECORD_TYPES: ReadonlyArray<SyncRecordType> = [
   'budget',
   'recurring',
   'settings',
+  'identity',
+  'spaceKey',
+  'spaceInfo',
+  'memberProfile',
 ]
 
 const IV_BYTES = 12
@@ -71,6 +75,12 @@ export async function deriveSyncKeys(
     }
     base = dek
   } else {
+    // Any 256-bit root key: the DEK bytes or a Family space key (SK).
+    if (dek.byteLength !== 32) {
+      throw new TypeError(
+        `deriveSyncKeys needs a 32-byte root key, got ${dek.byteLength} bytes`,
+      )
+    }
     const material = new Uint8Array(dek)
     try {
       base = await crypto.subtle.importKey('raw', material, 'HKDF', false, [
