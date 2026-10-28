@@ -16,21 +16,19 @@
 import { getCurrencySettings } from './appSettings'
 import { isDecryptError } from './dataErrors'
 import { reportDataProblem } from './dataProblem'
-import {
-  applyEntryConversions,
-  convertBudgets,
-  getAllBudgets,
-  getLocalDbKey,
-  onConversionNeeded,
-  readEntriesForConversion,
-} from './localDb'
+import { getLocalDbKey, onConversionNeeded } from './localDb'
 import { identityConversion, isConverted, mainAmountOf } from './money'
 import { crossRate, rateProvider } from './rates'
 import { toLocalDateString } from './recurrence'
+import { listHeldSpaceIds } from './spaces/keyring'
+import { dbFor, spaceArgs } from './spaces/spaceDb'
+import { PERSONAL_SPACE_ID, isSpaceLockedError } from './spaces/types'
 import { isLive } from './syncRecords'
 import type { Currency, EntryConversion, Expense, IncomeEntry } from './domain'
 import type { EntryConversionUpdate } from './localDb'
 import type { RateProvider, RateTable } from './rates'
+import type { SpaceOption } from './spaces/spaceDb'
+import type { SpaceId } from './spaces/types'
 
 export const CONVERSION_STATUS_QUERY_KEY = ['conversion-status'] as const
 
@@ -51,6 +49,8 @@ export interface ConvertOptions {
   provider?: RateProvider
   /** Local date (YYYY-MM-DD) used for today's rates; defaults to now. */
   today?: string
+  /** The space to convert (its own main currency); defaults to personal. */
+  spaceId?: SpaceId
 }
 
 export interface ConversionStatus {
@@ -185,12 +185,14 @@ export async function convertPending(
   const provider = options.provider ?? rateProvider
   const today = options.today ?? toLocalDateString()
   if (!getLocalDbKey()) return { converted: 0, stillPending: 0 }
+  const spaceId = options.spaceId ?? PERSONAL_SPACE_ID
+  const db = dbFor(spaceId)
 
-  const settings = await getCurrencySettings()
+  const settings = await getCurrencySettings(...spaceArgs(spaceId))
   const main = settings.mainCurrency
   const canFetch = settings.fetchExchangeRates && !isOffline()
 
-  const groups = await readEntriesForConversion()
+  const groups = await db.readEntriesForConversion()
   const pendingGroups = groups
     .map((g) => ({
       storageKey: g.storageKey,
@@ -260,7 +262,7 @@ export async function convertPending(
       break
     }
     if (updates.length > 0) {
-      converted += await applyEntryConversions(group.storageKey, main, updates)
+      converted += await db.applyEntryConversions(group.storageKey, main, updates)
       notify()
     }
     done += group.records.length
@@ -270,11 +272,11 @@ export async function convertPending(
   // One-time fix: budgets saved in another currency are converted at today's
   // rate (only while the stored main currency is still `main`).
   if (!aborted && canFetch && !signal?.aborted && getLocalDbKey()) {
-    const budgets = (await getAllBudgets()).filter(isLive)
+    const budgets = (await db.getAllBudgets()).filter(isLive)
     if (budgets.some((b) => b.currency !== main)) {
       try {
         const rates = await ratesFor(cache, provider, today)
-        const count = await convertBudgets(
+        const count = await db.convertBudgets(
           main,
           (from) => crossRate(rates, from, main),
           { setMainCurrency: false },
@@ -319,12 +321,33 @@ function startExclusive<T>(task: () => Promise<T>): Promise<T> {
   return run
 }
 
+function reportRunError(err: unknown): void {
+  if (isDecryptError(err)) reportDataProblem(err)
+  // A space forgotten or locked during the run: nothing to convert.
+  else if (isSpaceLockedError(err)) return
+  else console.error('Converting entries to the main currency failed:', err)
+}
+
+// Personal first (today's call), then every Family space this device holds a
+// key for, each in its own main currency.
 async function backgroundRun(): Promise<void> {
   try {
     await convertPending()
   } catch (err) {
-    if (isDecryptError(err)) reportDataProblem(err)
-    else console.error('Converting entries to the main currency failed:', err)
+    reportRunError(err)
+  }
+  let spaceIds: Array<string> = []
+  try {
+    spaceIds = await listHeldSpaceIds()
+  } catch (err) {
+    reportRunError(err)
+  }
+  for (const spaceId of spaceIds) {
+    try {
+      await convertPending({ spaceId })
+    } catch (err) {
+      reportRunError(err)
+    }
   }
 }
 
@@ -380,10 +403,12 @@ export function startAutoConversion(): () => void {
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
-export async function getConversionStatus(): Promise<ConversionStatus> {
-  const settings = await getCurrencySettings()
+export async function getConversionStatus(opts?: SpaceOption): Promise<ConversionStatus> {
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  const db = dbFor(spaceId)
+  const settings = await getCurrencySettings(...spaceArgs(spaceId))
   const main = settings.mainCurrency
-  const groups = await readEntriesForConversion()
+  const groups = await db.readEntriesForConversion()
   let totalEntries = 0
   let pendingEntries = 0
   for (const group of groups) {
@@ -393,7 +418,7 @@ export async function getConversionStatus(): Promise<ConversionStatus> {
       if (mainAmountOf(record, main) === null) pendingEntries++
     }
   }
-  const budgets = (await getAllBudgets()).filter(isLive)
+  const budgets = (await db.getAllBudgets()).filter(isLive)
   return {
     mainCurrency: main,
     fetchExchangeRates: settings.fetchExchangeRates,
@@ -412,15 +437,17 @@ export async function changeMainCurrency(
   next: Currency,
   options: ConvertOptions = {},
 ): Promise<ChangeMainCurrencyResult> {
-  const settings = await getCurrencySettings()
+  const spaceId = options.spaceId ?? PERSONAL_SPACE_ID
+  const db = dbFor(spaceId)
+  const settings = await getCurrencySettings(...spaceArgs(spaceId))
   if (settings.mainCurrency === next) {
     return { converted: 0, stillPending: 0, budgetsConverted: 0, rateDate: null }
   }
   const provider = options.provider ?? rateProvider
   const today = options.today ?? toLocalDateString()
 
-  const budgets = (await getAllBudgets()).filter(isLive)
-  const groups = await readEntriesForConversion()
+  const budgets = (await db.getAllBudgets()).filter(isLive)
+  const groups = await db.readEntriesForConversion()
   const needsRate =
     budgets.some((b) => b.currency !== next) ||
     groups.some((g) =>
@@ -447,7 +474,7 @@ export async function changeMainCurrency(
   }
 
   const rates = todayRates
-  const budgetsConverted = await convertBudgets(
+  const budgetsConverted = await db.convertBudgets(
     next,
     (from) => {
       if (!rates) throw new MainCurrencyChangeError('rates-unavailable')
