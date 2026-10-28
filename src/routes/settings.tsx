@@ -5,7 +5,7 @@ import { Cloud, Coins, Database, Shield, Tag, UserRound, Wallet } from 'lucide-r
 import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
 import { ENABLE_SYNC } from '@/lib/featureFlags'
-import { getAllCategories } from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { AccountTab } from '@/components/settings/AccountTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
 import { DataToolsTab } from '@/components/settings/DataToolsTab'
@@ -65,9 +65,11 @@ function SettingsPage() {
   const columns = 5 + (accountsVisible ? 1 : 0) + (syncVisible ? 1 : 0)
   const gridClass =
     columns === 7 ? 'grid-cols-7' : columns === 6 ? 'grid-cols-6' : 'grid-cols-5'
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const categories = categoriesQuery.data ?? []
 
