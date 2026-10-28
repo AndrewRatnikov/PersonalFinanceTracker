@@ -6,12 +6,7 @@ import { CategoryRow } from './CategoryRow'
 import type { Category } from '@/lib/domain'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
-import {
-  addCategory,
-  addIncomeCategory,
-  getAllCategories,
-  getAllIncomeCategories,
-} from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -185,13 +180,16 @@ export function CategoriesTab() {
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const incomeCategoriesQuery = useQuery({
-    queryKey: ['incomeCategories'],
-    queryFn: getAllIncomeCategories,
+    queryKey: spaceQueryKey(spaceId, 'incomeCategories'),
+    queryFn: () => db.getAllIncomeCategories(),
   })
 
   const refreshExpense = () =>
@@ -224,7 +222,7 @@ export function CategoriesTab() {
         categories={categoriesQuery.data ?? []}
         isError={false}
         onRetry={() => void categoriesQuery.refetch()}
-        onAdd={(input) => addCategory(input)}
+        onAdd={(input) => db.addCategory(input)}
         onMutate={refreshExpense}
         onError={setError}
       />
@@ -234,7 +232,7 @@ export function CategoriesTab() {
         categories={incomeCategoriesQuery.data ?? []}
         isError={incomeCategoriesQuery.isError}
         onRetry={() => void incomeCategoriesQuery.refetch()}
-        onAdd={(input) => addIncomeCategory(input)}
+        onAdd={(input) => db.addIncomeCategory(input)}
         onMutate={refreshIncome}
         onError={setError}
       />
