@@ -8,17 +8,9 @@ import type { CreateRecurringInput, RecurringItem } from '@/lib/domain'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import {
-  addRecurring,
-  deleteRecurring,
-  getAllCategories,
-  getAllIncomeCategories,
-  getAllRecurring,
-  setRecurringPaused,
-  updateRecurring,
-} from '@/lib/localDb'
 import { formatMoney } from '@/lib/money'
 import { rateProvider } from '@/lib/rates'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import {
   addDaysToDate,
   formatRecurringAmount,
@@ -57,17 +49,20 @@ function RecurringPage() {
   const [form, setForm] = useState<FormState | null>(null)
   const today = toLocalDateString()
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const recurringQuery = useQuery({
-    queryKey: ['recurring'],
-    queryFn: getAllRecurring,
+    queryKey: spaceQueryKey(spaceId, 'recurring'),
+    queryFn: () => db.getAllRecurring(),
   })
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: getAllCategories,
+    queryKey: spaceQueryKey(spaceId, 'categories'),
+    queryFn: () => db.getAllCategories(),
   })
   const incomeCategoriesQuery = useQuery({
-    queryKey: ['incomeCategories'],
-    queryFn: getAllIncomeCategories,
+    queryKey: spaceQueryKey(spaceId, 'incomeCategories'),
+    queryFn: () => db.getAllIncomeCategories(),
   })
   const currencySettingsQuery = useCurrencySettings()
   const mainCurrency =
@@ -158,8 +153,8 @@ function RecurringPage() {
       createThroughToday: boolean
       editing: RecurringItem | null
     }) => {
-      if (editing) await updateRecurring(editing.id, input)
-      else await addRecurring(input, { createThroughToday })
+      if (editing) await db.updateRecurring(editing.id, input)
+      else await db.addRecurring(input, { createThroughToday })
     },
     onSuccess: () => {
       setForm(null)
@@ -173,7 +168,7 @@ function RecurringPage() {
 
   const pauseMutation = useMutation({
     mutationFn: (item: RecurringItem) =>
-      setRecurringPaused(item.id, !item.paused),
+      db.setRecurringPaused(item.id, !item.paused),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recurring'] })
     },
@@ -183,7 +178,7 @@ function RecurringPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: RecurringItem) => deleteRecurring(item.id),
+    mutationFn: (item: RecurringItem) => db.deleteRecurring(item.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['recurring'] })
       toast.success(t('toasts.recurringDeleted'))
