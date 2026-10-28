@@ -8,7 +8,7 @@ import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { currencyLabel } from '@/i18n/format'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import { deleteBudget, getAllBudgets, upsertBudget } from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 import { Button } from '@/components/ui/button'
@@ -44,6 +44,7 @@ function BudgetRow({
   settingsReady,
 }: BudgetRowProps) {
   const queryClient = useQueryClient()
+  const db = useSpaceDb()
   const { t } = useT()
   const [limit, setLimit] = useState(
     existingBudget ? String(existingBudget.monthlyLimit) : '',
@@ -51,7 +52,7 @@ function BudgetRow({
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      upsertBudget({
+      db.upsertBudget({
         categoryId: category.id,
         monthlyLimit: Number(limit),
         currency: mainCurrency,
@@ -66,7 +67,7 @@ function BudgetRow({
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteBudget(existingBudget!.id),
+    mutationFn: () => db.deleteBudget(existingBudget!.id),
     onSuccess: () => {
       setLimit('')
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
@@ -177,9 +178,11 @@ interface BudgetTabProps {
 
 export function BudgetTab({ categories }: BudgetTabProps) {
   const { t } = useT()
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
   const budgetsQuery = useQuery({
-    queryKey: ['budgets'],
-    queryFn: () => getAllBudgets(),
+    queryKey: spaceQueryKey(spaceId, 'budgets'),
+    queryFn: () => db.getAllBudgets(),
   })
   const budgets = budgetsQuery.data ?? []
   const settingsQuery = useCurrencySettings()
