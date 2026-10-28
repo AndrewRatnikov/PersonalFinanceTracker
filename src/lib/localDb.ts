@@ -1,10 +1,15 @@
-import { clear, createStore, del, get, keys, set, setMany } from 'idb-keyval'
+import { clear, createStore, del, delMany, get, keys, set, setMany } from 'idb-keyval'
 
-import { isMessageKey, translate } from '../i18n/core'
+import { getLang, isMessageKey, translate } from '../i18n/core'
 import { AppError } from './appErrors'
-import { decryptValue, encryptValue } from './crypto'
-import { DecryptError, isDataStorageKey, isDecryptError } from './dataErrors'
-import { defaultExpenseCategories } from './defaultCategories'
+import { base64ToBytes, bytesToBase64, decryptValue, encryptValue } from './crypto'
+import {
+  DecryptError,
+  isAnyDataStorageKey,
+  isDataStorageKey,
+  isDecryptError,
+} from './dataErrors'
+import { defaultExpenseCategories, defaultIncomeCategories } from './defaultCategories'
 import { DEFAULT_MAIN_CURRENCY, isCurrency } from './domain'
 import { convertIncomeSources } from './incomeCategories'
 import { identityConversion, isConverted } from './money'
@@ -20,11 +25,47 @@ import {
   toLocalDateString,
 } from './recurrence'
 import { recurringInputSchema, recurringInputSchemaFor } from './schemas'
+import {
+  clearKeyring,
+  getHeldSpace,
+  heldSpaceIds,
+  keyringNeedsLoad,
+  keyringVersion,
+  listHeldSpaceIds,
+  markKeyringStale,
+  setKeyring,
+  setKeyringLoader,
+} from './spaces/keyring'
+import { getCurrentMemberId } from './spaces/member'
+import {
+  generateIdentityKeyPair,
+  generateSpaceKey,
+  importSpaceKey,
+} from './spaces/spaceCrypto'
+import {
+  PERSONAL_SPACE_ID,
+  SpaceError,
+  SpaceLockedError,
+  isSpaceLockedError,
+  isValidFamilySpaceId,
+  keyFor,
+  parseSpaceStorageKey,
+} from './spaces/types'
 import { postChanged } from './syncChannel'
 import { isLive, mergeRecord, sameTimeWinner } from './syncRecords'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
 import type { Lang } from '../i18n/lang'
+import type { HeldSpace } from './spaces/keyring'
+import type { IdentityKeyPair } from './spaces/spaceCrypto'
+import type {
+  IdentityRecord,
+  LocalSpace,
+  MemberProfile,
+  SpaceId,
+  SpaceInfoRecord,
+  SpaceKeyEntry,
+} from './spaces/types'
 import type {
   BudgetEntry,
   Category,
@@ -95,6 +136,17 @@ export const ENABLE_SUPABASE_SYNC = false
 // `syncedSettings` calls requestEntryConversion(), which conversion.ts listens
 // to (this module never imports conversion.ts). The converter writes back
 // through applyEntryConversions / convertBudgets, which don't trigger it again.
+//
+// Spaces (spec §20): every data function is implemented once against a space
+// context (`SpaceCtx`). The top-level exports are the Personal space;
+// spaceDb(spaceId) returns a handle with the same members for a Family space.
+// Storage keys are built only by keyFor (personal keys unchanged, Family keys
+// `space:<id>:<baseKey>`) and every value is encrypted only through
+// cryptoFor(spaceId): the DEK for personal, the space key (SK) for a Family
+// space. Family data is never encrypted or decrypted with the DEK; a Family
+// space without its key raises SpaceLockedError. Each space has its own
+// `meta:sync` localRev. Family writes stamp createdBy / updatedBy / paidBy
+// with the current member id; personal records never carry them.
 interface LocalDbMap {
   categories: Array<Category>
   incomeCategories: Array<Category>
@@ -102,7 +154,22 @@ interface LocalDbMap {
   budgets: Array<BudgetEntry>
   recurring: Array<RecurringItem>
   syncedSettings: SyncedSettingsRecord
+  // Personal only (encrypted with the DEK).
+  identity: IdentityRecord
+  spaceKeys: Array<SpaceKeyEntry>
+  // Family only (encrypted with the space key).
+  spaceInfo: SpaceInfoRecord
+  memberProfiles: Array<MemberProfile>
 }
+
+/** Personal: the member identity key pair (one record). */
+export const IDENTITY_KEY = 'identity'
+/** Personal: one entry per Family space with its key. */
+export const SPACE_KEYS_KEY = 'spaceKeys'
+/** Family: the space details (one record, id 'space'). */
+export const SPACE_INFO_KEY = 'spaceInfo'
+/** Family: the member profiles. */
+export const MEMBER_PROFILES_KEY = 'memberProfiles'
 
 type LocalDbKey = keyof LocalDbMap
 
@@ -129,12 +196,218 @@ export function getLocalDbKey(): CryptoKey | null {
   return _key
 }
 
+// A new DEK: the keyring is reloaded from its spaceKeys on the next Family
+// access.
 export function unlockLocalDb(key: CryptoKey): void {
   _key = key
+  clearKeyring()
 }
 
+// Lock, auto-lock, cross-tab lock and Remove data: the DEK and every space key
+// leave memory. The identity key pair is never cached.
 export function wipeLocalDbKey(): void {
   _key = null
+  clearKeyring()
+}
+
+// ── Space context, keyring and cryptoFor ──────────────────────────────────────
+
+interface SpaceCtx {
+  readonly spaceId: SpaceId
+  readonly personal: boolean
+}
+
+const PERSONAL_CTX: SpaceCtx = { spaceId: PERSONAL_SPACE_ID, personal: true }
+
+const ctxCache = new Map<string, SpaceCtx>()
+
+// The context of a space id; a bad Family id throws TypeError.
+function ctxFor(spaceId: SpaceId): SpaceCtx {
+  if (spaceId === PERSONAL_SPACE_ID) return PERSONAL_CTX
+  let ctx = ctxCache.get(spaceId)
+  if (!ctx) {
+    keyFor(spaceId, SYNC_META_KEY) // validates the id
+    ctx = { spaceId, personal: false }
+    ctxCache.set(spaceId, ctx)
+  }
+  return ctx
+}
+
+// The storage key of `baseKey` in the space (the only key builder: keyFor).
+function storageKeyOf(ctx: SpaceCtx, baseKey: string): string {
+  return keyFor(ctx.spaceId, baseKey)
+}
+
+// True when personal reads must return nothing (no DEK). A Family space is
+// never "quietly empty": its reads raise SpaceLockedError instead.
+function personalLocked(ctx: SpaceCtx): boolean {
+  return ctx.personal && !_key
+}
+
+export interface SpaceCrypto {
+  spaceId: string
+  encrypt: (value: unknown) => Promise<Uint8Array>
+  decrypt: (bytes: Uint8Array) => Promise<unknown>
+}
+
+// The record crypto of a space. Personal: the DEK ("LocalDb not initialized"
+// while locked). Family: the space key from the keyring (loaded on demand),
+// newest version for writing, older versions tried for reading;
+// SpaceLockedError when the vault is locked or the space is not held. Never
+// the DEK for a Family space.
+export async function cryptoFor(spaceId: SpaceId): Promise<SpaceCrypto> {
+  if (spaceId === PERSONAL_SPACE_ID) {
+    const key = _key
+    if (!key) throw new Error('LocalDb not initialized')
+    return {
+      spaceId,
+      encrypt: (value) => encryptValue(key, value),
+      decrypt: (bytes) => decryptValue(key, bytes),
+    }
+  }
+  if (!isValidFamilySpaceId(spaceId)) {
+    throw new TypeError(`cryptoFor: invalid space id "${spaceId}"`)
+  }
+  if (!_key) throw new SpaceLockedError(spaceId)
+  if (keyringNeedsLoad()) await loadKeyring()
+  const held = getHeldSpace(spaceId)
+  // A lock while the keyring loaded leaves nothing usable.
+  if (!getLocalDbKey() || !held || held.keys.length === 0) {
+    throw new SpaceLockedError(spaceId)
+  }
+  const versions = held.keys
+  return {
+    spaceId,
+    encrypt: (value) => encryptValue(versions[0].key, value),
+    decrypt: async (bytes) => {
+      let lastError: unknown = new Error('no key')
+      for (const version of versions) {
+        try {
+          return await decryptValue(version.key, bytes)
+        } catch (err) {
+          lastError = err
+        }
+      }
+      throw lastError
+    },
+  }
+}
+
+let keyringLoad: Promise<void> | null = null
+
+// Reads the personal spaceKeys record with the DEK and imports the keys of
+// every live entry into the keyring. A DecryptError('spaceKeys') propagates.
+// A lock during the load leaves the keyring cleared.
+function loadKeyring(): Promise<void> {
+  if (keyringLoad) return keyringLoad
+  keyringLoad = (async () => {
+    const dek = _key
+    if (!dek || !store) return
+    const version = keyringVersion()
+    const entries = (await readStore(PERSONAL_CTX, 'spaceKeys')) ?? []
+    const spaces: Array<HeldSpace> = []
+    for (const entry of entries) {
+      if (!isLive(entry) || !isValidFamilySpaceId(entry.id) || !entry.key) continue
+      try {
+        const versions = [
+          { keyVersion: entry.keyVersion, key: entry.key },
+          ...(entry.previousKeys ?? []),
+        ].sort((a, b) => b.keyVersion - a.keyVersion)
+        const imported: HeldSpace['keys'] = []
+        for (const v of versions) {
+          if (!v.key) continue
+          imported.push({
+            keyVersion: v.keyVersion,
+            key: await importSpaceKey(base64ToBytes(v.key)),
+          })
+        }
+        spaces.push({
+          id: entry.id,
+          name: entry.name,
+          role: entry.role,
+          keyVersion: entry.keyVersion,
+          keys: imported,
+        })
+      } catch (err) {
+        console.error('Could not import a space key:', err instanceof Error ? err.name : typeof err)
+      }
+    }
+    if (_key !== dek) return
+    setKeyring(spaces)
+    if (keyringVersion() !== version) markKeyringStale()
+  })().finally(() => {
+    keyringLoad = null
+  })
+  return keyringLoad
+}
+
+// One assignment, no I/O: listHeldSpaceIds() loads through it.
+setKeyringLoader(loadKeyring)
+
+// The current member for a Family write (undefined for personal: no stamps).
+async function memberFor(ctx: SpaceCtx): Promise<string | null | undefined> {
+  return ctx.personal ? undefined : getCurrentMemberId()
+}
+
+// Family create: createdBy = updatedBy = the member (absent when unknown) and,
+// for expenses and income, paidBy = input.paidBy ?? the member. Mutates and
+// returns the record. Personal (member undefined): nothing.
+function stampCreated<T extends { createdBy?: string; updatedBy?: string; paidBy?: string }>(
+  member: string | null | undefined,
+  record: T,
+  paid?: { paidBy?: string },
+): T {
+  if (member === undefined) return record
+  if (member) {
+    record.createdBy = member
+    record.updatedBy = member
+  }
+  if (paid) {
+    const paidBy = paid.paidBy ?? member
+    if (paidBy) record.paidBy = paidBy
+  }
+  return record
+}
+
+// updatedBy = the member, or removed when the writer is unknown.
+function withUpdatedBy<T extends object>(record: T, member: string | null): T {
+  const r = record as T & { updatedBy?: string }
+  if (member) return r.updatedBy === member ? record : { ...record, updatedBy: member }
+  if (!('updatedBy' in r)) return record
+  const copy = { ...r }
+  delete copy.updatedBy
+  return copy
+}
+
+// Family user writes: every record stamped with a rev of this write (the same
+// rule as rev) gets updatedBy.
+function stampWritten(value: unknown, counter: RevCounter): unknown {
+  const member = counter.member
+  if (member === undefined) return value
+  const fresh = (r: unknown): boolean => {
+    const rev = (r as { rev?: unknown } | null)?.rev
+    return typeof rev === 'number' && rev > counter.start
+  }
+  if (Array.isArray(value)) {
+    return value.map((r: unknown) => (fresh(r) ? withUpdatedBy(r as object, member) : r))
+  }
+  if (value && typeof value === 'object' && fresh(value)) {
+    return withUpdatedBy(value, member)
+  }
+  return value
+}
+
+// Locks the space's storage keys (meta:settings is device-level: unprefixed).
+function withSpaceLock<T>(
+  ctx: SpaceCtx,
+  lockKeys: Array<string> | string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const list = Array.isArray(lockKeys) ? lockKeys : [lockKeys]
+  return withWriteLock(
+    list.map((k) => (k === META_SETTINGS_KEY ? k : storageKeyOf(ctx, k))),
+    fn,
+  )
 }
 
 export async function clearLocalDb(): Promise<void> {
@@ -173,26 +446,36 @@ function parseLocalRev(raw: unknown): number {
     : 0
 }
 
-// The plaintext change counter. Works before unlock.
-export async function getLocalRev(): Promise<number> {
+// The plaintext change counter of a space (`meta:sync` of the space). Works
+// before unlock.
+async function getLocalRevIn(ctx: SpaceCtx): Promise<number> {
   if (!store) return 0
-  return parseLocalRev(await get<unknown>(SYNC_META_KEY, store))
+  return parseLocalRev(await get<unknown>(storageKeyOf(ctx, SYNC_META_KEY), store))
 }
 
 interface RevCounter {
   next: () => number
   readonly changed: boolean
   readonly last: number
+  /** localRev before this write: records with a higher rev are this write's. */
+  readonly start: number
+  /** The storage key of the space's meta:sync. */
+  readonly metaKey: string
   /** The stored meta:sync object (its sync fields are written back unchanged). */
   readonly base: Record<string, unknown>
+  /** Family: the writing member (null = unknown). Personal: undefined. */
+  readonly member: string | null | undefined
 }
 
-// Only called inside a lock that includes SYNC_META_KEY. Nothing is written
-// until writeKeysMany commits the counter together with the data.
-async function openRevCounter(): Promise<RevCounter> {
-  const raw = store ? await get<unknown>(SYNC_META_KEY, store) : undefined
+// Only called inside a lock that includes the space's SYNC_META_KEY. Nothing
+// is written until writeKeysMany commits the counter together with the data.
+// A Family counter also carries the current member id for the stamps.
+async function openRevCounter(ctx: SpaceCtx): Promise<RevCounter> {
+  const metaKey = storageKeyOf(ctx, SYNC_META_KEY)
+  const raw = store ? await get<unknown>(metaKey, store) : undefined
   const start = parseLocalRev(raw)
   const base = asObject(raw) ?? {}
+  const member = await memberFor(ctx)
   let last = start
   return {
     next: () => ++last,
@@ -202,19 +485,24 @@ async function openRevCounter(): Promise<RevCounter> {
     get last() {
       return last
     },
+    start,
+    metaKey,
     base,
+    member,
   }
 }
 
 // The meta:sync entry for a write that advanced the counter to `localRev`:
 // the stored object (sync fields kept) with localRev replaced. Exactly
 // `{ localRev }` when nothing else is stored. Must be called inside a lock that
-// holds SYNC_META_KEY.
+// holds the space's SYNC_META_KEY. Personal by default.
 export async function syncMetaEntry(
   localRev: number,
+  spaceId: SpaceId = PERSONAL_SPACE_ID,
 ): Promise<[string, Record<string, unknown>]> {
-  const raw = store ? await get<unknown>(SYNC_META_KEY, store) : undefined
-  return [SYNC_META_KEY, { ...(asObject(raw) ?? {}), localRev }]
+  const metaKey = keyFor(spaceId, SYNC_META_KEY)
+  const raw = store ? await get<unknown>(metaKey, store) : undefined
+  return [metaKey, { ...(asObject(raw) ?? {}), localRev }]
 }
 
 // ── Local change hook (user writes, for the sync engine) ──────────────────────
@@ -247,42 +535,51 @@ export function notifyLocalChange(): void {
 
 // ── Generic encrypted read/write ──────────────────────────────────────────────
 
+// Reads and decrypts the base key `key` of the space. Personal: undefined
+// while locked. Family: SpaceLockedError without its key. An unreadable blob
+// throws DecryptError naming the full storage key.
 async function readStore<TKey extends LocalDbKey>(
+  ctx: SpaceCtx,
   key: TKey,
 ): Promise<LocalDbMap[TKey] | undefined> {
-  if (!_key || !store) return undefined
-  const raw = await get<unknown>(key, store)
+  if (!store || personalLocked(ctx)) return undefined
+  const c = await cryptoFor(ctx.spaceId)
+  const storageKey = storageKeyOf(ctx, key)
+  const raw = await get<unknown>(storageKey, store)
   if (!(raw instanceof Uint8Array)) return undefined
   try {
-    return (await decryptValue(_key, raw)) as LocalDbMap[TKey]
+    return (await c.decrypt(raw)) as LocalDbMap[TKey]
   } catch (err) {
-    throw new DecryptError(key, err)
+    throw new DecryptError(storageKey, err)
   }
 }
 
-// Encrypts every value (single keys or expense chunks) and writes them all in
-// ONE IndexedDB transaction (idb-keyval setMany), together with any plaintext
-// entries and, when the counter advanced, `meta:sync`. If the transaction
-// fails nothing is written.
+// Encrypts every value (base keys of the space: single keys or expense chunks)
+// with the space's crypto and writes them all in ONE IndexedDB transaction
+// (idb-keyval setMany), together with any plaintext entries (full keys) and,
+// when the counter advanced, the space's `meta:sync`. If the transaction fails
+// nothing is written. Family records stamped with this write's revs get
+// updatedBy. Only personal user writes notify the sync engine.
 async function writeKeysMany(
+  ctx: SpaceCtx,
   values: object,
   counter?: RevCounter,
   plain: Array<[string, unknown]> = [],
 ): Promise<void> {
-  const key = _key
-  if (!key) throw new Error('LocalDb not initialized')
+  const c = await cryptoFor(ctx.spaceId)
   if (!store) return
   const entries: Array<[IDBValidKey, unknown]> = []
   for (const [k, v] of Object.entries(values)) {
-    entries.push([k, await encryptValue(key, v)])
+    const value = counter ? stampWritten(v, counter) : v
+    entries.push([storageKeyOf(ctx, k), await c.encrypt(value)])
   }
   entries.push(...plain)
   if (counter?.changed) {
-    entries.push([SYNC_META_KEY, { ...counter.base, localRev: counter.last }])
+    entries.push([counter.metaKey, { ...counter.base, localRev: counter.last }])
   }
   if (entries.length === 0) return
   await setMany(entries, store)
-  if (counter?.changed) notifyLocalChange()
+  if (counter?.changed && ctx.personal) notifyLocalChange()
 }
 
 // ── Expense chunk helpers ─────────────────────────────────────────────────────
@@ -318,26 +615,42 @@ function chunkKeysBetween(from: string, to: string): Array<string> {
   return result
 }
 
-async function readChunk(chunkKey: string): Promise<Array<Expense>> {
-  if (!_key || !store) return []
-  const raw = await get<unknown>(chunkKey, store)
+// `chunkKey` is the base key (expenses_YYYY_MM) of the space.
+async function readChunk(ctx: SpaceCtx, chunkKey: string): Promise<Array<Expense>> {
+  if (!store || personalLocked(ctx)) return []
+  const c = await cryptoFor(ctx.spaceId)
+  const storageKey = storageKeyOf(ctx, chunkKey)
+  const raw = await get<unknown>(storageKey, store)
   if (!(raw instanceof Uint8Array)) return []
   try {
-    return (await decryptValue(_key, raw)) as Array<Expense>
+    return (await c.decrypt(raw)) as Array<Expense>
   } catch (err) {
-    throw new DecryptError(chunkKey, err)
+    throw new DecryptError(storageKey, err)
   }
 }
 
-// Only real month chunks: quarantine:* copies and stray keys are skipped.
-async function allExpenseChunkKeys(): Promise<Array<string>> {
-  if (!_key || !store) return []
+// The base keys of the space's real month chunks: quarantine:* copies, other
+// spaces' chunks and stray keys are skipped. Family: SpaceLockedError without
+// its key.
+async function allExpenseChunkKeys(ctx: SpaceCtx): Promise<Array<string>> {
+  if (!store || personalLocked(ctx)) return []
+  if (!ctx.personal) await cryptoFor(ctx.spaceId)
   const allKeys = await keys(store)
-  return allKeys
-    .filter(
-      (k): k is string => typeof k === 'string' && EXPENSE_CHUNK_KEY_RE.test(k),
-    )
-    .sort()
+  if (ctx.personal) {
+    return allKeys
+      .filter(
+        (k): k is string => typeof k === 'string' && EXPENSE_CHUNK_KEY_RE.test(k),
+      )
+      .sort()
+  }
+  const prefix = storageKeyOf(ctx, '')
+  const result: Array<string> = []
+  for (const k of allKeys) {
+    if (typeof k !== 'string' || !k.startsWith(prefix)) continue
+    const base = k.slice(prefix.length)
+    if (EXPENSE_CHUNK_KEY_RE.test(base)) result.push(base)
+  }
+  return result.sort()
 }
 
 // ── Commit hook: lastDataChangeAt (§6.2) ──────────────────────────────────────
@@ -400,12 +713,23 @@ function isEntryKey(key: string): boolean {
 // entry keys or to the synced settings request a conversion, except the
 // converter's own. `dataChange: false` skips lastDataChangeAt (the converter's
 // background writes).
+// `changedKeys` are base keys; a Family commit announces them with its
+// spaceId (personal messages are unchanged). A write of the personal
+// spaceKeys marks the keyring stale.
 async function afterCommit(
+  ctx: SpaceCtx,
   changedKeys: Array<string>,
   opts: { fromConversion?: boolean; dataChange?: boolean } = {},
 ): Promise<void> {
-  postChanged(changedKeys)
-  if (opts.dataChange !== false) await markDataChanged()
+  if (ctx.personal) {
+    postChanged(changedKeys)
+    if (changedKeys.includes(SPACE_KEYS_KEY)) markKeyringStale()
+  } else {
+    postChanged(changedKeys, ctx.spaceId)
+  }
+  // A Family write touches only its own space's keys: the device-level
+  // lastDataChangeAt (backup reminder) follows personal writes.
+  if (ctx.personal && opts.dataChange !== false) await markDataChanged()
   if (
     !opts.fromConversion &&
     changedKeys.some((k) => isEntryKey(k) || k === SYNCED_SETTINGS_KEY)
@@ -478,22 +802,24 @@ async function readPlainSettings(
 
 // The synced settings (no lock: a read). Before unlock, or while the record
 // doesn't exist yet, the legacy plaintext fields or the defaults. An
-// unreadable record throws DecryptError('syncedSettings').
-export async function readSyncedSettings(): Promise<SyncedSettingsRecord> {
+// unreadable record throws DecryptError('syncedSettings'). A Family space has
+// its own record and no legacy fields (defaults when absent).
+async function readSyncedSettingsIn(ctx: SpaceCtx): Promise<SyncedSettingsRecord> {
   const s = store
   if (!s) return settingsFromLegacy(null)
-  const stored = await readStore('syncedSettings')
+  const stored = await readStore(ctx, 'syncedSettings')
   if (stored !== undefined) return normalizeSettings(stored)
+  if (!ctx.personal) return settingsFromLegacy(null)
   return settingsFromLegacy(await readPlainSettings(s))
 }
 
-// The stored main currency. A DecryptError propagates; any other failure
-// falls back to the default.
-async function readMainCurrency(): Promise<Currency> {
+// The stored main currency. A DecryptError or SpaceLockedError propagates;
+// any other failure falls back to the default.
+async function readMainCurrency(ctx: SpaceCtx): Promise<Currency> {
   try {
-    return (await readSyncedSettings()).mainCurrency
+    return (await readSyncedSettingsIn(ctx)).mainCurrency
   } catch (err) {
-    if (isDecryptError(err)) throw err
+    if (isDecryptError(err) || isSpaceLockedError(err)) throw err
     console.error('Could not read the main currency:', err)
     return DEFAULT_MAIN_CURRENCY
   }
@@ -521,6 +847,7 @@ export async function migrateSyncedSettings(): Promise<boolean> {
       if (hadLegacyValue) record.updatedAt = nowIso()
       const stripped = stripLegacyCurrency(plain)
       await writeKeysMany(
+        PERSONAL_CTX,
         { [SYNCED_SETTINGS_KEY]: record },
         undefined,
         stripped ? [[META_SETTINGS_KEY, stripped]] : [],
@@ -534,38 +861,42 @@ export async function migrateSyncedSettings(): Promise<boolean> {
 
 // Patches the synced settings (only `fetchExchangeRates`; the main currency
 // changes through convertBudgets). Stamps updatedAt and a rev, and strips the
-// legacy fields from `meta:settings` in the same transaction. An empty or
-// invalid patch writes nothing.
-export async function updateSyncedSettings(patch: {
-  fetchExchangeRates?: boolean
-}): Promise<void> {
+// legacy fields from `meta:settings` in the same transaction (personal only).
+// An empty or invalid patch writes nothing.
+async function updateSyncedSettingsIn(
+  ctx: SpaceCtx,
+  patch: { fetchExchangeRates?: boolean },
+): Promise<void> {
   const value = patch.fetchExchangeRates
   if (typeof value !== 'boolean') return
   const s = store
   if (!s) return
-  const written = await withWriteLock(
-    [META_SETTINGS_KEY, SYNC_META_KEY, SYNCED_SETTINGS_KEY],
-    async () => {
-      const current = await readSyncedSettings()
-      const counter = await openRevCounter()
-      const record: SyncedSettingsRecord = {
-        ...current,
-        fetchExchangeRates: value,
-        updatedAt: nowIso(),
-        rev: counter.next(),
-      }
-      const stripped = stripLegacyCurrency(await readPlainSettings(s))
-      await writeKeysMany(
-        { [SYNCED_SETTINGS_KEY]: record },
-        counter,
-        stripped ? [[META_SETTINGS_KEY, stripped]] : [],
-      )
-      return stripped
-        ? [SYNCED_SETTINGS_KEY, META_SETTINGS_KEY]
-        : [SYNCED_SETTINGS_KEY]
-    },
-  )
-  await afterCommit(written)
+  const lockKeys = ctx.personal
+    ? [META_SETTINGS_KEY, SYNC_META_KEY, SYNCED_SETTINGS_KEY]
+    : [SYNC_META_KEY, SYNCED_SETTINGS_KEY]
+  const written = await withSpaceLock(ctx, lockKeys, async () => {
+    const current = await readSyncedSettingsIn(ctx)
+    const counter = await openRevCounter(ctx)
+    const record: SyncedSettingsRecord = {
+      ...current,
+      fetchExchangeRates: value,
+      updatedAt: nowIso(),
+      rev: counter.next(),
+    }
+    const stripped = ctx.personal
+      ? stripLegacyCurrency(await readPlainSettings(s))
+      : null
+    await writeKeysMany(
+      ctx,
+      { [SYNCED_SETTINGS_KEY]: record },
+      counter,
+      stripped ? [[META_SETTINGS_KEY, stripped]] : [],
+    )
+    return stripped
+      ? [SYNCED_SETTINGS_KEY, META_SETTINGS_KEY]
+      : [SYNCED_SETTINGS_KEY]
+  })
+  await afterCommit(ctx, written)
 }
 
 // The identity conversion when the record is in `main`; otherwise undefined
@@ -582,10 +913,11 @@ function conversionOnSave(
 // Moves the raw stored value of a data key, unchanged, to
 // `quarantine:<key>:<ISO timestamp>`, then deletes the original. The original
 // is only deleted after the copy has been written. Needs no unlock key.
+// Family data keys (`space:<id>:<key>`) are quarantined the same way.
 export async function quarantineKey(
   storageKey: string,
 ): Promise<string | null> {
-  if (!isDataStorageKey(storageKey)) {
+  if (!isAnyDataStorageKey(storageKey)) {
     throw new Error(`quarantineKey: not a data key "${storageKey}"`)
   }
   const s = store
@@ -598,12 +930,16 @@ export async function quarantineKey(
     await del(storageKey, s)
     return target
   })
-  if (qKey !== null) postChanged([storageKey])
+  if (qKey !== null) {
+    const family = parseSpaceStorageKey(storageKey)
+    if (family) postChanged([family.baseKey], family.spaceId)
+    else postChanged([storageKey])
+  }
   return qKey
 }
 
-// True if the store holds any data key in the current format (quarantine
-// copies alone do not count). Works before unlock.
+// True if the store holds any personal data key in the current format
+// (quarantine copies alone do not count). Works before unlock.
 export async function hasLocalData(): Promise<boolean> {
   if (!store) return false
   const allKeys = await keys(store)
@@ -612,37 +948,45 @@ export async function hasLocalData(): Promise<boolean> {
 
 // ── Soft deletes ──────────────────────────────────────────────────────────────
 
-type SingleListKey = 'categories' | 'incomeCategories' | 'income' | 'budgets' | 'recurring'
+type SingleListKey =
+  | 'categories'
+  | 'incomeCategories'
+  | 'income'
+  | 'budgets'
+  | 'recurring'
+  | 'spaceKeys'
+  | 'memberProfiles'
 
 // Turns the live record `id` of a single key into a tombstone. Returns false
 // (nothing written) when there is no live record with that id.
-async function softDeleteIn(key: SingleListKey, id: string): Promise<boolean> {
-  return withWriteLock([key, SYNC_META_KEY], async () => {
-    const list = ((await readStore(key)) ?? []) as Array<
+async function softDeleteIn(ctx: SpaceCtx, key: SingleListKey, id: string): Promise<boolean> {
+  return withSpaceLock(ctx, [key, SYNC_META_KEY], async () => {
+    const list = ((await readStore(ctx, key)) ?? []) as Array<
       { id: string; updatedAt?: string } & Revisioned
     >
     const index = list.findIndex((r) => r.id === id && isLive(r))
     if (index === -1) return false
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
     const now = nowIso()
     const next = [...list]
     next[index] = { ...list[index], deletedAt: now, updatedAt: now, rev: counter.next() }
-    await writeKeysMany({ [key]: next }, counter)
+    await writeKeysMany(ctx, { [key]: next }, counter)
     return true
   })
 }
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
-async function liveCategories(key: CategoryKey): Promise<Array<Category>> {
-  return liveRecords((await readStore(key)) ?? [])
+async function liveCategories(ctx: SpaceCtx, key: CategoryKey): Promise<Array<Category>> {
+  return liveRecords((await readStore(ctx, key)) ?? [])
 }
 
 async function joinCategories(
+  ctx: SpaceCtx,
   expenses: Array<Expense>,
 ): Promise<Array<Expense>> {
   const categoryMap = new Map(
-    (await liveCategories('categories')).map((c) => [c.id, c]),
+    (await liveCategories(ctx, 'categories')).map((c) => [c.id, c]),
   )
   return expenses.map((e) => ({
     ...e,
@@ -650,35 +994,36 @@ async function joinCategories(
   }))
 }
 
-export async function getExpensesForRange(
+async function getExpensesForRangeIn(
+  ctx: SpaceCtx,
   from: string,
   to: string,
 ): Promise<Array<Expense>> {
   const chunkKeys = chunkKeysBetween(from, to)
-  const chunks = await Promise.all(chunkKeys.map(readChunk))
+  const chunks = await Promise.all(chunkKeys.map((k) => readChunk(ctx, k)))
   const expenses = liveRecords(chunks.flat())
     .filter((e) => e.createdAt >= from && e.createdAt <= to)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  return joinCategories(expenses)
+  return joinCategories(ctx, expenses)
 }
 
 // TODO: could possible create a spike if user will export all data for 5 years
-export async function getAllExpenses(): Promise<Array<Expense>> {
-  const chunkKeys = await allExpenseChunkKeys()
-  const chunks = await Promise.all(chunkKeys.map(readChunk))
+async function getAllExpensesIn(ctx: SpaceCtx): Promise<Array<Expense>> {
+  const chunkKeys = await allExpenseChunkKeys(ctx)
+  const chunks = await Promise.all(chunkKeys.map((k) => readChunk(ctx, k)))
   const expenses = liveRecords(chunks.flat()).sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
   )
-  return joinCategories(expenses)
+  return joinCategories(ctx, expenses)
 }
 
-async function withExpenseCategory(entry: Expense): Promise<Expense> {
-  const categories = await liveCategories('categories')
+async function withExpenseCategory(ctx: SpaceCtx, entry: Expense): Promise<Expense> {
+  const categories = await liveCategories(ctx, 'categories')
   const category = categories.find((c) => c.id === entry.categoryId)
   return { ...withoutRev(entry), category }
 }
 
-export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
+async function addExpenseIn(ctx: SpaceCtx, input: CreateExpenseInput): Promise<Expense> {
   if (
     input.createdAt !== undefined &&
     isNaN(new Date(input.createdAt).getTime())
@@ -695,84 +1040,94 @@ export async function addExpense(input: CreateExpenseInput): Promise<Expense> {
     createdAt: input.createdAt ?? now,
     updatedAt: now,
   }
-  const conversion = conversionOnSave(entry, await readMainCurrency())
+  const conversion = conversionOnSave(entry, await readMainCurrency(ctx))
   if (conversion) entry.conversion = conversion
   const chunkKey = expenseChunkKey(entry.createdAt)
-  await withWriteLock([chunkKey, SYNC_META_KEY], async () => {
-    const existing = await readChunk(chunkKey)
-    const counter = await openRevCounter()
+  await withSpaceLock(ctx, [chunkKey, SYNC_META_KEY], async () => {
+    const existing = await readChunk(ctx, chunkKey)
+    const counter = await openRevCounter(ctx)
+    stampCreated(counter.member, entry, { paidBy: input.paidBy })
     await writeKeysMany(
+      ctx,
       { [chunkKey]: [...existing, { ...entry, rev: counter.next() }] },
       counter,
     )
   })
-  await afterCommit([chunkKey])
-  return withExpenseCategory(entry)
+  await afterCommit(ctx, [chunkKey])
+  return withExpenseCategory(ctx, entry)
 }
 
 // createdAt is required so we can derive the correct chunk without a full scan.
 // The record stays in its chunk as a tombstone. Deleting a missing or already
 // deleted expense writes nothing.
-export async function deleteExpense(
+async function deleteExpenseIn(
+  ctx: SpaceCtx,
   id: string,
   createdAt: string,
 ): Promise<void> {
   const chunkKey = expenseChunkKey(createdAt)
-  const wrote = await withWriteLock([chunkKey, SYNC_META_KEY], async () => {
-    const chunk = await readChunk(chunkKey)
+  const wrote = await withSpaceLock(ctx, [chunkKey, SYNC_META_KEY], async () => {
+    const chunk = await readChunk(ctx, chunkKey)
     const index = chunk.findIndex((e) => e.id === id && isLive(e))
     if (index === -1) return false
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
     const now = nowIso()
     const next = [...chunk]
     next[index] = { ...chunk[index], deletedAt: now, updatedAt: now, rev: counter.next() }
-    await writeKeysMany({ [chunkKey]: next }, counter)
+    await writeKeysMany(ctx, { [chunkKey]: next }, counter)
     return true
   })
-  if (wrote) await afterCommit([chunkKey])
+  if (wrote) await afterCommit(ctx, [chunkKey])
 }
 
 // Undo of a delete: clears deletedAt, bumps updatedAt and stamps a new rev.
 // An expense that is already live is returned unchanged (nothing written).
-export async function undeleteExpense(
+async function undeleteExpenseIn(
+  ctx: SpaceCtx,
   id: string,
   createdAt: string,
 ): Promise<Expense> {
   const chunkKey = expenseChunkKey(createdAt)
-  const { record, wrote } = await withWriteLock(
+  const { record, wrote } = await withSpaceLock(
+    ctx,
     [chunkKey, SYNC_META_KEY],
     async () => {
-      const chunk = await readChunk(chunkKey)
+      const chunk = await readChunk(ctx, chunkKey)
       const live = chunk.find((e) => e.id === id && isLive(e))
       if (live) return { record: live, wrote: false }
       const index = chunk.findIndex((e) => e.id === id)
       if (index === -1) {
         throw new Error(`undeleteExpense: expense not found: ${id}`)
       }
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
       const revived: Expense = { ...chunk[index], updatedAt: nowIso() }
       delete revived.deletedAt
       revived.rev = counter.next()
       const next = [...chunk]
       next[index] = revived
-      await writeKeysMany({ [chunkKey]: next }, counter)
-      return { record: revived, wrote: true }
+      await writeKeysMany(ctx, { [chunkKey]: next }, counter)
+      const member = counter.member
+      return {
+        record: member === undefined ? revived : withUpdatedBy(revived, member),
+        wrote: true,
+      }
     },
   )
-  if (wrote) await afterCommit([chunkKey])
-  return withExpenseCategory(record)
+  if (wrote) await afterCommit(ctx, [chunkKey])
+  return withExpenseCategory(ctx, record)
 }
 
 // originalCreatedAt locates the current chunk; if the patch moves createdAt
 // into a different month the record is moved to that month's chunk. Both
 // chunks and meta:sync are written in ONE setMany.
-export async function updateExpense(
+async function updateExpenseIn(
+  ctx: SpaceCtx,
   id: string,
   originalCreatedAt: string,
   patch: UpdateExpenseInput,
 ): Promise<Expense> {
   const oldKey = expenseChunkKey(originalCreatedAt)
-  const main = await readMainCurrency()
+  const main = await readMainCurrency(ctx)
   const lockKeys = [oldKey, SYNC_META_KEY]
   if (
     patch.createdAt !== undefined &&
@@ -781,8 +1136,8 @@ export async function updateExpense(
     lockKeys.push(expenseChunkKey(patch.createdAt))
   }
 
-  const { result, written } = await withWriteLock(lockKeys, async () => {
-    const oldChunk = await readChunk(oldKey)
+  const { result, written } = await withSpaceLock(ctx, lockKeys, async () => {
+    const oldChunk = await readChunk(ctx, oldKey)
     const index = oldChunk.findIndex((e) => e.id === id && isLive(e))
     if (index === -1) {
       throw new Error(`updateExpense: expense not found: ${id}`)
@@ -794,7 +1149,7 @@ export async function updateExpense(
       throw new Error(`updateExpense: invalid createdAt "${createdAt}"`)
     }
 
-    const categories = await liveCategories('categories')
+    const categories = await liveCategories(ctx, 'categories')
     if (
       patch.categoryId !== undefined &&
       !categories.some((c) => c.id === patch.categoryId)
@@ -844,19 +1199,28 @@ export async function updateExpense(
       updated.manualRate = existing.manualRate
     }
 
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
+    // Family: createdBy and paidBy stay unless paidBy is given; updatedBy is
+    // this writer (removed when unknown).
+    if (counter.member !== undefined) {
+      if (existing.createdBy !== undefined) updated.createdBy = existing.createdBy
+      const paidBy = patch.paidBy ?? existing.paidBy
+      if (paidBy !== undefined) updated.paidBy = paidBy
+      if (counter.member) updated.updatedBy = counter.member
+    }
     const stored: Expense = { ...updated, rev: counter.next() }
     const newKey = expenseChunkKey(createdAt)
     let writtenKeys: Array<string>
     if (newKey === oldKey) {
       const next = [...oldChunk]
       next[index] = stored
-      await writeKeysMany({ [oldKey]: next }, counter)
+      await writeKeysMany(ctx, { [oldKey]: next }, counter)
       writtenKeys = [oldKey]
     } else {
       // One transaction: the record is never lost or duplicated.
-      const newChunk = await readChunk(newKey)
+      const newChunk = await readChunk(ctx, newKey)
       await writeKeysMany(
+        ctx,
         {
           [newKey]: [...newChunk.filter((e) => e.id !== id), stored],
           [oldKey]: oldChunk.filter((e) => e.id !== id),
@@ -869,14 +1233,14 @@ export async function updateExpense(
     const category = categories.find((c) => c.id === updated.categoryId)
     return { result: { ...updated, category }, written: writtenKeys }
   })
-  await afterCommit(written)
+  await afterCommit(ctx, written)
   return result
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
-export async function getAllCategories(): Promise<Array<Category>> {
-  return liveCategories('categories')
+async function getAllCategoriesIn(ctx: SpaceCtx): Promise<Array<Category>> {
+  return liveCategories(ctx, 'categories')
 }
 
 type CategoryKey = 'categories' | 'incomeCategories'
@@ -889,12 +1253,13 @@ function categoryNotFound(id: string): AppError {
 // read-modify-write runs under the lock of `key`. Names are trimmed and unique
 // among the live categories, ignoring case (a deleted name can be reused; it
 // gets a new id).
-async function addCategoryIn(
+async function addCategoryTo(
+  ctx: SpaceCtx,
   key: CategoryKey,
   input: CreateCategoryInput,
 ): Promise<Category> {
-  const entry = await withWriteLock([key, SYNC_META_KEY], async () => {
-    const categories = (await readStore(key)) ?? []
+  const entry = await withSpaceLock(ctx, [key, SYNC_META_KEY], async () => {
+    const categories = (await readStore(ctx, key)) ?? []
     const name = input.name.trim()
     if (!name) throw new AppError('category-name-required', 'Category name is required')
     if (
@@ -912,23 +1277,26 @@ async function addCategoryIn(
       icon: input.icon ?? null,
       updatedAt: nowIso(),
     }
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
+    stampCreated(counter.member, created)
     await writeKeysMany(
+      ctx,
       { [key]: [...categories, { ...created, rev: counter.next() }] },
       counter,
     )
     return created
   })
-  await afterCommit([key])
+  await afterCommit(ctx, [key])
   return entry
 }
 
-async function updateCategoryIn(
+async function updateCategoryTo(
+  ctx: SpaceCtx,
   key: CategoryKey,
   input: UpdateCategoryInput,
 ): Promise<Category> {
-  const result = await withWriteLock([key, SYNC_META_KEY], async () => {
-    const categories = (await readStore(key)) ?? []
+  const result = await withSpaceLock(ctx, [key, SYNC_META_KEY], async () => {
+    const categories = (await readStore(ctx, key)) ?? []
     const name = input.name.trim()
     if (!name) throw new AppError('category-name-required', 'Category name is required')
     const index = categories.findIndex((c) => c.id === input.id && isLive(c))
@@ -963,34 +1331,37 @@ async function updateCategoryIn(
     }
     if (nextCurrency === null) delete updated.defaultCurrency
     else if (nextCurrency !== undefined) updated.defaultCurrency = nextCurrency
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
     const next = [...categories]
     next[index] = { ...updated, rev: counter.next() }
-    await writeKeysMany({ [key]: next }, counter)
-    return updated
+    await writeKeysMany(ctx, { [key]: next }, counter)
+    return counter.member === undefined ? updated : withUpdatedBy(updated, counter.member)
   })
-  await afterCommit([key])
+  await afterCommit(ctx, [key])
   return result
 }
 
-export async function addCategory(
+async function addCategoryIn(
+  ctx: SpaceCtx,
   input: CreateCategoryInput,
 ): Promise<Category> {
-  return addCategoryIn('categories', input)
+  return addCategoryTo(ctx, 'categories', input)
 }
 
-export async function updateCategory(
+async function updateCategoryIn(
+  ctx: SpaceCtx,
   input: UpdateCategoryInput,
 ): Promise<Category> {
-  return updateCategoryIn('categories', input)
+  return updateCategoryTo(ctx, 'categories', input)
 }
 
 // Refuses while a live recurring item of `kind` uses the category.
 async function assertNoRecurringUses(
+  ctx: SpaceCtx,
   kind: RecurringKind,
   categoryId: string,
 ): Promise<void> {
-  const items = (await readStore('recurring')) ?? []
+  const items = (await readStore(ctx, 'recurring')) ?? []
   const using = items.filter(
     (i) => isLive(i) && i.kind === kind && i.categoryId === categoryId,
   ).length
@@ -1006,14 +1377,15 @@ async function assertNoRecurringUses(
 // Refused while live expenses or live recurring items use the category.
 // Otherwise the category and every live budget of it become tombstones, in
 // one transaction.
-export async function deleteCategory(id: string): Promise<void> {
-  const written = await withWriteLock(
+async function deleteCategoryIn(ctx: SpaceCtx, id: string): Promise<void> {
+  const written = await withSpaceLock(
+    ctx,
     ['budgets', 'categories', 'recurring', SYNC_META_KEY],
     async () => {
       // Check all expense chunks for references to this category. This only
       // reads chunks, so it takes no chunk locks.
-      const chunkKeys = await allExpenseChunkKeys()
-      const chunks = await Promise.all(chunkKeys.map(readChunk))
+      const chunkKeys = await allExpenseChunkKeys(ctx)
+      const chunks = await Promise.all(chunkKeys.map((k) => readChunk(ctx, k)))
       const using = chunks
         .flat()
         .filter((e) => isLive(e) && e.categoryId === id).length
@@ -1024,12 +1396,12 @@ export async function deleteCategory(id: string): Promise<void> {
           { count: using },
         )
       }
-      await assertNoRecurringUses('expense', id)
-      const categories = (await readStore('categories')) ?? []
+      await assertNoRecurringUses(ctx, 'expense', id)
+      const categories = (await readStore(ctx, 'categories')) ?? []
       const index = categories.findIndex((c) => c.id === id && isLive(c))
       if (index === -1) return []
 
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
       const now = nowIso()
       const nextCategories = [...categories]
       nextCategories[index] = {
@@ -1040,7 +1412,7 @@ export async function deleteCategory(id: string): Promise<void> {
       }
       const values: Partial<LocalDbMap> = { categories: nextCategories }
 
-      const budgets = (await readStore('budgets')) ?? []
+      const budgets = (await readStore(ctx, 'budgets')) ?? []
       const nextBudgets = budgets.map((b) =>
         b.categoryId !== id || !isLive(b)
           ? b
@@ -1048,58 +1420,66 @@ export async function deleteCategory(id: string): Promise<void> {
       )
       const budgetsChanged = nextBudgets.some((b, i) => b !== budgets[i])
       if (budgetsChanged) values.budgets = nextBudgets
-      await writeKeysMany(values, counter)
+      await writeKeysMany(ctx, values, counter)
       return budgetsChanged ? ['categories', 'budgets'] : ['categories']
     },
   )
-  if (written.length > 0) await afterCommit(written)
+  if (written.length > 0) await afterCommit(ctx, written)
 }
 
 // Writes the default expense categories in `lang` when there are no live
 // categories yet. Existing categories are user data and are never renamed.
-export async function provisionDefaultCategories(lang: Lang = 'en'): Promise<void> {
-  const wrote = await withWriteLock(['categories', SYNC_META_KEY], async () => {
-    const categories = (await readStore('categories')) ?? []
+async function provisionDefaultCategoriesIn(
+  ctx: SpaceCtx,
+  lang: Lang = 'en',
+): Promise<void> {
+  const wrote = await withSpaceLock(ctx, ['categories', SYNC_META_KEY], async () => {
+    const categories = (await readStore(ctx, 'categories')) ?? []
     if (categories.some(isLive)) return false
     const updatedAt = nowIso()
-    const counter = await openRevCounter()
-    const defaults: Array<Category> = defaultExpenseCategories(lang).map((c) => ({
-      id: crypto.randomUUID(),
-      name: c.name,
-      icon: c.icon,
-      updatedAt,
-      rev: counter.next(),
-    }))
-    await writeKeysMany({ categories: [...categories, ...defaults] }, counter)
+    const counter = await openRevCounter(ctx)
+    const defaults: Array<Category> = defaultExpenseCategories(lang).map((c) =>
+      stampCreated<Category>(counter.member, {
+        id: crypto.randomUUID(),
+        name: c.name,
+        icon: c.icon,
+        updatedAt,
+        rev: counter.next(),
+      }),
+    )
+    await writeKeysMany(ctx, { categories: [...categories, ...defaults] }, counter)
     return true
   })
-  if (wrote) await afterCommit(['categories'])
+  if (wrote) await afterCommit(ctx, ['categories'])
 }
 
 // ── Income categories ─────────────────────────────────────────────────────────
 
-export async function getAllIncomeCategories(): Promise<Array<Category>> {
-  return liveCategories('incomeCategories')
+async function getAllIncomeCategoriesIn(ctx: SpaceCtx): Promise<Array<Category>> {
+  return liveCategories(ctx, 'incomeCategories')
 }
 
-export async function addIncomeCategory(
+async function addIncomeCategoryIn(
+  ctx: SpaceCtx,
   input: CreateCategoryInput,
 ): Promise<Category> {
-  return addCategoryIn('incomeCategories', input)
+  return addCategoryTo(ctx, 'incomeCategories', input)
 }
 
-export async function updateIncomeCategory(
+async function updateIncomeCategoryIn(
+  ctx: SpaceCtx,
   input: UpdateCategoryInput,
 ): Promise<Category> {
-  return updateCategoryIn('incomeCategories', input)
+  return updateCategoryTo(ctx, 'incomeCategories', input)
 }
 
 // Refused while live income entries or live income recurring items use it.
-export async function deleteIncomeCategory(id: string): Promise<void> {
-  const wrote = await withWriteLock(
+async function deleteIncomeCategoryIn(ctx: SpaceCtx, id: string): Promise<void> {
+  const wrote = await withSpaceLock(
+    ctx,
     ['income', 'incomeCategories', 'recurring', SYNC_META_KEY],
     async () => {
-      const income = (await readStore('income')) ?? []
+      const income = (await readStore(ctx, 'income')) ?? []
       const using = income.filter((e) => isLive(e) && e.categoryId === id).length
       if (using > 0) {
         throw new AppError(
@@ -1110,19 +1490,19 @@ export async function deleteIncomeCategory(id: string): Promise<void> {
           { count: using },
         )
       }
-      await assertNoRecurringUses('income', id)
-      const categories = (await readStore('incomeCategories')) ?? []
+      await assertNoRecurringUses(ctx, 'income', id)
+      const categories = (await readStore(ctx, 'incomeCategories')) ?? []
       const index = categories.findIndex((c) => c.id === id && isLive(c))
       if (index === -1) return false
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
       const now = nowIso()
       const next = [...categories]
       next[index] = { ...categories[index], deletedAt: now, updatedAt: now, rev: counter.next() }
-      await writeKeysMany({ incomeCategories: next }, counter)
+      await writeKeysMany(ctx, { incomeCategories: next }, counter)
       return true
     },
   )
-  if (wrote) await afterCommit(['incomeCategories'])
+  if (wrote) await afterCommit(ctx, ['incomeCategories'])
 }
 
 // Provisions the default income categories and converts legacy free-text
@@ -1132,26 +1512,59 @@ export async function deleteIncomeCategory(id: string): Promise<void> {
 // rewritten income records (a derived field) don't. A DecryptError on
 // `income` propagates and nothing is written. Returns true when it wrote.
 // `lang` is the language of the defaults and of the "Other" fallback.
-export async function ensureIncomeCategories(lang: Lang = 'en'): Promise<boolean> {
+async function ensureIncomeCategoriesIn(
+  ctx: SpaceCtx,
+  lang: Lang = 'en',
+): Promise<boolean> {
   const s = store
-  if (!_key || !s) return false
-  const wrote = await withWriteLock(
+  if (!s || personalLocked(ctx)) return false
+  if (!ctx.personal) {
+    // A Family space has no legacy income sources: only the defaults, when
+    // the key is absent.
+    await cryptoFor(ctx.spaceId)
+    const wroteDefaults = await withSpaceLock(
+      ctx,
+      ['incomeCategories', SYNC_META_KEY],
+      async () => {
+        if ((await get<unknown>(storageKeyOf(ctx, 'incomeCategories'), s)) !== undefined) {
+          return false
+        }
+        const counter = await openRevCounter(ctx)
+        const updatedAt = nowIso()
+        const incomeCategories: Array<Category> = defaultIncomeCategories(lang).map((c) =>
+          stampCreated<Category>(counter.member, {
+            id: crypto.randomUUID(),
+            name: c.name,
+            icon: c.icon,
+            updatedAt,
+            rev: counter.next(),
+          }),
+        )
+        await writeKeysMany(ctx, { incomeCategories }, counter)
+        return true
+      },
+    )
+    if (wroteDefaults) await afterCommit(ctx, ['incomeCategories'])
+    return wroteDefaults
+  }
+  const wrote = await withSpaceLock(
+    ctx,
     ['income', 'incomeCategories', SYNC_META_KEY],
     async () => {
       const existing = await get<unknown>('incomeCategories', s)
       if (existing !== undefined) return false
-      const income = (await readStore('income')) ?? []
+      const income = (await readStore(ctx, 'income')) ?? []
       const converted = convertIncomeSources(income, [], { addDefaults: true, lang })
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
       const incomeCategories = converted.incomeCategories.map((c) => ({
         ...c,
         rev: counter.next(),
       }))
-      await writeKeysMany({ incomeCategories, income: converted.income }, counter)
+      await writeKeysMany(ctx, { incomeCategories, income: converted.income }, counter)
       return true
     },
   )
-  if (wrote) await afterCommit(['incomeCategories', 'income'])
+  if (wrote) await afterCommit(ctx, ['incomeCategories', 'income'])
   return wrote
 }
 
@@ -1169,9 +1582,14 @@ export async function prepareUnlockedVault({
   lang?: Lang
 }): Promise<{ recurringCreated: number }> {
   await migrateSyncedSettings()
-  if (isNewVault) await provisionDefaultCategories(lang)
-  await ensureIncomeCategories(lang)
-  const { created } = await processDueRecurring()
+  if (isNewVault) await provisionDefaultCategoriesIn(PERSONAL_CTX, lang)
+  await ensureIncomeCategoriesIn(PERSONAL_CTX, lang)
+  let { created } = await processDueRecurringIn(PERSONAL_CTX)
+  // Every Family space this device holds a key for, while personal is active
+  // (a DecryptError propagates as for personal).
+  for (const spaceId of await listHeldSpaceIds()) {
+    created += (await processDueRecurringIn(ctxFor(spaceId))).created
+  }
   // Convert whatever is pending (old records, the records just generated).
   // Not awaited: the conversion runs in the background.
   requestEntryConversion()
@@ -1191,23 +1609,24 @@ function joinIncomeCategories(
   }))
 }
 
-export async function getAllIncome(): Promise<Array<IncomeEntry>> {
-  const income = liveRecords((await readStore('income')) ?? [])
-  return joinIncomeCategories(income, await liveCategories('incomeCategories'))
+async function getAllIncomeIn(ctx: SpaceCtx): Promise<Array<IncomeEntry>> {
+  const income = liveRecords((await readStore(ctx, 'income')) ?? [])
+  return joinIncomeCategories(income, await liveCategories(ctx, 'incomeCategories'))
 }
 
-async function withIncomeCategory(entry: IncomeEntry): Promise<IncomeEntry> {
-  const categories = await liveCategories('incomeCategories')
+async function withIncomeCategory(ctx: SpaceCtx, entry: IncomeEntry): Promise<IncomeEntry> {
+  const categories = await liveCategories(ctx, 'incomeCategories')
   const category = categories.find((c) => c.id === entry.categoryId)
   return { ...withoutRev(entry), category }
 }
 
-export async function addIncome(
+async function addIncomeIn(
+  ctx: SpaceCtx,
   input: CreateIncomeInput,
 ): Promise<IncomeEntry> {
-  const main = await readMainCurrency()
-  const entry = await withWriteLock(['income', SYNC_META_KEY], async () => {
-    const income = (await readStore('income')) ?? []
+  const main = await readMainCurrency(ctx)
+  const entry = await withSpaceLock(ctx, ['income', SYNC_META_KEY], async () => {
+    const income = (await readStore(ctx, 'income')) ?? []
     const now = nowIso()
     const created: IncomeEntry = {
       id: crypto.randomUUID(),
@@ -1220,29 +1639,31 @@ export async function addIncome(
     }
     const conversion = conversionOnSave(created, main)
     if (conversion) created.conversion = conversion
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
+    stampCreated(counter.member, created, { paidBy: input.paidBy })
     await writeKeysMany(
+      ctx,
       { income: [...income, { ...created, rev: counter.next() }] },
       counter,
     )
     return created
   })
-  await afterCommit(['income'])
-  return withIncomeCategory(entry)
+  await afterCommit(ctx, ['income'])
+  return withIncomeCategory(ctx, entry)
 }
 
-export async function deleteIncome(id: string): Promise<void> {
-  if (await softDeleteIn('income', id)) await afterCommit(['income'])
+async function deleteIncomeIn(ctx: SpaceCtx, id: string): Promise<void> {
+  if (await softDeleteIn(ctx, 'income', id)) await afterCommit(ctx, ['income'])
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
 
-export async function getAllBudgets(): Promise<
+async function getAllBudgetsIn(ctx: SpaceCtx): Promise<
   Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>
 > {
-  const budgets = liveRecords((await readStore('budgets')) ?? [])
+  const budgets = liveRecords((await readStore(ctx, 'budgets')) ?? [])
   const categoryMap = new Map(
-    (await liveCategories('categories')).map((c) => [c.id, c]),
+    (await liveCategories(ctx, 'categories')).map((c) => [c.id, c]),
   )
   return budgets.map((b) => {
     const cat = categoryMap.get(b.categoryId)
@@ -1256,16 +1677,17 @@ export async function getAllBudgets(): Promise<
 
 // Updates the live budget of the category, or creates a new one (a new id,
 // also after the old budget was deleted).
-export async function upsertBudget(
+async function upsertBudgetIn(
+  ctx: SpaceCtx,
   input: UpsertBudgetInput,
 ): Promise<BudgetEntry> {
-  const result = await withWriteLock(['budgets', SYNC_META_KEY], async () => {
-    const budgets = (await readStore('budgets')) ?? []
+  const result = await withSpaceLock(ctx, ['budgets', SYNC_META_KEY], async () => {
+    const budgets = (await readStore(ctx, 'budgets')) ?? []
     const index = budgets.findIndex(
       (b) => b.categoryId === input.categoryId && isLive(b),
     )
     const updatedAt = nowIso()
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
     let entry: BudgetEntry
     const updated = [...budgets]
     if (index !== -1) {
@@ -1284,17 +1706,18 @@ export async function upsertBudget(
         currency: input.currency,
         updatedAt,
       }
+      stampCreated(counter.member, entry)
       updated.push({ ...entry, rev: counter.next() })
     }
-    await writeKeysMany({ budgets: updated }, counter)
-    return entry
+    await writeKeysMany(ctx, { budgets: updated }, counter)
+    return counter.member === undefined ? entry : withUpdatedBy(entry, counter.member)
   })
-  await afterCommit(['budgets'])
+  await afterCommit(ctx, ['budgets'])
   return result
 }
 
-export async function deleteBudget(id: string): Promise<void> {
-  if (await softDeleteIn('budgets', id)) await afterCommit(['budgets'])
+async function deleteBudgetIn(ctx: SpaceCtx, id: string): Promise<void> {
+  if (await softDeleteIn(ctx, 'budgets', id)) await afterCommit(ctx, ['budgets'])
 }
 
 // ── Main-currency conversion (used by conversion.ts) ─────────────────────────
@@ -1315,24 +1738,27 @@ export interface EntryConversionUpdate {
 // The raw stored entries (no joined category, tombstones included: callers
 // filter with isLive): one group per expense chunk in ascending key order,
 // then `income`. A DecryptError propagates.
-export async function readEntriesForConversion(): Promise<
+// `storageKey` is the base key of the space (the handle passes it back to
+// applyEntryConversions of the same space).
+async function readEntriesForConversionIn(ctx: SpaceCtx): Promise<
   Array<ConversionStorageGroup>
 > {
   const groups: Array<ConversionStorageGroup> = []
-  for (const storageKey of await allExpenseChunkKeys()) {
-    const records = await readChunk(storageKey)
+  for (const storageKey of await allExpenseChunkKeys(ctx)) {
+    const records = await readChunk(ctx, storageKey)
     if (records.length > 0) groups.push({ storageKey, records })
   }
-  const income = (await readStore('income')) ?? []
+  const income = (await readStore(ctx, 'income')) ?? []
   if (income.length > 0) groups.push({ storageKey: 'income', records: income })
   return groups
 }
 
 async function readEntryKey(
+  ctx: SpaceCtx,
   storageKey: string,
 ): Promise<Array<Expense | IncomeEntry>> {
-  if (storageKey === 'income') return (await readStore('income')) ?? []
-  return readChunk(storageKey)
+  if (storageKey === 'income') return (await readStore(ctx, 'income')) ?? []
+  return readChunk(ctx, storageKey)
 }
 
 // Writes the computed conversions under the lock of `storageKey`. A record is
@@ -1341,7 +1767,8 @@ async function readEntryKey(
 // was computed for (an edit in between leaves it pending). Only `conversion`
 // changes; updatedAt and rev stay (derived data, meta:sync untouched).
 // Returns the number of records written.
-export async function applyEntryConversions(
+async function applyEntryConversionsIn(
+  ctx: SpaceCtx,
   storageKey: string,
   mainCurrency: Currency,
   updates: Array<EntryConversionUpdate>,
@@ -1351,9 +1778,9 @@ export async function applyEntryConversions(
     throw new Error(`applyEntryConversions: not an entry key "${storageKey}"`)
   }
   const byId = new Map(updates.map((u) => [u.id, u]))
-  const written = await withWriteLock(storageKey, async () => {
+  const written = await withSpaceLock(ctx, storageKey, async () => {
     if (!_key) throw new Error('LocalDb not initialized')
-    const records = await readEntryKey(storageKey)
+    const records = await readEntryKey(ctx, storageKey)
     let count = 0
     const next = records.map((record) => {
       const update = byId.get(record.id)
@@ -1371,11 +1798,11 @@ export async function applyEntryConversions(
       return { ...record, conversion: update.conversion }
     })
     if (count === 0) return 0
-    await writeKeysMany({ [storageKey]: next })
+    await writeKeysMany(ctx, { [storageKey]: next })
     return count
   })
   if (written > 0) {
-    await afterCommit([storageKey], { fromConversion: true, dataChange: false })
+    await afterCommit(ctx, [storageKey], { fromConversion: true, dataChange: false })
   }
   return written
 }
@@ -1388,25 +1815,30 @@ export async function applyEntryConversions(
 // another currency) it does nothing unless `target` is the stored main
 // currency. A throwing rateFor writes nothing. Returns the number of budgets
 // converted.
-export async function convertBudgets(
+async function convertBudgetsIn(
+  ctx: SpaceCtx,
   target: Currency,
   rateFor: (from: Currency) => number,
   options: { setMainCurrency: boolean },
 ): Promise<number> {
   const s = store
   if (!s) return 0
-  const result = await withWriteLock(
-    ['budgets', META_SETTINGS_KEY, SYNC_META_KEY, SYNCED_SETTINGS_KEY],
+  const lockKeys = ctx.personal
+    ? ['budgets', META_SETTINGS_KEY, SYNC_META_KEY, SYNCED_SETTINGS_KEY]
+    : ['budgets', SYNC_META_KEY, SYNCED_SETTINGS_KEY]
+  const result = await withSpaceLock(
+    ctx,
+    lockKeys,
     async () => {
-      const current = await readSyncedSettings()
+      const current = await readSyncedSettingsIn(ctx)
       if (!options.setMainCurrency && current.mainCurrency !== target) {
         return { converted: 0, keys: [] as Array<string> }
       }
       if (!_key) throw new Error('LocalDb not initialized')
 
-      const budgets = (await readStore('budgets')) ?? []
+      const budgets = (await readStore(ctx, 'budgets')) ?? []
       const updatedAt = nowIso()
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
       let converted = 0
       const nextBudgets = budgets.map((b) => {
         if (!isLive(b) || b.currency === target) return b
@@ -1436,20 +1868,22 @@ export async function convertBudgets(
           rev: counter.next(),
         }
         writtenKeys.push(SYNCED_SETTINGS_KEY)
-        const stripped = stripLegacyCurrency(await readPlainSettings(s))
+        const stripped = ctx.personal
+          ? stripLegacyCurrency(await readPlainSettings(s))
+          : null
         if (stripped) {
           plain.push([META_SETTINGS_KEY, stripped])
           writtenKeys.push(META_SETTINGS_KEY)
         }
       }
-      await writeKeysMany(values, counter, plain)
+      await writeKeysMany(ctx, values, counter, plain)
       return { converted, keys: writtenKeys }
     },
   )
   if (result.keys.length > 0) {
     // The one-time fix is the converter's own background work, not a data
     // change for the backup reminder; a main-currency change is.
-    await afterCommit(result.keys, {
+    await afterCommit(ctx, result.keys, {
       fromConversion: true,
       dataChange: options.setMainCurrency,
     })
@@ -1497,15 +1931,16 @@ function occurrenceTargetKeys(
 }
 
 async function readOccurrenceTarget(
+  ctx: SpaceCtx,
   key: string,
 ): Promise<Array<GeneratedRecord>> {
-  if (key === 'income') return (await readStore('income')) ?? []
-  return readChunk(key)
+  if (key === 'income') return (await readStore(ctx, 'income')) ?? []
+  return readChunk(ctx, key)
 }
 
 // The ids of the live categories of the item's kind.
-async function categoryIdsFor(kind: RecurringKind): Promise<Array<string>> {
-  return (await liveCategories(categoryKeyFor(kind))).map((c) => c.id)
+async function categoryIdsFor(ctx: SpaceCtx, kind: RecurringKind): Promise<Array<string>> {
+  return (await liveCategories(ctx, categoryKeyFor(kind))).map((c) => c.id)
 }
 
 // A zod issue message is a catalog key (errors.validation.*): the error keeps
@@ -1526,12 +1961,13 @@ function occurrenceNotDue(): AppError {
 // Validates with recurringInputSchemaFor (the live categories of the input's
 // kind) and throws the first issue (an AppError 'validation').
 async function validateRecurringInput(
+  ctx: SpaceCtx,
   input: CreateRecurringInput,
 ): Promise<CreateRecurringInput> {
   const base = recurringInputSchema.safeParse(input)
   if (!base.success) throw validationError(base.error.issues[0].message)
   const checked = recurringInputSchemaFor(
-    await categoryIdsFor(base.data.kind),
+    await categoryIdsFor(ctx, base.data.kind),
   ).safeParse(input)
   if (!checked.success) throw validationError(checked.error.issues[0].message)
   return checked.data
@@ -1544,6 +1980,7 @@ async function validateRecurringInput(
 // targets that gained a record. Must run under the lock of every target key
 // and meta:sync.
 async function planOccurrenceWrites(
+  ctx: SpaceCtx,
   item: RecurringItem,
   dates: Array<string>,
   counter: RevCounter,
@@ -1551,7 +1988,7 @@ async function planOccurrenceWrites(
 ): Promise<{ values: Record<string, Array<GeneratedRecord>>; created: number }> {
   const lists = new Map<string, Array<GeneratedRecord>>()
   const values: Record<string, Array<GeneratedRecord>> = {}
-  const main = await readMainCurrency()
+  const main = await readMainCurrency(ctx)
   let created = 0
   const now = nowIso()
   const amount = overrides?.amount ?? item.amount
@@ -1563,7 +2000,7 @@ async function planOccurrenceWrites(
       : item.description
   for (const date of dates) {
     const key = occurrenceTargetKey(item.kind, date)
-    const list = lists.get(key) ?? (await readOccurrenceTarget(key))
+    const list = lists.get(key) ?? (await readOccurrenceTarget(ctx, key))
     const id = await occurrenceRecordId(item.id, date)
     if (
       list.some(
@@ -1588,6 +2025,7 @@ async function planOccurrenceWrites(
     }
     const conversion = conversionOnSave(record, main)
     if (conversion) record.conversion = conversion
+    stampCreated(counter.member, record, {})
     record.rev = counter.next()
     const next = [...list, record]
     lists.set(key, next)
@@ -1606,14 +2044,15 @@ function isUnhandledOccurrence(item: RecurringItem, date: string): boolean {
   return dates[dates.length - 1] === date
 }
 
-export async function getAllRecurring(): Promise<Array<RecurringItem>> {
-  return liveRecords((await readStore('recurring')) ?? [])
+async function getAllRecurringIn(ctx: SpaceCtx): Promise<Array<RecurringItem>> {
+  return liveRecords((await readStore(ctx, 'recurring')) ?? [])
 }
 
-export async function getDueRecurring(
+async function getDueRecurringIn(
+  ctx: SpaceCtx,
   today: string = toLocalDateString(),
 ): Promise<Array<RecurringOccurrence>> {
-  return dueOccurrences(await getAllRecurring(), today)
+  return dueOccurrences(await getAllRecurringIn(ctx), today)
 }
 
 // The index of the live item `id` in a stored list, or -1.
@@ -1629,13 +2068,14 @@ const UNTOUCHED: ItemOutcome = { created: 0, touched: false }
 // re-check under the lock of `recurring` + meta:sync + those keys. When an
 // edit in between needs a key that isn't locked, release and plan again.
 async function processRecurringItem(
+  ctx: SpaceCtx,
   first: RecurringItem,
   today: string,
 ): Promise<ItemOutcome> {
   let candidate: RecurringItem | undefined = first
   for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      candidate = ((await readStore('recurring')) ?? []).find(
+      candidate = ((await readStore(ctx, 'recurring')) ?? []).find(
         (i) => i.id === first.id && isLive(i),
       )
     }
@@ -1650,14 +2090,15 @@ async function processRecurringItem(
     if (planned.length === 0) return UNTOUCHED
     const lockedTargets = occurrenceTargetKeys(candidate.kind, planned)
 
-    const result = await withWriteLock(
+    const result = await withSpaceLock(
+      ctx,
       ['recurring', SYNC_META_KEY, ...lockedTargets],
       async (): Promise<
         | { status: 'done' }
         | { status: 'retry' }
         | { status: 'written'; created: number; keys: Array<string> }
       > => {
-        const items = (await readStore('recurring')) ?? []
+        const items = (await readStore(ctx, 'recurring')) ?? []
         const index = liveItemIndex(items, first.id)
         if (index === -1) return { status: 'done' }
         const item = items[index]
@@ -1674,7 +2115,7 @@ async function processRecurringItem(
 
         // D2: never write records with a dangling category; the item stays
         // pending until the user picks one.
-        if (!(await categoryIdsFor(item.kind)).includes(item.categoryId)) {
+        if (!(await categoryIdsFor(ctx, item.kind)).includes(item.categoryId)) {
           console.warn(
             `Recurring item ${item.id}: category ${item.categoryId} not found, skipped`,
           )
@@ -1685,8 +2126,8 @@ async function processRecurringItem(
         // are not created again.
         const ahead = new Set(item.handledAhead)
         const toCreate = dates.filter((d) => !ahead.has(d))
-        const counter = await openRevCounter()
-        const plan = await planOccurrenceWrites(item, toCreate, counter)
+        const counter = await openRevCounter(ctx)
+        const plan = await planOccurrenceWrites(ctx, item, toCreate, counter)
         const handledThrough = dates[dates.length - 1]
         const nextItems = [...items]
         nextItems[index] = {
@@ -1698,7 +2139,7 @@ async function processRecurringItem(
           rev: counter.next(),
         }
         const values = { recurring: nextItems, ...plan.values }
-        await writeKeysMany(values, counter)
+        await writeKeysMany(ctx, values, counter)
         return {
           status: 'written',
           created: plan.created,
@@ -1709,7 +2150,7 @@ async function processRecurringItem(
 
     if (result.status === 'retry') continue
     if (result.status === 'done') return UNTOUCHED
-    await afterCommit(result.keys)
+    await afterCommit(ctx, result.keys)
     return { created: result.created, touched: true }
   }
   console.warn(
@@ -1723,23 +2164,25 @@ async function processRecurringItem(
 // written; `itemsTouched` counts items whose entry was written. Any error
 // (DecryptError, a failed setMany) propagates; items committed before it stay
 // committed.
-export async function processDueRecurring(
+async function processDueRecurringIn(
+  ctx: SpaceCtx,
   today: string = toLocalDateString(),
 ): Promise<{ created: number; itemsTouched: number }> {
-  if (!_key || !store) return { created: 0, itemsTouched: 0 }
-  const items = (await readStore('recurring')) ?? []
+  if (!store || personalLocked(ctx)) return { created: 0, itemsTouched: 0 }
+  const items = (await readStore(ctx, 'recurring')) ?? []
   let created = 0
   let itemsTouched = 0
   for (const item of items) {
     if (!isLive(item) || item.mode !== 'auto' || item.paused) continue
-    const outcome = await processRecurringItem(item, today)
+    const outcome = await processRecurringItem(ctx, item, today)
     created += outcome.created
     if (outcome.touched) itemsTouched++
   }
   return { created, itemsTouched }
 }
 
-export async function addRecurring(
+async function addRecurringIn(
+  ctx: SpaceCtx,
   input: CreateRecurringInput,
   options: { createThroughToday: boolean; today?: string },
 ): Promise<RecurringItem> {
@@ -1755,10 +2198,11 @@ export async function addRecurring(
     ? occurrenceTargetKeys(base.data.kind, through)
     : []
 
-  const { item, keys: written } = await withWriteLock(
+  const { item, keys: written } = await withSpaceLock(
+    ctx,
     ['recurring', SYNC_META_KEY, ...targetKeys],
     async () => {
-      const data = await validateRecurringInput(input)
+      const data = await validateRecurringInput(ctx, input)
       const now = nowIso()
       // Ask mode with createThroughToday leaves the past occurrences due.
       const leaveDue = options.createThroughToday && data.mode === 'ask'
@@ -1780,18 +2224,19 @@ export async function addRecurring(
         createdAt: now,
         updatedAt: now,
       }
-      const counter = await openRevCounter()
+      const counter = await openRevCounter(ctx)
+      stampCreated(counter.member, created)
       const stored: RecurringItem = { ...created, rev: counter.next() }
       const records = createNow
-        ? (await planOccurrenceWrites(created, through, counter)).values
+        ? (await planOccurrenceWrites(ctx, created, through, counter)).values
         : {}
-      const items = (await readStore('recurring')) ?? []
+      const items = (await readStore(ctx, 'recurring')) ?? []
       const values = { recurring: [...items, stored], ...records }
-      await writeKeysMany(values, counter)
+      await writeKeysMany(ctx, values, counter)
       return { item: created, keys: Object.keys(values) }
     },
   )
-  await afterCommit(written)
+  await afterCommit(ctx, written)
   return item
 }
 
@@ -1799,38 +2244,40 @@ export async function addRecurring(
 // and a rev) under the lock of `recurring` + meta:sync. Returns the updated
 // item without rev.
 async function updateRecurringItem(
+  ctx: SpaceCtx,
   id: string,
   update: (existing: RecurringItem) => Promise<RecurringItem> | RecurringItem,
 ): Promise<RecurringItem> {
-  const result = await withWriteLock(['recurring', SYNC_META_KEY], async () => {
-    const items = (await readStore('recurring')) ?? []
+  const result = await withSpaceLock(ctx, ['recurring', SYNC_META_KEY], async () => {
+    const items = (await readStore(ctx, 'recurring')) ?? []
     const index = liveItemIndex(items, id)
     if (index === -1) throw recurringNotFound(id)
     const updated: RecurringItem = {
       ...withoutRev(await update(items[index])),
       updatedAt: nowIso(),
     }
-    const counter = await openRevCounter()
+    const counter = await openRevCounter(ctx)
     const next = [...items]
     next[index] = { ...updated, rev: counter.next() }
-    await writeKeysMany({ recurring: next }, counter)
-    return updated
+    await writeKeysMany(ctx, { recurring: next }, counter)
+    return counter.member === undefined ? updated : withUpdatedBy(updated, counter.member)
   })
-  await afterCommit(['recurring'])
+  await afterCommit(ctx, ['recurring'])
   return result
 }
 
-export async function updateRecurring(
+async function updateRecurringIn(
+  ctx: SpaceCtx,
   id: string,
   patch: UpdateRecurringInput,
 ): Promise<RecurringItem> {
-  return updateRecurringItem(id, async (existing) => {
+  return updateRecurringItem(ctx, id, async (existing) => {
     const defined = Object.fromEntries(
       Object.entries(patch as Record<string, unknown>).filter(
         ([, v]) => v !== undefined,
       ),
     ) as UpdateRecurringInput
-    const data = await validateRecurringInput({
+    const data = await validateRecurringInput(ctx, {
       kind: existing.kind,
       amount: existing.amount,
       currency: existing.currency,
@@ -1862,12 +2309,13 @@ export async function updateRecurring(
 // Pausing stops generation. Resuming skips the occurrences that fell inside
 // the pause (D3): handledThrough moves to the last occurrence before today,
 // so today's occurrence onward is generated as normal.
-export async function setRecurringPaused(
+async function setRecurringPausedIn(
+  ctx: SpaceCtx,
   id: string,
   paused: boolean,
   today: string = toLocalDateString(),
 ): Promise<RecurringItem> {
-  return updateRecurringItem(id, (existing) => {
+  return updateRecurringItem(ctx, id, (existing) => {
     let updated: RecurringItem = { ...existing, paused }
     if (!paused && existing.paused) {
       let handledThrough = existing.handledThrough
@@ -1899,14 +2347,15 @@ export async function setRecurringPaused(
 
 // Turns the item into a tombstone: the records it created keep their
 // recurringId and become ordinary records.
-export async function deleteRecurring(id: string): Promise<void> {
-  if (await softDeleteIn('recurring', id)) await afterCommit(['recurring'])
+async function deleteRecurringIn(ctx: SpaceCtx, id: string): Promise<void> {
+  if (await softDeleteIn(ctx, 'recurring', id)) await afterCommit(ctx, ['recurring'])
 }
 
 // Ask mode: creates the record for one due occurrence (with optional
 // overrides for that record only) and marks the date handled. When a record
 // for the date already exists (even a deleted one), nothing new is created.
-export async function confirmRecurringOccurrence(
+async function confirmRecurringOccurrenceIn(
+  ctx: SpaceCtx,
   itemId: string,
   date: string,
   overrides?: OccurrenceOverrides,
@@ -1920,19 +2369,19 @@ export async function confirmRecurringOccurrence(
     SYNC_META_KEY,
     expenseChunkKey(occurrenceCreatedAt(date)),
   ]
-  const written = await withWriteLock(lockKeys, async () => {
-    const items = (await readStore('recurring')) ?? []
+  const written = await withSpaceLock(ctx, lockKeys, async () => {
+    const items = (await readStore(ctx, 'recurring')) ?? []
     const index = liveItemIndex(items, itemId)
     if (index === -1) throw recurringNotFound(itemId)
     const item = items[index]
     if (!isUnhandledOccurrence(item, date)) {
       throw occurrenceNotDue()
     }
-    if (!(await categoryIdsFor(item.kind)).includes(item.categoryId)) {
+    if (!(await categoryIdsFor(ctx, item.kind)).includes(item.categoryId)) {
       throw new AppError('category-not-found', 'Category not found')
     }
-    const counter = await openRevCounter()
-    const plan = await planOccurrenceWrites(item, [date], counter, overrides)
+    const counter = await openRevCounter(ctx)
+    const plan = await planOccurrenceWrites(ctx, item, [date], counter, overrides)
     const next = [...items]
     next[index] = {
       ...markOccurrenceHandled(item, date),
@@ -1940,18 +2389,19 @@ export async function confirmRecurringOccurrence(
       rev: counter.next(),
     }
     const values = { recurring: next, ...plan.values }
-    await writeKeysMany(values, counter)
+    await writeKeysMany(ctx, values, counter)
     return Object.keys(values)
   })
-  await afterCommit(written)
+  await afterCommit(ctx, written)
 }
 
 // Ask mode: marks one due occurrence handled without creating anything.
-export async function skipRecurringOccurrence(
+async function skipRecurringOccurrenceIn(
+  ctx: SpaceCtx,
   itemId: string,
   date: string,
 ): Promise<void> {
-  await updateRecurringItem(itemId, (item) => {
+  await updateRecurringItem(ctx, itemId, (item) => {
     if (!isUnhandledOccurrence(item, date)) {
       throw occurrenceNotDue()
     }
@@ -1993,7 +2443,8 @@ function quickRepeatItem(
 
 // Saves the expense (as addExpense, with the deterministic occurrence id) and
 // a matching auto-mode recurring item starting today, in one transaction.
-export async function addRepeatingExpense(
+async function addRepeatingExpenseIn(
+  ctx: SpaceCtx,
   input: CreateExpenseInput,
   unit: QuickRepeatUnit,
 ): Promise<Expense> {
@@ -2017,15 +2468,18 @@ export async function addRepeatingExpense(
     recurringId,
     occurrenceDate: today,
   }
-  const expenseConversion = conversionOnSave(entry, await readMainCurrency())
+  const expenseConversion = conversionOnSave(entry, await readMainCurrency(ctx))
   if (expenseConversion) entry.conversion = expenseConversion
   const item = quickRepeatItem('expense', input, unit, today, now, recurringId)
   const chunkKey = expenseChunkKey(entry.createdAt)
-  await withWriteLock([chunkKey, 'recurring', SYNC_META_KEY], async () => {
-    const chunk = await readChunk(chunkKey)
-    const items = (await readStore('recurring')) ?? []
-    const counter = await openRevCounter()
+  await withSpaceLock(ctx, [chunkKey, 'recurring', SYNC_META_KEY], async () => {
+    const chunk = await readChunk(ctx, chunkKey)
+    const items = (await readStore(ctx, 'recurring')) ?? []
+    const counter = await openRevCounter(ctx)
+    stampCreated(counter.member, entry, { paidBy: input.paidBy })
+    stampCreated(counter.member, item)
     await writeKeysMany(
+      ctx,
       {
         [chunkKey]: [...chunk, { ...entry, rev: counter.next() }],
         recurring: [...items, { ...item, rev: counter.next() }],
@@ -2033,13 +2487,14 @@ export async function addRepeatingExpense(
       counter,
     )
   })
-  await afterCommit([chunkKey, 'recurring'])
-  return withExpenseCategory(entry)
+  await afterCommit(ctx, [chunkKey, 'recurring'])
+  return withExpenseCategory(ctx, entry)
 }
 
 // Saves the income entry (as addIncome, with the deterministic occurrence id)
 // and a matching auto-mode recurring item starting today, in one transaction.
-export async function addRepeatingIncome(
+async function addRepeatingIncomeIn(
+  ctx: SpaceCtx,
   input: CreateIncomeInput,
   unit: QuickRepeatUnit,
 ): Promise<IncomeEntry> {
@@ -2057,14 +2512,17 @@ export async function addRepeatingIncome(
     recurringId,
     occurrenceDate: today,
   }
-  const incomeConversion = conversionOnSave(entry, await readMainCurrency())
+  const incomeConversion = conversionOnSave(entry, await readMainCurrency(ctx))
   if (incomeConversion) entry.conversion = incomeConversion
   const item = quickRepeatItem('income', input, unit, today, now, recurringId)
-  await withWriteLock(['income', 'recurring', SYNC_META_KEY], async () => {
-    const income = (await readStore('income')) ?? []
-    const items = (await readStore('recurring')) ?? []
-    const counter = await openRevCounter()
+  await withSpaceLock(ctx, ['income', 'recurring', SYNC_META_KEY], async () => {
+    const income = (await readStore(ctx, 'income')) ?? []
+    const items = (await readStore(ctx, 'recurring')) ?? []
+    const counter = await openRevCounter(ctx)
+    stampCreated(counter.member, entry, { paidBy: input.paidBy })
+    stampCreated(counter.member, item)
     await writeKeysMany(
+      ctx,
       {
         income: [...income, { ...entry, rev: counter.next() }],
         recurring: [...items, { ...item, rev: counter.next() }],
@@ -2072,8 +2530,8 @@ export async function addRepeatingIncome(
       counter,
     )
   })
-  await afterCommit(['income', 'recurring'])
-  return withIncomeCategory(entry)
+  await afterCommit(ctx, ['income', 'recurring'])
+  return withIncomeCategory(ctx, entry)
 }
 
 // ── Sync API ──────────────────────────────────────────────────────────────────
@@ -2096,7 +2554,9 @@ export interface ApplyIncomingOptions {
 
 type StoredRecord = Record<string, unknown> & { id: string }
 
-const SINGLE_KEY_TYPES: Array<[Exclude<SyncRecordType, 'expense' | 'settings'>, SingleListKey]> = [
+type ObjectKey = 'syncedSettings' | 'identity' | 'spaceInfo'
+
+const SINGLE_KEY_TYPES: Array<[SyncRecordType, SingleListKey]> = [
   ['category', 'categories'],
   ['incomeCategory', 'incomeCategories'],
   ['income', 'income'],
@@ -2104,10 +2564,39 @@ const SINGLE_KEY_TYPES: Array<[Exclude<SyncRecordType, 'expense' | 'settings'>, 
   ['recurring', 'recurring'],
 ]
 
-const KEY_OF_TYPE = new Map<SyncRecordType, string>([
-  ...SINGLE_KEY_TYPES,
-  ['settings', SYNCED_SETTINGS_KEY],
-])
+// List keys only one kind of space has.
+const PERSONAL_LIST_TYPES: Array<[SyncRecordType, SingleListKey]> = [['spaceKey', 'spaceKeys']]
+const FAMILY_LIST_TYPES: Array<[SyncRecordType, SingleListKey]> = [
+  ['memberProfile', 'memberProfiles'],
+]
+
+// Single-record keys (one object, not a list), per kind of space.
+const PERSONAL_OBJECT_TYPES: Array<[SyncRecordType, ObjectKey]> = [
+  ['settings', 'syncedSettings'],
+  ['identity', 'identity'],
+]
+const FAMILY_OBJECT_TYPES: Array<[SyncRecordType, ObjectKey]> = [
+  ['settings', 'syncedSettings'],
+  ['spaceInfo', 'spaceInfo'],
+]
+
+function listTypesOf(ctx: SpaceCtx): Array<[SyncRecordType, SingleListKey]> {
+  return [...SINGLE_KEY_TYPES, ...(ctx.personal ? PERSONAL_LIST_TYPES : FAMILY_LIST_TYPES)]
+}
+
+function objectTypesOf(ctx: SpaceCtx): Array<[SyncRecordType, ObjectKey]> {
+  return ctx.personal ? PERSONAL_OBJECT_TYPES : FAMILY_OBJECT_TYPES
+}
+
+// The storage base key of each record type the space accepts ('expense' goes
+// to chunks and is not listed).
+function keyOfTypeFor(ctx: SpaceCtx): Map<SyncRecordType, string> {
+  return new Map<SyncRecordType, string>([...listTypesOf(ctx), ...objectTypesOf(ctx)])
+}
+
+function isObjectKey(key: string): key is ObjectKey {
+  return key === SYNCED_SETTINGS_KEY || key === IDENTITY_KEY || key === SPACE_INFO_KEY
+}
 
 // The stored record without the local and derived fields.
 function syncData(record: object): Record<string, unknown> {
@@ -2142,10 +2631,16 @@ function toSyncRecord(type: SyncRecordType, record: StoredRecord): SyncRecord {
 // record without rev counts as 0 (so -1 gives the full snapshot). maxRev is
 // read first, so no lock is needed: a write still in flight has a higher rev
 // and is returned next time. Chunks in key order, then categories, income
-// categories, income, budgets, recurring items and the settings record. A
-// DecryptError propagates.
-export async function listChangedRecords(sinceRev: number): Promise<ChangedRecords> {
-  const maxRev = await getLocalRev()
+// categories, income, budgets, recurring items and the settings record; then
+// personal: the identity and the space keys; Family: the space info and the
+// member profiles. A DecryptError (or, for a Family space without its key,
+// SpaceLockedError) propagates.
+async function listChangedRecordsIn(
+  ctx: SpaceCtx,
+  sinceRev: number,
+): Promise<ChangedRecords> {
+  if (!ctx.personal) await cryptoFor(ctx.spaceId)
+  const maxRev = await getLocalRevIn(ctx)
   const records: Array<SyncRecord> = []
   const collect = (type: SyncRecordType, list: Array<unknown>) => {
     for (const item of list) {
@@ -2154,14 +2649,20 @@ export async function listChangedRecords(sinceRev: number): Promise<ChangedRecor
       if (rev > sinceRev && rev <= maxRev) records.push(toSyncRecord(type, record))
     }
   }
-  for (const chunkKey of await allExpenseChunkKeys()) {
-    collect('expense', await readChunk(chunkKey))
+  for (const chunkKey of await allExpenseChunkKeys(ctx)) {
+    collect('expense', await readChunk(ctx, chunkKey))
   }
   for (const [type, key] of SINGLE_KEY_TYPES) {
-    collect(type, (await readStore(key)) ?? [])
+    collect(type, (await readStore(ctx, key)) ?? [])
   }
-  const settings = await readStore('syncedSettings')
-  if (settings !== undefined) collect('settings', [settings])
+  for (const [type, key] of objectTypesOf(ctx)) {
+    const value = await readStore(ctx, key)
+    if (value !== undefined) collect(type, [value])
+  }
+  const extraLists = ctx.personal ? PERSONAL_LIST_TYPES : FAMILY_LIST_TYPES
+  for (const [type, key] of extraLists) {
+    collect(type, (await readStore(ctx, key)) ?? [])
+  }
   return { maxRev, records }
 }
 
@@ -2169,11 +2670,23 @@ function isParseableDate(value: unknown): value is string {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value))
 }
 
-function isValidIncoming(record: unknown): record is SyncRecord {
+function isBase64Key(value: unknown): boolean {
+  if (typeof value !== 'string' || value === '') return false
+  try {
+    return base64ToBytes(value).byteLength === 32
+  } catch {
+    return false
+  }
+}
+
+function isValidIncoming(
+  record: unknown,
+  keyOfType: Map<SyncRecordType, string>,
+): record is SyncRecord {
   const r = asObject(record)
   if (!r) return false
   const type = r.type as SyncRecordType
-  if (type !== 'expense' && !KEY_OF_TYPE.has(type)) return false
+  if (type !== 'expense' && !keyOfType.has(type)) return false
   if (typeof r.id !== 'string' || r.id === '') return false
   const data = asObject(r.data)
   if (!data || data.id !== r.id) return false
@@ -2190,6 +2703,31 @@ function isValidIncoming(record: unknown): record is SyncRecord {
       isCurrency(data.mainCurrency) &&
       typeof data.fetchExchangeRates === 'boolean'
     )
+  }
+  if (type === 'identity') {
+    return (
+      r.id === IDENTITY_KEY &&
+      asObject(data.publicKeyJwk) !== null &&
+      asObject(data.privateKeyJwk) !== null
+    )
+  }
+  if (type === 'spaceKey') {
+    const tombstone = typeof r.deletedAt === 'string' && r.deletedAt !== ''
+    return (
+      isValidFamilySpaceId(r.id) &&
+      typeof data.keyVersion === 'number' &&
+      Number.isInteger(data.keyVersion) &&
+      data.keyVersion >= 1 &&
+      (data.role === 'owner' || data.role === 'member') &&
+      typeof data.name === 'string' &&
+      (tombstone || isBase64Key(data.key))
+    )
+  }
+  if (type === 'spaceInfo') {
+    return r.id === 'space' && typeof data.name === 'string'
+  }
+  if (type === 'memberProfile') {
+    return typeof data.displayName === 'string'
   }
   return true
 }
@@ -2232,18 +2770,24 @@ function liveList(state: KeyState): Array<StoredRecord> {
 // `preferIncomingOnTie` (the sync engine, for the server copy of a 'stale' push
 // result): an equal updatedAt with different content takes the incoming record
 // (still counted as a conflict), so every device converges on the server copy.
-export async function applyIncomingRecords(
+async function applyIncomingRecordsIn(
+  ctx: SpaceCtx,
   records: Array<SyncRecord>,
   options: ApplyIncomingOptions = {},
 ): Promise<ApplyIncomingResult> {
+  const KEY_OF_TYPE = keyOfTypeFor(ctx)
   records.forEach((record, index) => {
-    if (!isValidIncoming(record)) {
+    if (!isValidIncoming(record, KEY_OF_TYPE)) {
       throw new Error(`applyIncomingRecords: invalid record ${index}`)
     }
   })
   const empty: ApplyIncomingResult = { applied: 0, kept: 0, conflicts: 0 }
   if (records.length === 0) return empty
-  if (!_key || !store) throw new Error('LocalDb not initialized')
+  if (!_key || !store) {
+    if (ctx.personal) throw new Error('LocalDb not initialized')
+    throw new SpaceLockedError(ctx.spaceId)
+  }
+  if (!ctx.personal) await cryptoFor(ctx.spaceId)
 
   const types = new Set(records.map((r) => r.type))
   const singleKeys = Array.from(types)
@@ -2257,34 +2801,37 @@ export async function applyIncomingRecords(
 
   for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
     const chunkKeys = hasExpenses
-      ? Array.from(new Set([...(await allExpenseChunkKeys()), ...targetChunks]))
+      ? Array.from(new Set([...(await allExpenseChunkKeys(ctx)), ...targetChunks]))
       : []
-    const outcome = await withWriteLock(
+    const outcome = await withSpaceLock(
+      ctx,
       [...singleKeys, ...chunkKeys],
       async (): Promise<
         { status: 'retry' } | { status: 'done'; result: ApplyIncomingResult; written: Array<string> }
       > => {
         if (hasExpenses) {
           const locked = new Set(chunkKeys)
-          if ((await allExpenseChunkKeys()).some((k) => !locked.has(k))) {
+          if ((await allExpenseChunkKeys(ctx)).some((k) => !locked.has(k))) {
             return { status: 'retry' }
           }
         }
 
         // Read everything first: a DecryptError leaves nothing written.
         const singles = new Map<string, KeyState>()
+        const objects = new Map<string, { value: StoredRecord | undefined; changed: boolean }>()
         for (const key of singleKeys) {
-          if (key === SYNCED_SETTINGS_KEY) continue
-          singles.set(key, buildState((await readStore(key as SingleListKey)) ?? []))
-        }
-        let settings: StoredRecord | undefined
-        let settingsChanged = false
-        if (singleKeys.includes(SYNCED_SETTINGS_KEY)) {
-          const stored = await readStore('syncedSettings')
-          settings = stored === undefined ? undefined : (stored as unknown as StoredRecord)
+          if (isObjectKey(key)) {
+            const stored = await readStore(ctx, key)
+            objects.set(key, {
+              value: stored === undefined ? undefined : (stored as unknown as StoredRecord),
+              changed: false,
+            })
+            continue
+          }
+          singles.set(key, buildState((await readStore(ctx, key as SingleListKey)) ?? []))
         }
         const chunks = new Map<string, KeyState>()
-        for (const key of chunkKeys) chunks.set(key, buildState(await readChunk(key)))
+        for (const key of chunkKeys) chunks.set(key, buildState(await readChunk(ctx, key)))
 
         // Indexes: id -> position (single keys), id -> every chunk slot.
         const singleIndex = new Map<string, Map<string, number>>()
@@ -2312,8 +2859,8 @@ export async function applyIncomingRecords(
           if (record.type === 'expense') {
             const slot = where.get(record.id)?.[0]
             local = slot ? (chunks.get(slot.chunk)?.list[slot.i] ?? undefined) : undefined
-          } else if (record.type === 'settings') {
-            local = settings
+          } else if (isObjectKey(KEY_OF_TYPE.get(record.type) as string)) {
+            local = objects.get(KEY_OF_TYPE.get(record.type) as string)?.value
           } else {
             const key = KEY_OF_TYPE.get(record.type) as string
             const i = singleIndex.get(key)?.get(record.id)
@@ -2368,9 +2915,11 @@ export async function applyIncomingRecords(
               kept.push({ chunk: target, i: state.list.length - 1 })
             }
             where.set(record.id, kept)
-          } else if (record.type === 'settings') {
-            settings = incoming
-            settingsChanged = true
+          } else if (isObjectKey(KEY_OF_TYPE.get(record.type) as string)) {
+            objects.set(KEY_OF_TYPE.get(record.type) as string, {
+              value: incoming,
+              changed: true,
+            })
           } else {
             const key = KEY_OF_TYPE.get(record.type) as string
             const state = singles.get(key)
@@ -2391,13 +2940,15 @@ export async function applyIncomingRecords(
         for (const [key, state] of [...chunks, ...singles]) {
           if (state.changed) values[key] = liveList(state)
         }
-        if (settingsChanged && settings) values[SYNCED_SETTINGS_KEY] = settings
-        await writeKeysMany(values)
+        for (const [key, state] of objects) {
+          if (state.changed && state.value) values[key] = state.value
+        }
+        await writeKeysMany(ctx, values)
         return { status: 'done', result, written: Object.keys(values) }
       },
     )
     if (outcome.status === 'retry') continue
-    if (outcome.written.length > 0) await afterCommit(outcome.written)
+    if (outcome.written.length > 0) await afterCommit(ctx, outcome.written)
     return outcome.result
   }
   throw new Error('applyIncomingRecords: storage kept changing')
@@ -2410,7 +2961,8 @@ export async function applyIncomingRecords(
 // announced to other tabs; no lastDataChangeAt, no conversion request, no
 // local-change notification. Returns how many records it removed. Called by
 // the sync engine after a cycle.
-export async function compactTombstones(
+async function compactTombstonesIn(
+  ctx: SpaceCtx,
   olderThan: string,
   options: { maxRev?: number } = {},
 ): Promise<number> {
@@ -2418,7 +2970,7 @@ export async function compactTombstones(
   if (Number.isNaN(cutoff)) {
     throw new Error(`compactTombstones: invalid date "${olderThan}"`)
   }
-  if (!_key || !store) return 0
+  if (!store || personalLocked(ctx)) return 0
   const { maxRev } = options
   const singleKeys: Array<SingleListKey> = [
     'categories',
@@ -2427,14 +2979,16 @@ export async function compactTombstones(
     'budgets',
     'recurring',
   ]
-  const chunkKeys = await allExpenseChunkKeys()
-  const { removed, written } = await withWriteLock(
+  if (!ctx.personal) singleKeys.push('memberProfiles')
+  const chunkKeys = await allExpenseChunkKeys(ctx)
+  const { removed, written } = await withSpaceLock(
+    ctx,
     [...chunkKeys, ...singleKeys],
     async () => {
       const lists = new Map<string, Array<Revisioned>>()
-      for (const key of chunkKeys) lists.set(key, await readChunk(key))
+      for (const key of chunkKeys) lists.set(key, await readChunk(ctx, key))
       for (const key of singleKeys) {
-        lists.set(key, ((await readStore(key)) ?? []) as Array<Revisioned>)
+        lists.set(key, ((await readStore(ctx, key)) ?? []) as Array<Revisioned>)
       }
       const values: Record<string, Array<Revisioned>> = {}
       let count = 0
@@ -2452,11 +3006,14 @@ export async function compactTombstones(
           values[key] = kept
         }
       }
-      await writeKeysMany(values)
+      await writeKeysMany(ctx, values)
       return { removed: count, written: Object.keys(values) }
     },
   )
-  if (written.length > 0) postChanged(written)
+  if (written.length > 0) {
+    if (ctx.personal) postChanged(written)
+    else postChanged(written, ctx.spaceId)
+  }
   return removed
 }
 
@@ -2476,32 +3033,34 @@ interface OccurrenceSlot {
 // (deletedAt = updatedAt = now, a fresh rev), so the cleanup syncs. One lock,
 // one setMany. Returns how many records were tombstoned; nothing to do writes
 // nothing.
-export async function dedupeOccurrences(
+async function dedupeOccurrencesIn(
+  ctx: SpaceCtx,
   recurringIds: Array<string>,
 ): Promise<number> {
   const wanted = new Set(
     recurringIds.filter((id) => typeof id === 'string' && id !== ''),
   )
-  if (wanted.size === 0 || !_key || !store) return 0
+  if (wanted.size === 0 || !store || personalLocked(ctx)) return 0
 
   for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
-    const chunkKeys = await allExpenseChunkKeys()
-    const outcome = await withWriteLock(
+    const chunkKeys = await allExpenseChunkKeys(ctx)
+    const outcome = await withSpaceLock(
+      ctx,
       ['income', SYNC_META_KEY, ...chunkKeys],
       async (): Promise<
         { status: 'retry' } | { status: 'done'; removed: number; written: Array<string> }
       > => {
         const locked = new Set(chunkKeys)
-        if ((await allExpenseChunkKeys()).some((k) => !locked.has(k))) {
+        if ((await allExpenseChunkKeys(ctx)).some((k) => !locked.has(k))) {
           return { status: 'retry' }
         }
         const lists = new Map<string, Array<StoredRecord>>()
         for (const key of chunkKeys) {
-          lists.set(key, (await readChunk(key)) as unknown as Array<StoredRecord>)
+          lists.set(key, (await readChunk(ctx, key)) as unknown as Array<StoredRecord>)
         }
         lists.set(
           'income',
-          ((await readStore('income')) ?? []) as unknown as Array<StoredRecord>,
+          ((await readStore(ctx, 'income')) ?? []) as unknown as Array<StoredRecord>,
         )
 
         // Groups by kind, recurringId and occurrenceDate (live records only).
@@ -2535,7 +3094,7 @@ export async function dedupeOccurrences(
         }
         if (doomed.length === 0) return { status: 'done', removed: 0, written: [] }
 
-        const counter = await openRevCounter()
+        const counter = await openRevCounter(ctx)
         const now = nowIso()
         const values: Record<string, Array<StoredRecord>> = {}
         for (const slot of doomed) {
@@ -2548,12 +3107,12 @@ export async function dedupeOccurrences(
           }
           values[slot.key] = list
         }
-        await writeKeysMany(values, counter)
+        await writeKeysMany(ctx, values, counter)
         return { status: 'done', removed: doomed.length, written: Object.keys(values) }
       },
     )
     if (outcome.status === 'retry') continue
-    if (outcome.written.length > 0) await afterCommit(outcome.written)
+    if (outcome.written.length > 0) await afterCommit(ctx, outcome.written)
     return outcome.removed
   }
   throw new Error('dedupeOccurrences: storage kept changing')
@@ -2576,6 +3135,7 @@ const REKEY_SINGLE_KEYS: Array<SingleListKey> = [
   'income',
   'budgets',
   'recurring',
+  'spaceKeys',
 ]
 
 // Re-encrypts this device's LIVE data under `newKey` (used only by
@@ -2602,13 +3162,15 @@ export async function rekeyLiveData(
   const plain = extra.plain ?? []
   const syncPatch = extra.syncPatch ?? {}
 
+  const P = PERSONAL_CTX
   for (let attempt = 0; attempt < RECURRING_ATTEMPTS; attempt++) {
-    const chunkKeys = await allExpenseChunkKeys()
+    const chunkKeys = await allExpenseChunkKeys(P)
     const outcome = await withWriteLock(
       [
         ...chunkKeys,
         ...REKEY_SINGLE_KEYS,
         SYNCED_SETTINGS_KEY,
+        IDENTITY_KEY,
         SYNC_META_KEY,
         ...plain.map(([key]) => key),
       ],
@@ -2616,22 +3178,26 @@ export async function rekeyLiveData(
         { status: 'retry' } | { status: 'done'; result: RekeyResult; written: Array<string> }
       > => {
         const locked = new Set(chunkKeys)
-        if ((await allExpenseChunkKeys()).some((k) => !locked.has(k))) {
+        if ((await allExpenseChunkKeys(P)).some((k) => !locked.has(k))) {
           return { status: 'retry' }
         }
 
-        // Read everything with the current key first.
+        // Read everything with the current key first. The space keys and the
+        // identity are re-encrypted too (only when present), so the device
+        // keeps its Family access; Family data itself is encrypted with the
+        // space keys and needs nothing.
         const chunks = new Map<string, Array<Expense>>()
-        for (const key of chunkKeys) chunks.set(key, await readChunk(key))
+        for (const key of chunkKeys) chunks.set(key, await readChunk(P, key))
         const singles = new Map<string, Array<Revisioned>>()
         for (const key of REKEY_SINGLE_KEYS) {
           const raw = await get<unknown>(key, s)
           if (raw === undefined) continue
-          singles.set(key, ((await readStore(key)) ?? []) as Array<Revisioned>)
+          singles.set(key, ((await readStore(P, key)) ?? []) as Array<Revisioned>)
         }
-        const settings = await readStore('syncedSettings')
+        const settings = await readStore(P, 'syncedSettings')
+        const identity = await readStore(P, 'identity')
 
-        const counter = await openRevCounter()
+        const counter = await openRevCounter(P)
         const startRev = counter.last
         const values = new Map<string, unknown>()
 
@@ -2656,6 +3222,9 @@ export async function rekeyLiveData(
         }
         if (settings !== undefined) {
           values.set(SYNCED_SETTINGS_KEY, { ...settings, rev: counter.next() })
+        }
+        if (identity !== undefined) {
+          values.set(IDENTITY_KEY, { ...identity, rev: counter.next() })
         }
 
         const entries: Array<[IDBValidKey, unknown]> = []
@@ -2685,9 +3254,604 @@ export async function rekeyLiveData(
     )
     if (outcome.status === 'retry') continue
     _key = newKey
-    await afterCommit(outcome.written)
+    markKeyringStale()
+    await afterCommit(P, outcome.written)
     notifyLocalChange()
     return outcome.result
   }
   throw new Error('rekeyLiveData: storage kept changing')
+}
+
+// ── Member identity (personal record `identity`) ──────────────────────────────
+
+// The member's ECDH P-256 key pair, created on first need and stored in the
+// encrypted personal record `identity` (so it syncs to the user's other
+// devices). Read from the store on every call (never cached), so a lock leaves
+// no identity key in memory. Needs an unlocked vault.
+export async function ensureIdentityKeyPair(): Promise<IdentityKeyPair> {
+  if (!_key || !store) throw new Error('LocalDb not initialized')
+  const P = PERSONAL_CTX
+  const { pair, wrote } = await withWriteLock([IDENTITY_KEY, SYNC_META_KEY], async () => {
+    const existing = await readStore(P, 'identity')
+    if (existing !== undefined) {
+      return {
+        pair: { publicKeyJwk: existing.publicKeyJwk, privateKeyJwk: existing.privateKeyJwk },
+        wrote: false,
+      }
+    }
+    const created = await generateIdentityKeyPair()
+    const now = nowIso()
+    const counter = await openRevCounter(P)
+    const record: IdentityRecord = {
+      id: 'identity',
+      publicKeyJwk: created.publicKeyJwk,
+      privateKeyJwk: created.privateKeyJwk,
+      createdAt: now,
+      updatedAt: now,
+      rev: counter.next(),
+    }
+    await writeKeysMany(P, { [IDENTITY_KEY]: record }, counter)
+    return { pair: created, wrote: true }
+  })
+  if (wrote) await afterCommit(P, [IDENTITY_KEY])
+  return pair
+}
+
+export async function getIdentityPublicKey(): Promise<JsonWebKey> {
+  return (await ensureIdentityKeyPair()).publicKeyJwk
+}
+
+// ── Spaces API (no UI yet) ────────────────────────────────────────────────────
+
+const SPACE_NAME_MAX = 60
+
+function toLocalSpace(entry: SpaceKeyEntry): LocalSpace {
+  return {
+    id: entry.id,
+    name: entry.name,
+    role: entry.role,
+    keyVersion: entry.keyVersion,
+    joinedAt: entry.joinedAt,
+  }
+}
+
+// The live Family spaces of this device (no key bytes), oldest first. Empty
+// while locked.
+export async function listLocalSpaces(): Promise<Array<LocalSpace>> {
+  if (!_key || !store) return []
+  if (keyringNeedsLoad()) await loadKeyring()
+  const held = new Set(heldSpaceIds())
+  const entries = (await readStore(PERSONAL_CTX, 'spaceKeys')) ?? []
+  return entries
+    .filter((e) => isLive(e) && held.has(e.id))
+    .map(toLocalSpace)
+    .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt))
+}
+
+// Creates the Family space: a new id and space key, the personal spaceKeys
+// entry (owner, version 1), and in the space spaceInfo, the default expense
+// and income categories in `lang` and syncedSettings with the personal main
+// currency and rates switch. Everything, with both meta:sync counters, is
+// written in ONE setMany. At most one live Family space.
+export async function createLocalSpace(input: {
+  name: string
+  lang?: Lang
+}): Promise<LocalSpace> {
+  const name = typeof input.name === 'string' ? input.name.trim() : ''
+  if (name.length === 0 || name.length > SPACE_NAME_MAX) {
+    throw new SpaceError('invalid-name', 'A space name needs 1 to 60 characters')
+  }
+  const dek = _key
+  const s = store
+  if (!dek || !s) throw new Error('LocalDb not initialized')
+  const lang = input.lang ?? getLang()
+  const member = await getCurrentMemberId()
+  const personalSettings = await readSyncedSettingsIn(PERSONAL_CTX)
+  const spaceId = crypto.randomUUID()
+  const fam = ctxFor(spaceId)
+  const skBytes = generateSpaceKey()
+  const sk = await importSpaceKey(skBytes)
+  const familyBases = [SPACE_INFO_KEY, 'categories', 'incomeCategories', SYNCED_SETTINGS_KEY]
+
+  const space = await withWriteLock(
+    [
+      SPACE_KEYS_KEY,
+      SYNC_META_KEY,
+      ...[...familyBases, SYNC_META_KEY].map((k) => storageKeyOf(fam, k)),
+    ],
+    async () => {
+      const entries = (await readStore(PERSONAL_CTX, 'spaceKeys')) ?? []
+      if (entries.some(isLive)) {
+        throw new SpaceError('family-space-exists', 'A Family space already exists')
+      }
+      const now = nowIso()
+      const personalCounter = await openRevCounter(PERSONAL_CTX)
+      const entry: SpaceKeyEntry = {
+        id: spaceId,
+        keyVersion: 1,
+        key: bytesToBase64(skBytes),
+        name,
+        role: 'owner',
+        joinedAt: now,
+        updatedAt: now,
+        rev: personalCounter.next(),
+      }
+
+      // The new space's counter (normally absent: starts at 0).
+      const familyMetaKey = storageKeyOf(fam, SYNC_META_KEY)
+      const familyMetaRaw = await get<unknown>(familyMetaKey, s)
+      let familyRev = parseLocalRev(familyMetaRaw)
+      const next = () => ++familyRev
+      const stamp = <T extends { createdBy?: string; updatedBy?: string }>(r: T): T =>
+        stampCreated<T>(member, r)
+      const info = stamp<SpaceInfoRecord>({
+        id: 'space',
+        name,
+        createdAt: now,
+        updatedAt: now,
+        rev: next(),
+      })
+      const categories: Array<Category> = defaultExpenseCategories(lang).map((c) =>
+        stamp<Category>({
+          id: crypto.randomUUID(),
+          name: c.name,
+          icon: c.icon,
+          updatedAt: now,
+          rev: next(),
+        }),
+      )
+      const incomeCategories: Array<Category> = defaultIncomeCategories(lang).map((c) =>
+        stamp<Category>({
+          id: crypto.randomUUID(),
+          name: c.name,
+          icon: c.icon,
+          updatedAt: now,
+          rev: next(),
+        }),
+      )
+      const settings: SyncedSettingsRecord = {
+        id: 'settings',
+        mainCurrency: personalSettings.mainCurrency,
+        fetchExchangeRates: personalSettings.fetchExchangeRates,
+        updatedAt: now,
+        rev: next(),
+      }
+      if (member) settings.updatedBy = member
+
+      const familyValues: Record<string, unknown> = {
+        [SPACE_INFO_KEY]: info,
+        categories,
+        incomeCategories,
+        [SYNCED_SETTINGS_KEY]: settings,
+      }
+      const writes: Array<[IDBValidKey, unknown]> = [
+        [SPACE_KEYS_KEY, await encryptValue(dek, [...entries, entry])],
+        [SYNC_META_KEY, { ...personalCounter.base, localRev: personalCounter.last }],
+      ]
+      for (const [base, value] of Object.entries(familyValues)) {
+        writes.push([storageKeyOf(fam, base), await encryptValue(sk, value)])
+      }
+      writes.push([familyMetaKey, { ...(asObject(familyMetaRaw) ?? {}), localRev: familyRev }])
+      if (_key !== dek) throw new Error('LocalDb not initialized')
+      await setMany(writes, s)
+      return toLocalSpace(entry)
+    },
+  )
+  skBytes.fill(0)
+  markKeyringStale()
+  notifyLocalChange()
+  postChanged([SPACE_KEYS_KEY])
+  postChanged(familyBases, spaceId)
+  await markDataChanged()
+  requestEntryConversion()
+  return space
+}
+
+// Leaves the space on this device and, through personal sync, on the user's
+// other devices: the spaceKeys entry becomes a tombstone without any key
+// material (a personal user write), then every `space:<id>:*` key is deleted
+// (quarantine copies are kept). Needs only the DEK. An unknown or already
+// forgotten id deletes leftover keys only.
+export async function forgetLocalSpace(spaceId: SpaceId): Promise<void> {
+  if (!isValidFamilySpaceId(spaceId)) return
+  const s = store
+  if (!_key || !s) throw new Error('LocalDb not initialized')
+  const P = PERSONAL_CTX
+  const wrote = await withWriteLock([SPACE_KEYS_KEY, SYNC_META_KEY], async () => {
+    const entries = (await readStore(P, 'spaceKeys')) ?? []
+    const index = entries.findIndex((e) => e.id === spaceId && isLive(e))
+    if (index === -1) return false
+    const counter = await openRevCounter(P)
+    const now = nowIso()
+    const tombstone: SpaceKeyEntry = {
+      ...entries[index],
+      key: '',
+      deletedAt: now,
+      updatedAt: now,
+      rev: counter.next(),
+    }
+    delete tombstone.previousKeys
+    const next = [...entries]
+    next[index] = tombstone
+    await writeKeysMany(P, { [SPACE_KEYS_KEY]: next }, counter)
+    return true
+  })
+  markKeyringStale()
+  const prefix = keyFor(spaceId, '')
+  const doomed = (await keys(s)).filter(
+    (k): k is string => typeof k === 'string' && k.startsWith(prefix),
+  )
+  if (doomed.length > 0) await delMany(doomed, s)
+  if (wrote) await afterCommit(P, [SPACE_KEYS_KEY])
+}
+
+function familyCtx(spaceId: SpaceId): SpaceCtx {
+  if (spaceId === PERSONAL_SPACE_ID) {
+    throw new SpaceError('unknown-space', 'The personal space has no space details')
+  }
+  return ctxFor(spaceId)
+}
+
+// The space details (without rev), or null before any were written.
+export async function getSpaceInfo(spaceId: SpaceId): Promise<SpaceInfoRecord | null> {
+  const ctx = familyCtx(spaceId)
+  if (!_key) throw new SpaceLockedError(spaceId)
+  const info = await readStore(ctx, 'spaceInfo')
+  return info === undefined ? null : withoutRev(info)
+}
+
+// The live member profiles (without rev).
+export async function getMemberProfiles(spaceId: SpaceId): Promise<Array<MemberProfile>> {
+  const ctx = familyCtx(spaceId)
+  if (!_key) throw new SpaceLockedError(spaceId)
+  return liveRecords((await readStore(ctx, 'memberProfiles')) ?? [])
+}
+
+// Creates or replaces the profile `id` (a Family user write).
+export async function upsertMemberProfile(
+  spaceId: SpaceId,
+  input: { id: string; displayName: string; color: string },
+): Promise<MemberProfile> {
+  const ctx = familyCtx(spaceId)
+  if (!_key) throw new SpaceLockedError(spaceId)
+  await cryptoFor(spaceId)
+  const profile = await withSpaceLock(ctx, [MEMBER_PROFILES_KEY, SYNC_META_KEY], async () => {
+    const list = (await readStore(ctx, 'memberProfiles')) ?? []
+    const index = list.findIndex((p) => p.id === input.id)
+    const counter = await openRevCounter(ctx)
+    const updated: MemberProfile = {
+      ...(index === -1 ? {} : withoutRev(list[index])),
+      id: input.id,
+      displayName: input.displayName,
+      color: input.color,
+      updatedAt: nowIso(),
+    }
+    delete updated.deletedAt
+    const stamped = withUpdatedBy(updated, counter.member ?? null)
+    const next = [...list]
+    if (index === -1) next.push({ ...stamped, rev: counter.next() })
+    else next[index] = { ...stamped, rev: counter.next() }
+    await writeKeysMany(ctx, { [MEMBER_PROFILES_KEY]: next }, counter)
+    return stamped
+  })
+  await afterCommit(ctx, [MEMBER_PROFILES_KEY])
+  return profile
+}
+
+// ── Personal exports and the space handle ─────────────────────────────────────
+//
+// The top-level functions below are the Personal space and keep their
+// signatures. spaceDb(id) gives the same members for any space.
+
+const P_CTX = PERSONAL_CTX
+
+export async function getLocalRev(): Promise<number> {
+  return getLocalRevIn(P_CTX)
+}
+export function readSyncedSettings(): Promise<SyncedSettingsRecord> {
+  return readSyncedSettingsIn(P_CTX)
+}
+export function updateSyncedSettings(patch: { fetchExchangeRates?: boolean }): Promise<void> {
+  return updateSyncedSettingsIn(P_CTX, patch)
+}
+export function getExpensesForRange(from: string, to: string): Promise<Array<Expense>> {
+  return getExpensesForRangeIn(P_CTX, from, to)
+}
+export function getAllExpenses(): Promise<Array<Expense>> {
+  return getAllExpensesIn(P_CTX)
+}
+export function addExpense(input: CreateExpenseInput): Promise<Expense> {
+  return addExpenseIn(P_CTX, input)
+}
+export function deleteExpense(id: string, createdAt: string): Promise<void> {
+  return deleteExpenseIn(P_CTX, id, createdAt)
+}
+export function undeleteExpense(id: string, createdAt: string): Promise<Expense> {
+  return undeleteExpenseIn(P_CTX, id, createdAt)
+}
+export function updateExpense(
+  id: string,
+  originalCreatedAt: string,
+  patch: UpdateExpenseInput,
+): Promise<Expense> {
+  return updateExpenseIn(P_CTX, id, originalCreatedAt, patch)
+}
+export function getAllCategories(): Promise<Array<Category>> {
+  return getAllCategoriesIn(P_CTX)
+}
+export function addCategory(input: CreateCategoryInput): Promise<Category> {
+  return addCategoryIn(P_CTX, input)
+}
+export function updateCategory(input: UpdateCategoryInput): Promise<Category> {
+  return updateCategoryIn(P_CTX, input)
+}
+export function deleteCategory(id: string): Promise<void> {
+  return deleteCategoryIn(P_CTX, id)
+}
+export function provisionDefaultCategories(lang?: Lang): Promise<void> {
+  return provisionDefaultCategoriesIn(P_CTX, lang)
+}
+export function getAllIncomeCategories(): Promise<Array<Category>> {
+  return getAllIncomeCategoriesIn(P_CTX)
+}
+export function addIncomeCategory(input: CreateCategoryInput): Promise<Category> {
+  return addIncomeCategoryIn(P_CTX, input)
+}
+export function updateIncomeCategory(input: UpdateCategoryInput): Promise<Category> {
+  return updateIncomeCategoryIn(P_CTX, input)
+}
+export function deleteIncomeCategory(id: string): Promise<void> {
+  return deleteIncomeCategoryIn(P_CTX, id)
+}
+export function ensureIncomeCategories(lang?: Lang): Promise<boolean> {
+  return ensureIncomeCategoriesIn(P_CTX, lang)
+}
+export function getAllIncome(): Promise<Array<IncomeEntry>> {
+  return getAllIncomeIn(P_CTX)
+}
+export function addIncome(input: CreateIncomeInput): Promise<IncomeEntry> {
+  return addIncomeIn(P_CTX, input)
+}
+export function deleteIncome(id: string): Promise<void> {
+  return deleteIncomeIn(P_CTX, id)
+}
+export function getAllBudgets(): Promise<
+  Array<BudgetEntry & { categoryName: string; categoryIcon: string | null }>
+> {
+  return getAllBudgetsIn(P_CTX)
+}
+export function upsertBudget(input: UpsertBudgetInput): Promise<BudgetEntry> {
+  return upsertBudgetIn(P_CTX, input)
+}
+export function deleteBudget(id: string): Promise<void> {
+  return deleteBudgetIn(P_CTX, id)
+}
+export function readEntriesForConversion(): Promise<Array<ConversionStorageGroup>> {
+  return readEntriesForConversionIn(P_CTX)
+}
+export function applyEntryConversions(
+  storageKey: string,
+  mainCurrency: Currency,
+  updates: Array<EntryConversionUpdate>,
+): Promise<number> {
+  return applyEntryConversionsIn(P_CTX, storageKey, mainCurrency, updates)
+}
+export function convertBudgets(
+  target: Currency,
+  rateFor: (from: Currency) => number,
+  options: { setMainCurrency: boolean },
+): Promise<number> {
+  return convertBudgetsIn(P_CTX, target, rateFor, options)
+}
+export function getAllRecurring(): Promise<Array<RecurringItem>> {
+  return getAllRecurringIn(P_CTX)
+}
+export function getDueRecurring(today?: string): Promise<Array<RecurringOccurrence>> {
+  return getDueRecurringIn(P_CTX, today)
+}
+export function processDueRecurring(
+  today?: string,
+): Promise<{ created: number; itemsTouched: number }> {
+  return processDueRecurringIn(P_CTX, today)
+}
+export function addRecurring(
+  input: CreateRecurringInput,
+  options: { createThroughToday: boolean; today?: string },
+): Promise<RecurringItem> {
+  return addRecurringIn(P_CTX, input, options)
+}
+export function updateRecurring(id: string, patch: UpdateRecurringInput): Promise<RecurringItem> {
+  return updateRecurringIn(P_CTX, id, patch)
+}
+export function setRecurringPaused(
+  id: string,
+  paused: boolean,
+  today?: string,
+): Promise<RecurringItem> {
+  return setRecurringPausedIn(P_CTX, id, paused, today)
+}
+export function deleteRecurring(id: string): Promise<void> {
+  return deleteRecurringIn(P_CTX, id)
+}
+export function confirmRecurringOccurrence(
+  itemId: string,
+  date: string,
+  overrides?: OccurrenceOverrides,
+): Promise<void> {
+  return confirmRecurringOccurrenceIn(P_CTX, itemId, date, overrides)
+}
+export function skipRecurringOccurrence(itemId: string, date: string): Promise<void> {
+  return skipRecurringOccurrenceIn(P_CTX, itemId, date)
+}
+export function addRepeatingExpense(
+  input: CreateExpenseInput,
+  unit: QuickRepeatUnit,
+): Promise<Expense> {
+  return addRepeatingExpenseIn(P_CTX, input, unit)
+}
+export function addRepeatingIncome(
+  input: CreateIncomeInput,
+  unit: QuickRepeatUnit,
+): Promise<IncomeEntry> {
+  return addRepeatingIncomeIn(P_CTX, input, unit)
+}
+
+// The sync API also takes a leading spaceId; the one-argument forms are
+// personal (the sync engine and its ports use them unchanged).
+export function listChangedRecords(sinceRev: number): Promise<ChangedRecords>
+export function listChangedRecords(spaceId: SpaceId, sinceRev: number): Promise<ChangedRecords>
+export function listChangedRecords(
+  first: SpaceId | number,
+  second?: number,
+): Promise<ChangedRecords> {
+  if (typeof first === 'string') {
+    return listChangedRecordsIn(ctxFor(first), second ?? -1)
+  }
+  return listChangedRecordsIn(P_CTX, first)
+}
+
+export function applyIncomingRecords(
+  records: Array<SyncRecord>,
+  options?: ApplyIncomingOptions,
+): Promise<ApplyIncomingResult>
+export function applyIncomingRecords(
+  spaceId: SpaceId,
+  records: Array<SyncRecord>,
+  options?: ApplyIncomingOptions,
+): Promise<ApplyIncomingResult>
+export function applyIncomingRecords(
+  first: SpaceId | Array<SyncRecord>,
+  second?: Array<SyncRecord> | ApplyIncomingOptions,
+  third?: ApplyIncomingOptions,
+): Promise<ApplyIncomingResult> {
+  if (typeof first === 'string') {
+    return applyIncomingRecordsIn(ctxFor(first), second as Array<SyncRecord>, third)
+  }
+  return applyIncomingRecordsIn(P_CTX, first, second as ApplyIncomingOptions | undefined)
+}
+
+export function compactTombstones(
+  olderThan: string,
+  options?: { maxRev?: number },
+): Promise<number> {
+  return compactTombstonesIn(P_CTX, olderThan, options)
+}
+export function dedupeOccurrences(recurringIds: Array<string>): Promise<number> {
+  return dedupeOccurrencesIn(P_CTX, recurringIds)
+}
+
+// The data functions of one space, with exactly the signatures of the
+// same-named top-level (personal) exports.
+export interface SpaceDb {
+  getLocalRev: () => Promise<number>
+  readSyncedSettings: typeof readSyncedSettings
+  updateSyncedSettings: typeof updateSyncedSettings
+  getExpensesForRange: typeof getExpensesForRange
+  getAllExpenses: typeof getAllExpenses
+  addExpense: typeof addExpense
+  deleteExpense: typeof deleteExpense
+  undeleteExpense: typeof undeleteExpense
+  updateExpense: typeof updateExpense
+  getAllCategories: typeof getAllCategories
+  addCategory: typeof addCategory
+  updateCategory: typeof updateCategory
+  deleteCategory: typeof deleteCategory
+  provisionDefaultCategories: typeof provisionDefaultCategories
+  getAllIncomeCategories: typeof getAllIncomeCategories
+  addIncomeCategory: typeof addIncomeCategory
+  updateIncomeCategory: typeof updateIncomeCategory
+  deleteIncomeCategory: typeof deleteIncomeCategory
+  ensureIncomeCategories: typeof ensureIncomeCategories
+  getAllIncome: typeof getAllIncome
+  addIncome: typeof addIncome
+  deleteIncome: typeof deleteIncome
+  getAllBudgets: typeof getAllBudgets
+  upsertBudget: typeof upsertBudget
+  deleteBudget: typeof deleteBudget
+  readEntriesForConversion: typeof readEntriesForConversion
+  applyEntryConversions: typeof applyEntryConversions
+  convertBudgets: typeof convertBudgets
+  getAllRecurring: typeof getAllRecurring
+  getDueRecurring: typeof getDueRecurring
+  processDueRecurring: typeof processDueRecurring
+  addRecurring: typeof addRecurring
+  updateRecurring: typeof updateRecurring
+  setRecurringPaused: typeof setRecurringPaused
+  deleteRecurring: typeof deleteRecurring
+  confirmRecurringOccurrence: typeof confirmRecurringOccurrence
+  skipRecurringOccurrence: typeof skipRecurringOccurrence
+  addRepeatingExpense: typeof addRepeatingExpense
+  addRepeatingIncome: typeof addRepeatingIncome
+  listChangedRecords: (sinceRev: number) => Promise<ChangedRecords>
+  applyIncomingRecords: (
+    records: Array<SyncRecord>,
+    options?: ApplyIncomingOptions,
+  ) => Promise<ApplyIncomingResult>
+  compactTombstones: typeof compactTombstones
+  dedupeOccurrences: typeof dedupeOccurrences
+}
+
+function buildSpaceDb(ctx: SpaceCtx): SpaceDb {
+  return {
+    getLocalRev: () => getLocalRevIn(ctx),
+    readSyncedSettings: () => readSyncedSettingsIn(ctx),
+    updateSyncedSettings: (patch) => updateSyncedSettingsIn(ctx, patch),
+    getExpensesForRange: (from, to) => getExpensesForRangeIn(ctx, from, to),
+    getAllExpenses: () => getAllExpensesIn(ctx),
+    addExpense: (input) => addExpenseIn(ctx, input),
+    deleteExpense: (id, createdAt) => deleteExpenseIn(ctx, id, createdAt),
+    undeleteExpense: (id, createdAt) => undeleteExpenseIn(ctx, id, createdAt),
+    updateExpense: (id, createdAt, patch) => updateExpenseIn(ctx, id, createdAt, patch),
+    getAllCategories: () => getAllCategoriesIn(ctx),
+    addCategory: (input) => addCategoryIn(ctx, input),
+    updateCategory: (input) => updateCategoryIn(ctx, input),
+    deleteCategory: (id) => deleteCategoryIn(ctx, id),
+    provisionDefaultCategories: (lang) => provisionDefaultCategoriesIn(ctx, lang),
+    getAllIncomeCategories: () => getAllIncomeCategoriesIn(ctx),
+    addIncomeCategory: (input) => addIncomeCategoryIn(ctx, input),
+    updateIncomeCategory: (input) => updateIncomeCategoryIn(ctx, input),
+    deleteIncomeCategory: (id) => deleteIncomeCategoryIn(ctx, id),
+    ensureIncomeCategories: (lang) => ensureIncomeCategoriesIn(ctx, lang),
+    getAllIncome: () => getAllIncomeIn(ctx),
+    addIncome: (input) => addIncomeIn(ctx, input),
+    deleteIncome: (id) => deleteIncomeIn(ctx, id),
+    getAllBudgets: () => getAllBudgetsIn(ctx),
+    upsertBudget: (input) => upsertBudgetIn(ctx, input),
+    deleteBudget: (id) => deleteBudgetIn(ctx, id),
+    readEntriesForConversion: () => readEntriesForConversionIn(ctx),
+    applyEntryConversions: (key, main, updates) =>
+      applyEntryConversionsIn(ctx, key, main, updates),
+    convertBudgets: (target, rateFor, options) =>
+      convertBudgetsIn(ctx, target, rateFor, options),
+    getAllRecurring: () => getAllRecurringIn(ctx),
+    getDueRecurring: (today) => getDueRecurringIn(ctx, today),
+    processDueRecurring: (today) => processDueRecurringIn(ctx, today),
+    addRecurring: (input, options) => addRecurringIn(ctx, input, options),
+    updateRecurring: (id, patch) => updateRecurringIn(ctx, id, patch),
+    setRecurringPaused: (id, paused, today) => setRecurringPausedIn(ctx, id, paused, today),
+    deleteRecurring: (id) => deleteRecurringIn(ctx, id),
+    confirmRecurringOccurrence: (itemId, date, overrides) =>
+      confirmRecurringOccurrenceIn(ctx, itemId, date, overrides),
+    skipRecurringOccurrence: (itemId, date) => skipRecurringOccurrenceIn(ctx, itemId, date),
+    addRepeatingExpense: (input, unit) => addRepeatingExpenseIn(ctx, input, unit),
+    addRepeatingIncome: (input, unit) => addRepeatingIncomeIn(ctx, input, unit),
+    listChangedRecords: (sinceRev) => listChangedRecordsIn(ctx, sinceRev),
+    applyIncomingRecords: (records, options) => applyIncomingRecordsIn(ctx, records, options),
+    compactTombstones: (olderThan, options) => compactTombstonesIn(ctx, olderThan, options),
+    dedupeOccurrences: (ids) => dedupeOccurrencesIn(ctx, ids),
+  }
+}
+
+const handles = new Map<string, SpaceDb>()
+
+// The data handle of a space: the same object for the same id every time.
+// spaceDb('personal') behaves exactly like the top-level functions. A bad
+// Family id throws TypeError.
+export function spaceDb(spaceId: SpaceId): SpaceDb {
+  let handle = handles.get(spaceId)
+  if (!handle) {
+    handle = buildSpaceDb(ctxFor(spaceId))
+    handles.set(spaceId, handle)
+  }
+  return handle
 }
