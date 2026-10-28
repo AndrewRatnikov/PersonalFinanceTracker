@@ -37,7 +37,7 @@
 // record: createBackup reads them from it, replace writes it, merge leaves it.
 
 import dayjs from 'dayjs'
-import { get, keys, setMany } from 'idb-keyval'
+import { del, get, keys, setMany } from 'idb-keyval'
 import { t as translateMessage } from '../i18n/core'
 
 import { getAppSettings } from './appSettings'
@@ -48,13 +48,18 @@ import {
   decryptValue,
   encryptValue,
 } from './crypto'
-import { DecryptError, isDataStorageKey } from './dataErrors'
+import { DecryptError, isDataStorageKey, isSpaceDataStorageKey } from './dataErrors'
 import { isCurrency } from './domain'
 import { saveFile } from './fileDownload'
 import { convertIncomeSources } from './incomeCategories'
 import {
+  IDENTITY_KEY,
+  MEMBER_PROFILES_KEY,
+  SPACE_INFO_KEY,
+  SPACE_KEYS_KEY,
   SYNCED_SETTINGS_KEY,
   SYNC_META_KEY,
+  cryptoFor,
   ensureIncomeCategories,
   expenseChunkKey,
   getLocalDbKey,
@@ -66,6 +71,9 @@ import {
   syncMetaEntry,
   unlockLocalDb,
 } from './localDb'
+import { listHeldSpaceIds, markKeyringStale } from './spaces/keyring'
+import { importSpaceKey } from './spaces/spaceCrypto'
+import { isValidFamilySpaceId, keyFor } from './spaces/types'
 import { postChanged } from './syncChannel'
 import { isLive, mergeRecord, sameTimeWinner } from './syncRecords'
 import {
@@ -88,6 +96,12 @@ import type {
   RecurringItem,
   SyncedSettingsRecord,
 } from './domain'
+import type {
+  IdentityRecord,
+  MemberProfile,
+  SpaceInfoRecord,
+  SpaceKeyEntry,
+} from './spaces/types'
 import type { VaultHeaderV2 } from './vault'
 
 export const BACKUP_FORMAT = 'minima-backup'
@@ -117,6 +131,25 @@ export interface BackupPayload {
     mainCurrency?: Currency
     fetchExchangeRates?: boolean
   }
+  // Spaces (spec §20), all additive and present only when non-empty, so a
+  // store without spaces backs up exactly as before: the member identity, the
+  // space keys (tombstones included) and the data of every held Family space.
+  identity?: IdentityRecord
+  spaceKeys?: Array<SpaceKeyEntry>
+  spaces?: Record<string, SpaceBackupPayload>
+}
+
+// One Family space in a backup: raw records with tombstones, never `rev`.
+export interface SpaceBackupPayload {
+  spaceInfo?: SpaceInfoRecord
+  memberProfiles: Array<MemberProfile>
+  categories: Array<Category>
+  expenses: Array<Expense>
+  income: Array<IncomeEntry>
+  budgets: Array<BudgetEntry>
+  incomeCategories: Array<Category>
+  recurring: Array<RecurringItem>
+  settings: { mainCurrency?: Currency; fetchExchangeRates?: boolean }
 }
 
 export interface MinimaBackupV1 {
@@ -147,6 +180,11 @@ export interface RestoreSummary {
   conflicts: number
   skipped: Array<string> // the backup file's own `skipped` list
   adoptedVault: boolean // true on a fresh or orphaned device
+  // Family spaces of the backup that were restored / skipped because no key
+  // was available (present only when non-empty). The counts above are
+  // personal only.
+  restoredSpaces?: Array<string>
+  skippedSpaces?: Array<string>
 }
 
 export type BackupErrorCode =
@@ -220,6 +258,100 @@ async function dataKeysOf(store: UseStore): Promise<Array<string>> {
     .sort()
 }
 
+// The personal key material records: backed up and restored by their own
+// rules, never replaced like data. (Read at call time: many tests mock
+// localDb partially, so its constants can't be used at import time.)
+function isKeyMaterialKey(key: string): boolean {
+  return key === IDENTITY_KEY || key === SPACE_KEYS_KEY
+}
+
+// The personal data keys without the key material records.
+async function personalDataKeysOf(store: UseStore): Promise<Array<string>> {
+  return (await dataKeysOf(store)).filter((k) => !isKeyMaterialKey(k))
+}
+
+// The Family data keys of a space, as base keys.
+async function spaceBaseKeysOf(store: UseStore, spaceId: string): Promise<Array<string>> {
+  const prefix = keyFor(spaceId, '')
+  return (await keys(store))
+    .filter(
+      (k): k is string =>
+        typeof k === 'string' && k.startsWith(prefix) && isSpaceDataStorageKey(k),
+    )
+    .map((k) => k.slice(prefix.length))
+    .sort()
+}
+
+function emptySpacePayload(): SpaceBackupPayload {
+  return {
+    memberProfiles: [],
+    categories: [],
+    expenses: [],
+    income: [],
+    budgets: [],
+    incomeCategories: [],
+    recurring: [],
+    settings: {},
+  }
+}
+
+// The data of one held Family space, read with its space key. An unreadable
+// key throws DecryptError (prefixed key) or, with allowPartial, is skipped.
+async function backupSpace(
+  store: UseStore,
+  spaceId: string,
+  allowPartial: boolean,
+  skipped: Array<string>,
+): Promise<SpaceBackupPayload> {
+  const c = await cryptoFor(spaceId)
+  const out = emptySpacePayload()
+  let settingsSkipped = false
+  let settingsRecord: Record<string, unknown> | null = null
+  for (const base of await spaceBaseKeysOf(store, spaceId)) {
+    const storageKey = keyFor(spaceId, base)
+    const raw = await get<unknown>(storageKey, store)
+    if (!(raw instanceof Uint8Array)) continue
+    let value: unknown
+    try {
+      value = await c.decrypt(raw)
+    } catch (err) {
+      if (!allowPartial) throw new DecryptError(storageKey, err)
+      skipped.push(storageKey)
+      if (base === SYNCED_SETTINGS_KEY) settingsSkipped = true
+      continue
+    }
+    if (base === SYNCED_SETTINGS_KEY) {
+      settingsRecord = isObject(value) ? value : null
+      continue
+    }
+    if (base === SPACE_INFO_KEY) {
+      if (isObject(value)) out.spaceInfo = stripRev(value as unknown as SpaceInfoRecord)
+      continue
+    }
+    if (!Array.isArray(value)) continue
+    if (base === 'categories') out.categories = stripRevs(value as Array<Category>)
+    else if (base === 'incomeCategories') {
+      out.incomeCategories = stripRevs(value as Array<Category>)
+    } else if (base === 'income') out.income = stripRevs(value as Array<IncomeEntry>)
+    else if (base === 'budgets') out.budgets = stripRevs(value as Array<BudgetEntry>)
+    else if (base === 'recurring') out.recurring = stripRevs(value as Array<RecurringItem>)
+    else if (base === MEMBER_PROFILES_KEY) {
+      out.memberProfiles = stripRevs(value as Array<MemberProfile>)
+    } else if (base.startsWith(EXPENSE_CHUNK_PREFIX)) {
+      for (const e of value as Array<Expense>) out.expenses.push(stripRev(stripCategory(e)))
+    }
+  }
+  if (!settingsSkipped) {
+    const main = settingsRecord?.mainCurrency
+    const fetchRates = settingsRecord?.fetchExchangeRates
+    out.settings = {
+      mainCurrency: isCurrency(main) ? main : 'UAH',
+      fetchExchangeRates: typeof fetchRates === 'boolean' ? fetchRates : true,
+    }
+  }
+  return out
+}
+
 // ── Gzip ──────────────────────────────────────────────────────────────────────
 
 async function pipeBytes(
@@ -259,6 +391,8 @@ export async function createBackup(
   let budgets: Array<BudgetEntry> = []
   let recurring: Array<RecurringItem> = []
   const expenses: Array<Expense> = []
+  let identity: IdentityRecord | undefined
+  let spaceKeys: Array<SpaceKeyEntry> = []
 
   for (const key of await dataKeysOf(store)) {
     const raw = await get<unknown>(key, store)
@@ -269,6 +403,15 @@ export async function createBackup(
     } catch (err) {
       if (!options.allowPartial) throw new DecryptError(key, err)
       skipped.push(key)
+      continue
+    }
+    // The key material records (never treated as expenses).
+    if (key === IDENTITY_KEY) {
+      if (isObject(value)) identity = stripRev(value as unknown as IdentityRecord)
+      continue
+    }
+    if (key === SPACE_KEYS_KEY) {
+      if (Array.isArray(value)) spaceKeys = stripRevs(value as Array<SpaceKeyEntry>)
       continue
     }
     // `syncedSettings` is a single record, read through readSyncedSettings.
@@ -313,6 +456,14 @@ export async function createBackup(
       ...(currency ?? {}),
     },
   }
+  // Every Family space this device holds a key for.
+  const spaces: Record<string, SpaceBackupPayload> = {}
+  for (const spaceId of await listHeldSpaceIds()) {
+    spaces[spaceId] = await backupSpace(store, spaceId, options.allowPartial === true, skipped)
+  }
+  if (identity) payload.identity = identity
+  if (spaceKeys.length > 0) payload.spaceKeys = spaceKeys
+  if (Object.keys(spaces).length > 0) payload.spaces = spaces
 
   let bytes = new TextEncoder().encode(JSON.stringify(payload))
   let enc: BackupPayloadEncoding = 'aes-gcm'
@@ -412,7 +563,8 @@ export async function defaultRestoreMode(): Promise<RestoreMode> {
   const store = getLocalStore()
   const dek = getLocalDbKey()
   if (!store || !dek) return 'replace'
-  for (const key of await dataKeysOf(store)) {
+  // Key material and Family keys don't count (personal data only).
+  for (const key of await personalDataKeysOf(store)) {
     if (
       key === 'categories' ||
       key === 'incomeCategories' ||
@@ -445,6 +597,51 @@ function isRecordList(value: unknown): value is Array<{ id: string }> {
   )
 }
 
+function optionalList(value: unknown): boolean {
+  return value === undefined || isRecordList(value)
+}
+
+function validateSpacePayload(value: unknown): SpaceBackupPayload {
+  if (
+    !isObject(value) ||
+    !isRecordList(value.categories) ||
+    !isRecordList(value.expenses) ||
+    !isRecordList(value.income) ||
+    !isRecordList(value.budgets) ||
+    !optionalList(value.incomeCategories) ||
+    !optionalList(value.recurring) ||
+    !optionalList(value.memberProfiles) ||
+    (value.spaceInfo !== undefined && !isObject(value.spaceInfo)) ||
+    (value.settings !== undefined && !isObject(value.settings))
+  ) {
+    throw notABackup()
+  }
+  for (const e of value.expenses as Array<Record<string, unknown>>) {
+    if (!isString(e.createdAt) || Number.isNaN(Date.parse(e.createdAt))) {
+      throw notABackup()
+    }
+  }
+  const settings: Record<string, unknown> = isObject(value.settings) ? value.settings : {}
+  return {
+    ...(isObject(value.spaceInfo)
+      ? { spaceInfo: stripRev(value.spaceInfo as unknown as SpaceInfoRecord) }
+      : {}),
+    memberProfiles: stripRevs((value.memberProfiles ?? []) as Array<MemberProfile>),
+    categories: stripRevs(value.categories as Array<Category>),
+    expenses: (value.expenses as Array<Expense>).map((e) => stripRev(stripCategory(e))),
+    income: stripRevs(value.income as Array<IncomeEntry>),
+    budgets: stripRevs(value.budgets as Array<BudgetEntry>),
+    incomeCategories: stripRevs((value.incomeCategories ?? []) as Array<Category>),
+    recurring: stripRevs((value.recurring ?? []) as Array<RecurringItem>),
+    settings: {
+      ...(isCurrency(settings.mainCurrency) ? { mainCurrency: settings.mainCurrency } : {}),
+      ...(typeof settings.fetchExchangeRates === 'boolean'
+        ? { fetchExchangeRates: settings.fetchExchangeRates }
+        : {}),
+    },
+  }
+}
+
 function validatePayload(value: unknown): BackupPayload {
   if (
     !isObject(value) ||
@@ -465,8 +662,26 @@ function validatePayload(value: unknown): BackupPayload {
     }
   }
   const settings = isObject(value.settings) ? value.settings : {}
+  // The optional spaces fields: malformed values make the file invalid.
+  if (value.identity !== undefined && !isObject(value.identity)) throw notABackup()
+  if (value.spaceKeys !== undefined && !isRecordList(value.spaceKeys)) throw notABackup()
+  let spaces: Record<string, SpaceBackupPayload> | undefined
+  if (value.spaces !== undefined) {
+    if (!isObject(value.spaces)) throw notABackup()
+    spaces = {}
+    for (const [spaceId, raw] of Object.entries(value.spaces)) {
+      spaces[spaceId] = validateSpacePayload(raw)
+    }
+  }
   // A `rev` inside a file is dropped: revs are local bookkeeping.
   return {
+    ...(value.identity !== undefined
+      ? { identity: stripRev(value.identity as unknown as IdentityRecord) }
+      : {}),
+    ...(value.spaceKeys !== undefined
+      ? { spaceKeys: stripRevs(value.spaceKeys as Array<SpaceKeyEntry>) }
+      : {}),
+    ...(spaces !== undefined ? { spaces } : {}),
     schemaVersion: 1,
     categories: stripRevs(value.categories as Array<Category>),
     expenses: (value.expenses as Array<Expense>).map((e) =>
@@ -935,6 +1150,244 @@ function localCurrency(
   }
 }
 
+// ── Restore: key material and Family spaces (spec §20) ────────────────────────
+
+// The Family single keys a space restore may write (besides expense chunks).
+// Literals: localDb's constants can't be read at import time (partial mocks).
+const SPACE_SINGLE_BASES = [
+  'categories',
+  'incomeCategories',
+  'income',
+  'budgets',
+  'recurring',
+  'syncedSettings',
+  'spaceInfo',
+  'memberProfiles',
+]
+
+interface KeyMaterialPlan {
+  // Personal key -> plaintext value (encrypted with the target DEK).
+  writes: Map<string, unknown>
+  // The merged space keys (local entries plus the backup's).
+  spaceKeys: Array<SpaceKeyEntry>
+  // Quarantine copies of an orphaned device's key material.
+  quarantine: Array<[string, unknown]>
+  deleteIdentity: boolean
+}
+
+// identity: written only when this device has none (an existing identity is
+// never replaced, in either mode). spaceKeys: merged with mergeRecord in both
+// modes; only written when the backup changed something. An unreadable local
+// spaceKeys record throws DecryptError (key material is never replaced
+// blindly). An orphaned device's key material is quarantined.
+async function planKeyMaterial(
+  store: UseStore,
+  dek: CryptoKey,
+  payload: BackupPayload,
+  ctx: { fresh: boolean; orphaned: boolean; revs: RevSource; now: string },
+): Promise<KeyMaterialPlan> {
+  const writes = new Map<string, unknown>()
+  const quarantine: Array<[string, unknown]> = []
+  let hasIdentity = false
+  let hadOrphanedIdentity = false
+  let hadOrphanedSpaceKeys = false
+  let local: Array<SpaceKeyEntry> = []
+  if (!ctx.fresh) {
+    const rawIdentity = await get<unknown>(IDENTITY_KEY, store)
+    const rawKeys = await get<unknown>(SPACE_KEYS_KEY, store)
+    if (ctx.orphaned) {
+      if (rawIdentity !== undefined) {
+        quarantine.push([`quarantine:${IDENTITY_KEY}:${ctx.now}`, rawIdentity])
+        hadOrphanedIdentity = true
+      }
+      if (rawKeys !== undefined) {
+        quarantine.push([`quarantine:${SPACE_KEYS_KEY}:${ctx.now}`, rawKeys])
+        hadOrphanedSpaceKeys = true
+      }
+    } else {
+      hasIdentity = rawIdentity !== undefined
+      if (rawKeys instanceof Uint8Array) {
+        let value: unknown
+        try {
+          value = await decryptValue(dek, rawKeys)
+        } catch (err) {
+          throw new DecryptError(SPACE_KEYS_KEY, err)
+        }
+        if (Array.isArray(value)) local = value as Array<SpaceKeyEntry>
+      }
+    }
+  }
+
+  const counters: Counters = { added: 0, updated: 0, conflicts: 0 }
+  const merged = mergeList(local, payload.spaceKeys ?? [], counters, ctx.revs)
+  const spaceKeys = (merged?.records ?? local) as Array<SpaceKeyEntry>
+  if (merged) writes.set(SPACE_KEYS_KEY, merged.records)
+  else if (hadOrphanedSpaceKeys) writes.set(SPACE_KEYS_KEY, [])
+
+  let deleteIdentity = false
+  if (!hasIdentity && payload.identity) {
+    writes.set(IDENTITY_KEY, stamped(payload.identity, ctx.revs))
+  } else if (hadOrphanedIdentity) {
+    deleteIdentity = true
+  }
+  return { writes, spaceKeys, quarantine, deleteIdentity }
+}
+
+interface RestoreCrypto {
+  encrypt: (value: unknown) => Promise<Uint8Array>
+  decrypt: (bytes: Uint8Array) => Promise<unknown>
+}
+
+// The space key of an entry (newest version writes, every version reads), or
+// null when its key material can't be imported.
+async function spaceCryptoOf(entry: SpaceKeyEntry): Promise<RestoreCrypto | null> {
+  try {
+    const versions = [
+      { keyVersion: entry.keyVersion, key: entry.key },
+      ...(entry.previousKeys ?? []),
+    ]
+      .filter((v) => isString(v.key) && v.key !== '')
+      .sort((a, b) => b.keyVersion - a.keyVersion)
+    const cryptoKeys: Array<CryptoKey> = []
+    for (const v of versions) cryptoKeys.push(await importSpaceKey(base64ToBytes(v.key)))
+    if (cryptoKeys.length === 0) return null
+    return {
+      encrypt: (value) => encryptValue(cryptoKeys[0], value),
+      decrypt: async (bytes) => {
+        let lastError: unknown = new Error('no key')
+        for (const key of cryptoKeys) {
+          try {
+            return await decryptValue(key, bytes)
+          } catch (err) {
+            lastError = err
+          }
+        }
+        throw lastError
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+function localRevOf(raw: unknown): number {
+  const value = isObject(raw) ? raw.localRev : undefined
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+// One Family space of the backup, with the personal rules applied per space:
+// replace writes the backup's records and keeps live local-only records as
+// fresh tombstones (an unreadable local blob is quarantined); merge upserts
+// with mergeRecord (an unreadable local blob throws DecryptError). Revs come
+// from the space's own meta:sync. Returns the setMany entries (full keys) and
+// the base keys written.
+async function planSpaceRestore(
+  store: UseStore,
+  spaceId: string,
+  space: SpaceBackupPayload,
+  c: RestoreCrypto,
+  localBases: Array<string>,
+  mode: RestoreMode,
+  now: string,
+): Promise<{ entries: Array<[string, unknown]>; written: Array<string> }> {
+  const full = (base: string) => keyFor(spaceId, base)
+  const startRev = localRevOf(await get<unknown>(full(SYNC_META_KEY), store))
+  let lastRev = startRev
+  const revs: RevSource = { next: () => ++lastRev }
+
+  const local: LocalData = { values: new Map(), unreadable: new Map() }
+  const extraUnreadable = new Map<string, unknown>()
+  let localInfo: MergeRecord | undefined
+  let localProfiles: Array<MergeRecord> = []
+  for (const base of localBases) {
+    const raw = await get<unknown>(full(base), store)
+    if (!(raw instanceof Uint8Array)) continue
+    let value: unknown
+    try {
+      value = await c.decrypt(raw)
+    } catch (err) {
+      if (mode === 'merge') throw new DecryptError(full(base), err)
+      if (base === SPACE_INFO_KEY || base === MEMBER_PROFILES_KEY) {
+        extraUnreadable.set(base, raw)
+      } else {
+        local.unreadable.set(base, raw)
+      }
+      continue
+    }
+    if (base === SYNCED_SETTINGS_KEY) local.settings = value
+    else if (base === SPACE_INFO_KEY) {
+      localInfo = isObject(value) ? (value as unknown as MergeRecord) : undefined
+    } else if (base === MEMBER_PROFILES_KEY) {
+      localProfiles = Array.isArray(value) ? (value as Array<MergeRecord>) : []
+    } else {
+      local.values.set(base, Array.isArray(value) ? value : [])
+    }
+  }
+
+  const prepared: PreparedPayload = {
+    schemaVersion: 1,
+    categories: space.categories,
+    expenses: space.expenses,
+    income: space.income,
+    budgets: space.budgets,
+    incomeCategories: space.incomeCategories,
+    recurring: space.recurring,
+    settings: { autoLockMinutes: 0, backupReminderDays: 0 },
+  }
+  const plan =
+    mode === 'replace'
+      ? planReplace(local, prepared, revs, now)
+      : planMerge(local, prepared, revs)
+  const values = new Map<string, unknown>(plan.writes)
+  const counters: Counters = { added: 0, updated: 0, conflicts: 0 }
+
+  // Member profiles: like a single-key collection.
+  if (mode === 'replace') {
+    if (space.memberProfiles.length > 0 || localProfiles.length > 0) {
+      const ids = new Set(space.memberProfiles.map((p) => p.id))
+      const list: Array<unknown> = space.memberProfiles.map((p) => stamped(p, revs))
+      for (const p of localProfiles) {
+        if (ids.has(p.id)) continue
+        list.push(isLive(p) ? stamped({ ...p, deletedAt: now, updatedAt: now }, revs) : p)
+      }
+      values.set(MEMBER_PROFILES_KEY, list)
+    }
+  } else {
+    const merged = mergeList(localProfiles, space.memberProfiles, counters, revs)
+    if (merged) values.set(MEMBER_PROFILES_KEY, merged.records)
+  }
+
+  // The space details: the backup's in a replace, the newer one in a merge.
+  if (space.spaceInfo) {
+    if (mode === 'replace' || mergeOutcome(localInfo, space.spaceInfo, counters)) {
+      values.set(SPACE_INFO_KEY, stamped(space.spaceInfo, revs))
+    }
+  }
+
+  // The space's own settings: the backup's valid values in a replace.
+  if (mode === 'replace') {
+    const current = localCurrency(local, {})
+    const record: SyncedSettingsRecord = {
+      id: 'settings',
+      mainCurrency: space.settings.mainCurrency ?? current.mainCurrency,
+      fetchExchangeRates: space.settings.fetchExchangeRates ?? current.fetchExchangeRates,
+      updatedAt: now,
+      rev: revs.next(),
+    }
+    values.set(SYNCED_SETTINGS_KEY, record)
+  }
+
+  const entries: Array<[string, unknown]> = []
+  for (const [base, value] of values) entries.push([full(base), await c.encrypt(value)])
+  if (mode === 'replace') {
+    for (const [base, raw] of [...local.unreadable, ...extraUnreadable]) {
+      entries.push([`quarantine:${full(base)}:${now}`, raw])
+    }
+  }
+  if (lastRev !== startRev) entries.push(await syncMetaEntry(lastRev, spaceId))
+  return { entries, written: [...values.keys()] }
+}
+
 export async function restoreBackup(
   file: Blob | string,
   secret: string,
@@ -980,9 +1433,29 @@ export async function restoreBackup(
     SYNCED_SETTINGS_KEY,
     ...groupExpenses(payload.expenses).keys(),
   ]
-  const localKeys = fresh ? [] : await dataKeysOf(store)
+  // Personal data keys; the key material records follow their own rules.
+  const localKeys = fresh ? [] : await personalDataKeysOf(store)
+  // The Family spaces of the backup: their local keys (base keys) and every
+  // key a restore of them may write are locked too.
+  const spaceLocalKeys = new Map<string, Array<string>>()
+  const spaceLockKeys: Array<string> = []
+  for (const [spaceId, space] of Object.entries(payload.spaces ?? {})) {
+    if (!isValidFamilySpaceId(spaceId)) continue
+    const localBases = fresh ? [] : await spaceBaseKeysOf(store, spaceId)
+    spaceLocalKeys.set(spaceId, localBases)
+    const bases = new Set([
+      ...localBases,
+      ...SPACE_SINGLE_BASES,
+      SYNC_META_KEY,
+      ...groupExpenses(space.expenses).keys(),
+    ])
+    for (const base of bases) spaceLockKeys.push(keyFor(spaceId, base))
+  }
   const lockKeys = [
     ...new Set([...localKeys, ...backupKeys]),
+    IDENTITY_KEY,
+    SPACE_KEYS_KEY,
+    ...spaceLockKeys,
     META_SETTINGS_KEY,
     SYNC_META_KEY,
     ...(adopt ? [META_VAULT_KEY] : []),
@@ -1008,17 +1481,69 @@ export async function restoreBackup(
         ? planReplace(local, prepared, revs, now)
         : planMerge(local, prepared, revs)
 
+    // 5b. Key material: an existing local identity is never replaced; the
+    //     space keys are merged in both modes (never emptied or tombstoned by
+    //     a replace). Counted apart from the personal summary.
+    const keyPlan = await planKeyMaterial(store, targetDek, payload, {
+      fresh,
+      orphaned,
+      revs,
+      now,
+    })
+
+    // 5c. Family spaces: restored only when the merged space keys hold a live
+    //     key for them (from the backup or this device), else skipped.
+    const restoredSpaces: Array<string> = []
+    const skippedSpaces: Array<string> = []
+    const spaceEntries: Array<[string, unknown]> = []
+    const spaceWritten = new Map<string, Array<string>>()
+    for (const [spaceId, space] of Object.entries(payload.spaces ?? {})) {
+      const entry = isValidFamilySpaceId(spaceId)
+        ? keyPlan.spaceKeys.find((e) => e.id === spaceId && isLive(e) && e.key !== '')
+        : undefined
+      const spaceCrypto = entry ? await spaceCryptoOf(entry) : null
+      if (!spaceCrypto) {
+        skippedSpaces.push(spaceId)
+        continue
+      }
+      restoredSpaces.push(spaceId)
+      const planned = await planSpaceRestore(
+        store,
+        spaceId,
+        space,
+        spaceCrypto,
+        spaceLocalKeys.get(spaceId) ?? [],
+        effectiveMode,
+        now,
+      )
+      spaceEntries.push(...planned.entries)
+      if (planned.written.length > 0) spaceWritten.set(spaceId, planned.written)
+    }
+
     const summary: RestoreSummary = {
       mode: effectiveMode,
       ...plan.counts,
       ...plan.counters,
       skipped: backup.skipped ?? [],
       adoptedVault: adopt,
+      ...(restoredSpaces.length > 0 ? { restoredSpaces } : {}),
+      ...(skippedSpaces.length > 0 ? { skippedSpaces } : {}),
     }
     // A merge that changes nothing (no added, no updated, no tie won by the
-    // backup) writes nothing.
-    if (effectiveMode === 'merge' && plan.writes.size === 0) {
-      return { summary, written: [] as Array<string>, stamped: false }
+    // backup, no key material, no Family record) writes nothing.
+    if (
+      effectiveMode === 'merge' &&
+      plan.writes.size === 0 &&
+      keyPlan.writes.size === 0 &&
+      spaceEntries.length === 0
+    ) {
+      return {
+        summary,
+        written: [] as Array<string>,
+        stamped: false,
+        spaceWritten,
+        deleteIdentity: false,
+      }
     }
 
     // 6. Write once.
@@ -1029,6 +1554,12 @@ export async function restoreBackup(
       entries.push([key, await encryptValue(targetDek, records)])
     }
     const written = [...plan.writes.keys()]
+    for (const [key, value] of keyPlan.writes) {
+      entries.push([key, await encryptValue(targetDek, value)])
+      written.push(key)
+    }
+    entries.push(...keyPlan.quarantine)
+    entries.push(...spaceEntries)
     if (effectiveMode === 'replace') {
       for (const [key, raw] of local.unreadable) {
         entries.push([`quarantine:${key}:${now}`, raw])
@@ -1095,13 +1626,27 @@ export async function restoreBackup(
 
     // One transaction: everything commits or nothing does.
     await setMany(entries, store)
-    return { summary, written, stamped: revAdvanced }
+    return {
+      summary,
+      written,
+      stamped: revAdvanced,
+      spaceWritten,
+      deleteIdentity: keyPlan.deleteIdentity,
+    }
   })
 
   // 7. After commit.
+  // An orphaned device's unreadable identity was quarantined in the commit;
+  // without one in the backup the original goes, so a new pair can be made.
+  if (result.deleteIdentity) await del(IDENTITY_KEY, store)
   if (adopt) unlockLocalDb(backupDek)
+  if (result.written.includes(SPACE_KEYS_KEY)) markKeyringStale()
   // The restored records carry fresh revs: a user write the sync engine pushes.
   if (result.stamped) notifyLocalChange()
+  for (const [spaceId, bases] of result.spaceWritten) postChanged(bases, spaceId)
+  if (result.written.length === 0 && result.spaceWritten.size > 0) {
+    requestEntryConversion()
+  }
   if (result.written.length > 0) {
     postChanged(result.written)
     // Safety net after a replace (a no-op whenever the restore wrote
