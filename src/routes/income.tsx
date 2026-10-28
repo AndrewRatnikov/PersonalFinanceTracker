@@ -6,11 +6,7 @@ import { toast } from 'sonner'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import {
-  deleteIncome,
-  getAllIncome,
-  getAllIncomeCategories,
-} from '@/lib/localDb'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
@@ -32,15 +28,18 @@ function IncomePage() {
   const mainCurrency =
     useCurrencySettings().data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const incomeQuery = useQuery({
-    queryKey: ['income'],
-    queryFn: getAllIncome,
+    queryKey: spaceQueryKey(spaceId, 'income'),
+    queryFn: () => db.getAllIncome(),
   })
   const { data: allIncome, isLoading, isError } = incomeQuery
 
   const incomeCategoriesQuery = useQuery({
-    queryKey: ['incomeCategories'],
-    queryFn: getAllIncomeCategories,
+    queryKey: spaceQueryKey(spaceId, 'incomeCategories'),
+    queryFn: () => db.getAllIncomeCategories(),
   })
 
   const sorted = useMemo(
@@ -63,7 +62,7 @@ function IncomePage() {
   )
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteIncome(id),
+    mutationFn: (id: string) => db.deleteIncome(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['income'] })
       toast.success(t('toasts.incomeDeleted'))
