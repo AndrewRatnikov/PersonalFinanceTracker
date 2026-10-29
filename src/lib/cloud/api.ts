@@ -8,7 +8,9 @@
 
 import { z } from 'zod'
 
+import { CloudError } from './rpc'
 import { SERVER_ERROR_CODES } from './types'
+import type { RpcFn, RpcResponse } from './rpc'
 import type {
   CloudDevice,
   CloudErrorCode,
@@ -24,23 +26,11 @@ import type {
 import type { VaultHeaderV2 } from '@/lib/vault'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 
-export interface RpcError {
-  message: string
-  code?: string
-  details?: string | null
-  hint?: string | null
-}
-
-export interface RpcResponse {
-  data: unknown
-  error: RpcError | null
-  status?: number
-}
-
-export type RpcFn = (
-  fn: string,
-  args?: Record<string, unknown>,
-) => PromiseLike<RpcResponse>
+// CloudError and the rpc types live in ./rpc (shared with the Family space
+// client); they are re-exported here so existing imports from
+// '@/lib/cloud/api' keep working.
+export { CloudError } from './rpc'
+export type { RpcError, RpcResponse, RpcFn } from './rpc'
 
 export interface CloudApi {
   getSyncStatus: () => Promise<SyncStatus>
@@ -72,16 +62,6 @@ export interface CloudApi {
     limit?: number,
   ) => Promise<PullResult>
   deleteCloudData: () => Promise<DeleteCloudDataResult>
-}
-
-export class CloudError extends Error {
-  readonly code: CloudErrorCode
-
-  constructor(code: CloudErrorCode, message: string = code) {
-    super(message)
-    this.name = 'CloudError'
-    this.code = code
-  }
 }
 
 // ── Error mapping ─────────────────────────────────────────────────────────────
