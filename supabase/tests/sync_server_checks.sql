@@ -15,19 +15,25 @@ begin;
 
 -- ── As the owner: seeds, RLS, privileges, test users ────────────────────────
 
+-- The seed checks compare only the run 2 keys: the family migration
+-- (20261029000000_family_spaces.sql) adds shared_spaces, max_members,
+-- max_space_records and max_space_bytes, so they pass before and after it.
 do $$
 declare
   v_count int;
 begin
-  if (select features from public.plans where id = 'free')
+  if (select features - 'shared_spaces' - 'max_members' - 'max_space_records' - 'max_space_bytes'
+        from public.plans where id = 'free')
        is distinct from '{"sync": false, "max_devices": 0, "max_records": 0, "max_bytes": 0}'::jsonb then
     raise exception 'CHECK FAILED: %', 'seed plan free';
   end if;
-  if (select features from public.plans where id = 'beta')
+  if (select features - 'shared_spaces' - 'max_members' - 'max_space_records' - 'max_space_bytes'
+        from public.plans where id = 'beta')
        is distinct from '{"sync": true, "max_devices": 5, "max_records": 100000, "max_bytes": 104857600}'::jsonb then
     raise exception 'CHECK FAILED: %', 'seed plan beta';
   end if;
-  if (select features from public.plans where id = 'sync')
+  if (select features - 'shared_spaces' - 'max_members' - 'max_space_records' - 'max_space_bytes'
+        from public.plans where id = 'sync')
        is distinct from '{"sync": true, "max_devices": 10, "max_records": 200000, "max_bytes": 209715200}'::jsonb then
     raise exception 'CHECK FAILED: %', 'seed plan sync';
   end if;
