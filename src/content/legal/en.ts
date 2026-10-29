@@ -135,6 +135,19 @@ export const legalEn: LegalContent = {
         ],
       },
       {
+        id: 'family-space',
+        heading: 'If you use a Family space',
+        paragraphs: [
+          'A Family space lets a few people keep shared records. Someone joins only with an invite from the owner and after the owner approves them. For a Family space:',
+        ],
+        bullets: [
+          'the server knows which accounts share the space, the role of each (owner or member), their email addresses (shown to the other members of that space), and which member wrote each encrypted record and when;',
+          'amounts, categories, descriptions and the space name are encrypted with a space key that only the members hold; the server never receives that key;',
+          'a removed member keeps what is already on their devices but gets nothing new: the space key is replaced after they are removed;',
+          'deleting the space removes it, with all its encrypted records, from the server.',
+        ],
+      },
+      {
         id: 'password-strength',
         heading: 'Why a strong password matters',
         paragraphs: [
