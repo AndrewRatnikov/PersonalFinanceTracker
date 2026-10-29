@@ -212,10 +212,10 @@ describe('privacy text matches the beta (criterion 27)', () => {
   const syncSection = (doc: typeof legalEn.privacy) => doc.sections.find((s) => s.id === 'sync')
 
   it('LEGAL_LAST_UPDATED is bumped and used by both documents', () => {
-    expect(LEGAL_LAST_UPDATED).toBe('2026-10-24')
-    expect(legalEn.privacy.lastUpdated).toBe('2026-10-24')
-    expect(legalUk.privacy.lastUpdated).toBe('2026-10-24')
-    expect(legalEn.terms.lastUpdated).toBe('2026-10-24')
+    expect(LEGAL_LAST_UPDATED).toBe('2026-10-29')
+    expect(legalEn.privacy.lastUpdated).toBe('2026-10-29')
+    expect(legalUk.privacy.lastUpdated).toBe('2026-10-29')
+    expect(legalEn.terms.lastUpdated).toBe('2026-10-29')
   })
 
   it('no longer says sync is coming soon, in either language', () => {

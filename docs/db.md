@@ -189,6 +189,8 @@ drop table if exists public.profiles;
 
 The server side of encrypted sync: plans, the beta switch, entitlements, vaults, devices and encrypted sync records. The client never reads plaintext data from here and nothing syncs yet (run 3 adds the sync engine). The SQL lives in `supabase/migrations/20261023000000_sync_server.sql`; **that file is authoritative**, the copy at the end of this section is for reference. It is idempotent: safe to run again. Re-running it resets the `plans` rows to the seeds (an upsert, so after payments go live `sync.is_public` would go back to `false` and must be set again); `app_config` is seeded only once, so a re-run never switches the beta back on. It drops nothing and does not touch the legacy tables or `delete_own_account()`.
 
+**Re-running this migration requires re-running the §9 one** (`supabase/migrations/20261029000000_family_spaces.sql`) afterwards: it resets the plan features, `effective_plan()`, `has_feature()` and `get_sync_status()` to the run 2 versions, which drops the Family plan keys and the `space` key of the status until §9 runs again.
+
 ### Tables
 
 | Table | Purpose | Client access |
@@ -1294,3 +1296,125 @@ grant execute on function public.pull_records(uuid, text, bigint, int) to authen
 revoke all on function public.delete_cloud_data() from public, anon, authenticated;
 grant execute on function public.delete_cloud_data() to authenticated;
 ```
+
+## 9. Family spaces (2026-10-29)
+
+The server side of a shared Family space next to the Personal one: spaces, members, invites, wrapped space keys, encrypted space records and an event log. The SQL lives in `supabase/migrations/20261029000000_family_spaces.sql`; **that file is authoritative** (it is not copied here). It requires the §8 migration applied first, and it is idempotent: tables and indexes use `if not exists`, functions are replaced, policies and the trigger are dropped and created again, and plan features are merged with `||`. **Re-running the §8 migration resets the plan features and `get_sync_status()`; run this one again afterwards.** Nothing in the app calls these functions yet: the typed client `src/lib/cloud/spacesApi.ts` (`createSpacesApi(rpc)`) exists for the next run.
+
+The server never sees the space key, amounts, categories, descriptions or the space name. A member's space key reaches them only wrapped for their identity public key (`{ v: 1, epk, iv, ct }`, ECIES from `src/lib/spaces/spaceCrypto.ts`), and a record is an opaque `record_key` plus an AES-GCM ciphertext. An invite stores only `token_hash`, the SHA-256 of the invite token; the secret the token is derived from never leaves the link's URL fragment.
+
+### Plan features
+
+| Plan | New keys |
+| --- | --- |
+| `free` | `shared_spaces: false` |
+| `beta` | `shared_spaces: true`, `max_members: 6`, `max_space_records: 100000`, `max_space_bytes: 104857600` (100 MB) |
+| `sync` | `shared_spaces: false` |
+| `family` (new, `is_public = false`) | `sync: true`, `max_devices: 10`, `max_records: 200000`, `max_bytes: 209715200`, `shared_spaces: true`, `max_members: 6`, `max_space_records: 100000`, `max_space_bytes: 104857600` |
+
+The other keys of every plan are kept. A re-run merges the `family` features and never changes its `name` or `is_public`, so a family plan made public later stays public. `supabase/tests/sync_server_checks.sql` compares the run 2 seeds without the four new keys, so it passes before and after this migration.
+
+### Tables
+
+| Table | Purpose | Client access (`select` via RLS) |
+| --- | --- | --- |
+| `spaces` | `id` (client-generated uuid), `owner_id`, `key_version` (≥ 1), `last_seq`, `record_count`, `total_bytes`, `created_at`, `updated_at`. | active members of the space |
+| `space_members` | `(space_id, user_id)`, `role` (`owner` / `member`), `status` (`pending` / `active`; an owner is always active), `public_key` (the member's identity JWK, ≤ 2 KB), `requested_at`, `joined_at`, `invite_id`. Unique indexes: one pending-or-active row per user (`space_members_one_per_user_idx`, "one space per user") and one owner per space (`space_members_one_owner_idx`). | active members see every row of their space, pending ones and public keys included |
+| `space_invites` | `id`, `space_id`, `created_by`, `token_hash` (64 lowercase hex), `expires_at` (default 48 h, at most 7 days after `created_at`), `used_by`, `used_at`, `revoked_at`, `created_at`. | none (functions only) |
+| `space_keys` | `(space_id, user_id, key_version)`, `wrapped_key` (`{ v, epk, iv, ct }`, ≤ 2 KB), `created_at`. Old versions are kept after a rotation. | own rows only, while an active member |
+| `space_records` | `(space_id, record_key)`, `key_version`, `ciphertext`, `iv`, `enc_v`, `updated_at_ms`, `author_id`, `device_id`, `seq`, `size`, `server_updated_at`; index `(space_id, seq)`. Same field rules as `sync_records`. | none (functions only) |
+| `space_events` | `id` (bigserial), `space_id`, `kind` (`created`, `invite_created`, `invite_revoked`, `join_requested`, `approved`, `rejected`, `removed`, `left`, `key_rotated`, `ownership_transferred`), `actor_id`, `subject_id`, `created_at`. | active members of the space |
+
+RLS is enabled on all six tables. Everything is revoked from `public`, `anon` and `authenticated` first; `authenticated` gets `select` only on `spaces`, `space_members`, `space_keys` and `space_events`, filtered by the policies `spaces_select_member`, `space_members_select_member`, `space_events_select_member` and `space_keys_select_own` (all through `is_active_space_member(space_id)`). No client can insert, update or delete: every write goes through a function. A pending user sees no rows in any table.
+
+Every `space_id` cascades from `spaces`, and `spaces.owner_id`, `space_members.user_id`, `space_invites.created_by` / `used_by` and `space_keys.user_id` reference `auth.users(id) on delete cascade`. **`space_records.author_id`, `space_events.actor_id` and `space_events.subject_id` have no foreign key** (decision D5): a cascade would delete the Family records a member wrote, and the `left` event itself, when that member deletes their account. The opaque user id stays until the space is deleted.
+
+Deleting an account: an owner's `auth.users` delete cascades the whole space. For a member, the `before delete` trigger `space_member_left_on_user_delete` on `auth.users` writes a `left` event (actor = the user) before the cascade removes their member row and keys.
+
+### Functions
+
+Every function is `SECURITY DEFINER` with `set search_path = ''` and schema-qualified names, takes the caller from `auth.uid()`, raises `MINIMA:not_signed_in` first when there is no user, and is executable by `authenticated` only. "Paused-gated" functions raise `space_paused` when the owner's plan has no `shared_spaces`; the others keep working while paused.
+
+| Function | Checks after `not_signed_in` (in order) | Paused-gated | Returns |
+| --- | --- | --- | --- |
+| `is_active_space_member(p_space_id)` | none | no | boolean (the RLS helper) |
+| `get_my_space()` | none | no | the caller's space (shape below) or null |
+| `create_space(p_space_id, p_public_key, p_wrapped_key_for_self)` | `sync_not_included` (no `shared_spaces` on the caller's own plan) → `invalid_input` (null id, bad JWK, bad wrapped key) → `already_in_space` → `invalid_input` (id taken) | – | `{ space_id, key_version }` |
+| `create_invite(p_space_id, p_token_hash, p_expires_in_hours = 48)` | space_gone → not_space_member → not_space_owner → space_paused → `invalid_input` (hash not 64 hex; hours not 1..168) → `quota_exceeded` (5 open invites already) | yes | `{ invite_id, expires_at }` |
+| `revoke_invite(p_invite_id)` | `invite_invalid` (unknown) → not_space_member → not_space_owner | no | `{ invite_id, revoked_at }` |
+| `get_invite(p_invite_id, p_token)` | `invite_invalid` → space_paused | yes | `{ space_id, owner_email, members_count, expires_at }` |
+| `request_join(p_invite_id, p_token, p_public_key)` | `invite_invalid` (invite row locked) → space_paused → `invalid_input` (JWK) → `already_in_space` → `member_limit` (active + pending ≥ `max_members`) | yes | `{ space_id, status: 'pending' }` |
+| `approve_member(p_space_id, p_user_id, p_key_version, p_wrapped_key)` | space_gone → not_space_member → not_space_owner → space_paused → not_space_member (target not pending) → `invalid_input` → `wrong_key_version` → `member_limit` (active ≥ `max_members`) | yes | `{ user_id, status: 'active', key_version }` |
+| `reject_member(p_space_id, p_user_id)` | space_gone → not_space_member → not_space_owner → not_space_member (target not pending) | no | `{ user_id }` |
+| `remove_member(p_space_id, p_user_id)` | space_gone → not_space_member → not_space_owner → `cannot_remove_owner` (yourself) → not_space_member (target has no row) | no | `{ user_id }` |
+| `rotate_space_key(p_space_id, p_new_version, p_wraps)` | space_gone → not_space_member → not_space_owner → `invalid_input` (wraps not an array of `{ user_id, wrapped_key }`, a repeated user) → `wrong_key_version` (≠ current + 1) → `members_mismatch` (wrap users ≠ active members, owner included) | no | `{ space_id, key_version }` |
+| `leave_space()` | not_space_member (no row) → `owner_must_transfer_or_delete` | no | `{ space_id }` |
+| `transfer_ownership(p_space_id, p_user_id)` | space_gone → not_space_member → not_space_owner → `invalid_input` (yourself) → not_space_member (target not active) | no | `{ space_id, owner_id }` |
+| `delete_space(p_space_id)` | space_gone → not_space_member → not_space_owner | no | `{ space_id }` |
+| `push_space_records(p_space_id, p_device_id, p_key_version, p_records)` | space_gone → not_space_member → space_paused → `device_not_registered` / `device_removed` → `invalid_input` → `key_outdated:<n>` → `invalid_input` / `batch_too_large` / per-record `invalid_input` (as `push_records`) → `quota_exceeded` after the batch | yes | `{ results: [{ record_key, status: 'accepted', seq } \| { record_key, status: 'stale', current }], last_seq }` |
+| `pull_space_records(p_space_id, p_device_id, p_since, p_limit = 500)` | space_gone → not_space_member → space_paused → device checks → `invalid_input` (since < 0, limit not 1..1000) | yes | `{ records, has_more, last_seq, key_version }` |
+
+A record row is `{ record_key, ciphertext, iv, enc_v, updated_at_ms, key_version, author_id, device_id, seq }`.
+
+- **Order of checks.** Always `not_signed_in` → `space_gone` (no such space; writers lock the `spaces` row `for update`, so `seq` order is commit order per space) → `not_space_member` (no **active** row of the caller) → `not_space_owner` → `space_paused` (only where gated). Problems with the *target* user of an owner action raise `not_space_member` too. "Open invite" means unused, unrevoked and not expired.
+- **Invites.** Only the hash is stored. `get_invite` and `request_join` raise the same `invite_invalid` for an unknown, expired, used or revoked invite and for a wrong, null or empty token, comparing `encode(sha256(convert_to(p_token, 'UTF8')), 'hex')` with `token_hash`. An invite is single use: `request_join` sets `used_by` / `used_at`, and a rejected request does not free it. `revoke_invite` is idempotent and writes `invite_revoked` only the first time.
+- **Join and approval.** `request_join` adds a pending member with their public key. The owner's device wraps the current space key for that key and calls `approve_member` with the current `key_version`; only then does the member get a `space_keys` row (written with `on conflict do update`, so a retried approval just replaces the wrap).
+- **Removal and rotation.** `remove_member` deletes the member row and all their `space_keys` at once, so they lose server access immediately. The owner's device then generates a new space key and calls `rotate_space_key` with version `key_version + 1` and one wrap for every remaining active member (owner included), in one transaction. Old key rows are kept so older records stay readable.
+- **Records.** `push_space_records` takes the current `p_key_version`; any other value raises **`MINIMA:key_outdated:<current key_version>`** (the client reads it with `currentKeyVersionOf(err)`). A record is accepted when it is new, when its `updated_at_ms` is strictly newer, or when the time is equal and it was re-encrypted with a newer `key_version`; otherwise it is `stale` and the stored row comes back. `author_id` is always the caller. `enc_v` must be 1, as in §8. A batch over the owner's `max_space_records` / `max_space_bytes` raises `quota_exceeded` and rolls back.
+- **Ownership.** `transfer_ownership` demotes the caller, then promotes the target (two statements because of the one-owner index) and updates `spaces.owner_id`. An owner can leave only after a transfer, or delete the space.
+- **`get_my_space()`** returns `{ space_id, role, status, key_version, owner_id, members, my_keys, open_invites, paused, limits, last_seq, record_count, total_bytes }`. For a pending caller `key_version`, `owner_id`, `limits` and the counters are null and `members` / `my_keys` / `open_invites` are `[]` (`paused` is still computed). `members` (owner first, then by `requested_at`) carry `email` from `auth.users`, shown only to active members of the same space; `open_invites` is filled for the owner only.
+- **`get_sync_status()`** keeps its run 2 keys and adds `space`: `{ space_id, role, status, paused }` for the caller's pending or active membership, else null. The client's `SyncStatus` ignores it for now.
+
+Internal functions (`SECURITY DEFINER`, revoked from everyone, never granted): `effective_plan_for(p_user)`, `has_feature_for(p_user, p_feature)`, `is_valid_public_jwk(p)` (EC P-256 with string `x` / `y`, no private `d`, ≤ 2 KB) and `is_valid_wrapped_key(p)` (`v = 1`, object `epk`, string `iv` / `ct`, ≤ 2 KB), both declared `immutable`, and the trigger function `space_member_left_on_user_delete()`.
+
+### Permission model
+
+- **Space access follows the owner's plan** (decision D2): `has_feature_for(spaces.owner_id, 'shared_spaces')`, and `max_members`, `max_space_records` and `max_space_bytes` are read from the owner's plan, never from code. A member's own plan does not matter, except that pushing and pulling need a registered §8 device (see Known gaps). Creating a space needs `shared_spaces` on the creator's own plan (`sync_not_included` otherwise).
+- **Paused.** When the owner loses `shared_spaces`, the space is paused: push, pull, `create_invite`, `get_invite`, `request_join` and `approve_member` raise `space_paused`. `get_my_space` (with `paused: true`), `revoke_invite`, `reject_member`, `remove_member`, `rotate_space_key`, `leave_space`, `transfer_ownership` and `delete_space` keep working, so members can always manage, leave or delete. Nothing is deleted while paused; restoring the plan resumes the space.
+- **One place for permissions.** `effective_plan()` / `has_feature()` keep their run 2 behaviour but now call `effective_plan_for(auth.uid())` / `has_feature_for(auth.uid(), …)`, so `has_feature_for` is the same rule for any user.
+
+### Error codes
+
+New codes (`SPACE_SERVER_ERROR_CODES` in `src/lib/cloud/types.ts`; `SERVER_ERROR_CODES` is unchanged):
+
+| Code | Meaning |
+| --- | --- |
+| `not_space_member` | the caller (or the target user of an owner action) has no row of the needed kind in that space |
+| `not_space_owner` | the caller is an active member but not the owner |
+| `already_in_space` | the caller already has a pending or active membership (one space per user) |
+| `invite_invalid` | unknown, expired, used or revoked invite, or a wrong token (deliberately one code) |
+| `member_limit` | the owner's `max_members` is reached |
+| `wrong_key_version` | approve: not the current version; rotate: not current + 1 |
+| `key_outdated` | push with a stale key version; the message is `MINIMA:key_outdated:<current>` (the one exception to §8's "the whole message" rule) |
+| `members_mismatch` | the rotation wraps don't match the active members |
+| `space_paused` | the owner's plan has no `shared_spaces` |
+| `space_gone` | no such space (deleted, or never existed) |
+| `cannot_remove_owner` | `remove_member` on yourself as owner |
+| `owner_must_transfer_or_delete` | the owner called `leave_space` |
+
+Reused §8 codes: `not_signed_in`; `invalid_input` (bad arguments, a taken space id, transferring to yourself); `quota_exceeded` (a 6th open invite, or the owner's space record / byte limits); `sync_not_included` (`create_space` without `shared_spaces`); `batch_too_large`, `device_not_registered`, `device_removed` (push / pull). `spacesApi.ts` maps all of them to `CloudError` codes, any other `MINIMA:` code to `unknown`, plus `network`.
+
+### Family plan switch
+
+The `family` plan exists but is not public. To give an owner a Family plan by hand (it gives them sync and `shared_spaces`; members follow the owner's plan):
+
+```sql
+insert into public.entitlements (user_id, plan_id, status, source)
+values ('<owner user id>', 'family', 'active', 'manual')
+on conflict (user_id) do update
+  set plan_id = 'family', status = 'active', source = 'manual', current_period_end = null, updated_at = now();
+```
+
+The plan features that matter for a space are `shared_spaces`, `max_members`, `max_space_records` and `max_space_bytes` (and `sync` / `max_devices` for the owner's own devices). During the beta every user gets `beta`, which already has `shared_spaces`. When payments go live, the payment webhook writes `family` entitlements like `sync` ones, and the plan is shown with `update public.plans set is_public = true where id = 'family';` (a re-run of this migration keeps it public).
+
+### Known gaps
+
+- **G1: members without sync of their own.** `push_space_records` / `pull_space_records` need a §8 device, and `register_device` (unchanged) needs the caller's own `sync` feature. In the beta everyone has it; under a paid Family plan a member without personal sync could not register a device. The next run must solve this (e.g. allow `register_device` for active members of a non-paused space).
+- The client does not read `get_sync_status().space` or call `spacesApi.ts` yet, and must gate Family data movement on `get_my_space().paused` when it does (the server already enforces it).
+- Only `enc_v = 1` is accepted; a new record format needs a new migration.
+
+### Manual steps (in this order)
+
+1. In the Supabase SQL editor, run `supabase/migrations/20261029000000_family_spaces.sql`, then `supabase/tests/sync_server_checks.sql` and `supabase/tests/family_spaces_checks.sql`. Each check script runs in one transaction that is rolled back, raises `CHECK FAILED: <name>` on any failure and must finish with its notice (`sync_server_checks: all checks passed`, `family_spaces_checks: all checks passed`). The family script uses the throwaway users `00000000-0000-4000-8000-0000000000f1` … `…f4` and gives f1–f3 a `family` entitlement inside its transaction, so it passes whether or not the beta switch is on.
+2. Confirm in the Supabase dashboard that the trigger `space_member_left_on_user_delete` exists on `auth.users`. The migration must be run by a role allowed to create triggers on `auth.users` (the SQL editor's `postgres` is).
+3. No env changes. If the §8 migration is ever re-run, run this one again afterwards.

@@ -215,6 +215,7 @@ export async function unwrapSpaceKey(
   return openWith(key, iv, ct)
 }
 
+// Reserved: not used. Invites carry no key (see invite.ts); kept for a possible future flow.
 export async function wrapSpaceKeyWithSecret(
   sk: Uint8Array,
   inviteSecret: Uint8Array,
@@ -225,6 +226,7 @@ export async function wrapSpaceKeyWithSecret(
   return { v: 1, iv, ct }
 }
 
+// Reserved: not used. Invites carry no key (see invite.ts); kept for a possible future flow.
 export async function unwrapSpaceKeyWithSecret(
   wrapped: SecretWrappedSpaceKey,
   inviteSecret: Uint8Array,

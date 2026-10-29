@@ -27,6 +27,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-24](2026-10-24-sync-engine-pull-push-server-wins-ties-linking.md) | Sync engine: pull then push, server-ordered cursors, server wins exact ties, linking flows | Accepted |
 | [2026-10-24](2026-10-24-sync-permission-gate-covers-data-movement-only.md) | The sync permission gate covers calls that move data or keys; deleting cloud data and managing devices stay open | Accepted |
 | [2026-10-28](2026-10-28-spaces-personal-plus-family-space-key-identity.md) | Spaces: personal plus one Family space, per-space key, member identity keys | Accepted |
+| [2026-10-29](2026-10-29-family-space-server-invite-approval-key-rotation.md) | Family space server: invite token without key, owner approval with key wrap, key rotation on removal, owner-plan permissions | Accepted |
 
 ## Where else decisions live
 
