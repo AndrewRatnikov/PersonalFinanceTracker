@@ -1,6 +1,6 @@
 # A backup restore is one transaction, with explicit replace and merge rules
 
-- **Status:** Accepted
+- **Status:** Superseded by [2026-10-28-spaces-personal-plus-family-space-key-identity](2026-10-28-spaces-personal-plus-family-space-key-identity.md)
 - **Date:** 2026-10-08, extended 2026-10-10
 - **Source:** orchestrator runs `run_20261008_080410` (Phase 4, Backup, CONTRACT_GAPs 3–10) and `run_20261010_092310` (orphaned-device restore)
 - **Code:** `src/lib/backup.ts` (`restoreBackup`, `openHeaderWithSecret` in `vault.ts`)
