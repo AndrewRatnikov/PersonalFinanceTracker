@@ -71,7 +71,29 @@ export const SERVER_ERROR_CODES = [
 ] as const
 
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number]
-export type CloudErrorCode = ServerErrorCode | 'network' | 'unknown'
+
+// The codes the Family space functions raise as `MINIMA:<code>`
+// (supabase/migrations/20261029000000_family_spaces.sql, docs/db.md §9). They
+// also reuse SERVER_ERROR_CODES (invalid_input, quota_exceeded, ...).
+// key_outdated carries the current key version: `MINIMA:key_outdated:<n>`.
+export const SPACE_SERVER_ERROR_CODES = [
+  'not_space_member',
+  'not_space_owner',
+  'already_in_space',
+  'invite_invalid',
+  'member_limit',
+  'wrong_key_version',
+  'key_outdated',
+  'members_mismatch',
+  'space_paused',
+  'space_gone',
+  'cannot_remove_owner',
+  'owner_must_transfer_or_delete',
+] as const
+
+export type SpaceServerErrorCode = (typeof SPACE_SERVER_ERROR_CODES)[number]
+export type CloudErrorCode =
+  ServerErrorCode | SpaceServerErrorCode | 'network' | 'unknown'
 
 export type FeatureName = 'sync'
 
