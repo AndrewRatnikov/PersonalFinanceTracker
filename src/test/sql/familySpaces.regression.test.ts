@@ -75,7 +75,7 @@ async function observe(ctx: SqlTestDb, spec: Spec, freeForAll: boolean): Promise
   const status = expectOk<Record<string, unknown>>(await rpc('get_sync_status'))
   const limits = { ...(status.limits as Record<string, unknown>) }
   for (const key of FAMILY_ONLY_KEYS) delete limits[key]
-  const rest = { ...status, limits }
+  const rest: Record<string, unknown> = { ...status, limits }
   delete rest.space
   // Timestamps differ between the two databases; only their presence counts.
   rest.current_period_end = rest.current_period_end !== null
