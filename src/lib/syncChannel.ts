@@ -1,3 +1,5 @@
+import { markKeyringStale } from './spaces/keyring'
+import { PERSONAL_SPACE_ID } from './spaces/types'
 import type { QueryClient } from '@tanstack/react-query'
 
 // Multi-tab consistency: after each committed write, localDb announces the
@@ -12,8 +14,11 @@ export const SYNC_CHANNEL_NAME = 'minima'
 
 // `keys?: never` on lock / wiped lets callers read `message.keys` on any
 // message (undefined unless it is `changed`).
+// A `changed` message lists base keys (never `space:<id>:` prefixed ones);
+// `spaceId` is present only for a Family space, so personal messages are
+// exactly what they were before spaces existed.
 export type SyncMessage =
-  | { type: 'changed'; keys: Array<string> }
+  | { type: 'changed'; keys: Array<string>; spaceId?: string }
   | { type: 'lock'; keys?: never }
   | { type: 'wiped'; keys?: never }
 
@@ -68,9 +73,13 @@ function post(message: SyncMessage): void {
   }
 }
 
-export function postChanged(keys: Array<string>): void {
+export function postChanged(keys: Array<string>, spaceId?: string): void {
   if (keys.length === 0) return
-  post({ type: 'changed', keys })
+  if (spaceId !== undefined && spaceId !== PERSONAL_SPACE_ID) {
+    post({ type: 'changed', keys, spaceId })
+  } else {
+    post({ type: 'changed', keys })
+  }
 }
 
 export function postLock(): void {
@@ -150,6 +159,11 @@ export function listenForChanges(
   const listener = (event: MessageEvent) => {
     const data: unknown = event.data
     if (!isChangedMessage(data)) return
+    // Another tab changed the personal space keys: reload the keyring on the
+    // next Family access.
+    if (data.spaceId === undefined && data.keys.includes('spaceKeys')) {
+      markKeyringStale()
+    }
     for (const queryKey of queryKeysForStorageKeys(data.keys)) {
       void queryClient.invalidateQueries({ queryKey })
     }

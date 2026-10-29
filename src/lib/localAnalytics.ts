@@ -6,8 +6,11 @@ import { normalizeRange } from './analyticsUtils'
 import { DEFAULT_MAIN_CURRENCY } from './domain'
 import { incomeSourceLabel } from './incomeCategories'
 import { mainAmountOf } from './money'
+import { dbFor } from './spaces/spaceDb'
+import { PERSONAL_SPACE_ID } from './spaces/types'
 import { isLive } from './syncRecords'
 import type { RangeInput } from './analyticsUtils'
+import type { SpaceOption } from './spaces/spaceDb'
 import type {
   AnalyticsRangeSummary,
   AnalyticsTimelinePoint,
@@ -57,13 +60,17 @@ export function scaleMonthlyLimitToRange(
 export async function computeRangeAnalytics(
   input: RangeInput = {},
   mainCurrency: Currency = DEFAULT_MAIN_CURRENCY,
+  opts?: SpaceOption,
 ): Promise<RangeAnalytics> {
   const range = normalizeRange(input)
 
+  // Personal keeps today's calls; `{ spaceId }` reads that space only.
+  const spaceId = opts?.spaceId ?? PERSONAL_SPACE_ID
+  const db = spaceId === PERSONAL_SPACE_ID ? null : dbFor(spaceId)
   const [allExpenses, allIncome, allBudgets] = await Promise.all([
-    getExpensesForRange(range.from, range.to),
-    getAllIncome(),
-    getAllBudgets(),
+    db ? db.getExpensesForRange(range.from, range.to) : getExpensesForRange(range.from, range.to),
+    db ? db.getAllIncome() : getAllIncome(),
+    db ? db.getAllBudgets() : getAllBudgets(),
   ])
   const expenses = allExpenses.filter(isLive)
   const income = allIncome.filter(isLive)

@@ -19,6 +19,8 @@ import { isDecryptError } from '@/lib/dataErrors'
 import { reportDataProblem } from '@/lib/dataProblem'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY, isCurrency } from '@/lib/domain'
 import { pendingLabel } from '@/lib/money'
+import { spaceQueryKey, useActiveSpace } from '@/lib/spaces/react'
+import { spaceArgs, withSpaceOption } from '@/lib/spaces/spaceDb'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { Button } from '@/components/ui/button'
 import {
@@ -53,10 +55,11 @@ type ChangeState =
 export function GeneralTab() {
   const queryClient = useQueryClient()
   const { t, plural, lang, setLang } = useT()
+  const spaceId = useActiveSpace()
   const settingsQuery = useCurrencySettings()
   const statusQuery = useQuery({
-    queryKey: CONVERSION_STATUS_QUERY_KEY,
-    queryFn: getConversionStatus,
+    queryKey: spaceQueryKey(spaceId, 'conversion-status'),
+    queryFn: () => getConversionStatus(...spaceArgs(spaceId)),
   })
 
   const mainCurrency = settingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
@@ -91,11 +94,17 @@ export function GeneralTab() {
     if (!next || running) return
     setChange({ phase: 'running', progress: null })
     try {
-      const result = await changeMainCurrency(next, {
-        onProgress: (progress) => {
-          setChange({ phase: 'running', progress })
-        },
-      })
+      const result = await changeMainCurrency(
+        next,
+        withSpaceOption(
+          {
+            onProgress: (progress: ConvertProgress) => {
+              setChange({ phase: 'running', progress })
+            },
+          },
+          spaceId,
+        ),
+      )
       setChange({ phase: 'done', result })
       invalidate(QUERIES_AFTER_CHANGE)
     } catch (err) {
@@ -117,7 +126,7 @@ export function GeneralTab() {
   async function toggleRates(next: boolean) {
     setSavingSwitch(true)
     try {
-      await updateCurrencySettings({ fetchExchangeRates: next })
+      await updateCurrencySettings({ fetchExchangeRates: next }, ...spaceArgs(spaceId))
       invalidate([['settings'], [...CONVERSION_STATUS_QUERY_KEY]])
       if (next) void requestConversion()
     } catch (err) {

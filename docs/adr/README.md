@@ -13,7 +13,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-05](2026-10-05-no-budget-dashboard-layout.md) | Without a budget, the month figures live in the dashboard hero, and `BudgetSummaryCard` only appears once a budget is set | Accepted |
 | [2026-10-07](2026-10-07-decrypt-errors-from-queries-and-mutations.md) | A decrypt error from any query *or* mutation opens the Data problem screen and is never retried | Accepted |
 | [2026-10-07](2026-10-07-recovery-key-confirmation.md) | The vault is usable before the recovery key is saved; an unconfirmed key is tracked and confirmed with a full random group | Accepted |
-| [2026-10-08](2026-10-08-backup-restore-rules.md) | A backup restore is one transaction, with explicit replace and merge rules | Accepted |
+| [2026-10-08](2026-10-08-backup-restore-rules.md) | A backup restore is one transaction, with explicit replace and merge rules | Superseded by [2026-10-28](2026-10-28-spaces-personal-plus-family-space-key-identity.md) |
 | [2026-10-08](2026-10-08-offline-navigations-fall-back-to-spa-shell.md) | Offline navigations fall back to a precached SPA shell; nothing in the service worker expires | Accepted |
 | [2026-10-08](2026-10-08-remove-data-clears-store-then-reloads.md) | "Remove data from this device" clears the store first, then deletes the database and reloads | Accepted |
 | [2026-10-10](2026-10-10-auto-lock-is-per-tab.md) | Auto-lock locks only its own tab; a manual lock locks every tab | Accepted |
@@ -26,6 +26,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-23](2026-10-23-encrypted-sync-server-opaque-keys-plan-permissions.md) | Encrypted sync server: opaque record keys, server-ordered pulls, plan-based permissions with a beta switch | Accepted |
 | [2026-10-24](2026-10-24-sync-engine-pull-push-server-wins-ties-linking.md) | Sync engine: pull then push, server-ordered cursors, server wins exact ties, linking flows | Accepted |
 | [2026-10-24](2026-10-24-sync-permission-gate-covers-data-movement-only.md) | The sync permission gate covers calls that move data or keys; deleting cloud data and managing devices stay open | Accepted |
+| [2026-10-28](2026-10-28-spaces-personal-plus-family-space-key-identity.md) | Spaces: personal plus one Family space, per-space key, member identity keys | Accepted |
 
 ## Where else decisions live
 

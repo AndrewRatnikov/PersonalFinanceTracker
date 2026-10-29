@@ -17,6 +17,12 @@ export type SyncRecordType =
   | 'budget'
   | 'recurring'
   | 'settings'
+  // Personal only: the member identity key pair and the Family space keys.
+  | 'identity'
+  | 'spaceKey'
+  // Family only: the space details and the member profiles.
+  | 'spaceInfo'
+  | 'memberProfile'
 
 export interface SyncRecord {
   type: SyncRecordType

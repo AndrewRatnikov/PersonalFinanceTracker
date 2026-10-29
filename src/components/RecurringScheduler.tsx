@@ -6,6 +6,9 @@ import { isDecryptError } from '@/lib/dataErrors'
 import { reportDataProblem } from '@/lib/dataProblem'
 import { processDueRecurring } from '@/lib/localDb'
 import { recurringCreatedMessage, toLocalDateString } from '@/lib/recurrence'
+import { listHeldSpaceIds } from '@/lib/spaces/keyring'
+import { dbFor } from '@/lib/spaces/spaceDb'
+import { isSpaceLockedError } from '@/lib/spaces/types'
 
 const DEFAULT_CHECK_INTERVAL_MS = 60_000
 
@@ -33,19 +36,46 @@ export function RecurringScheduler({
     if (!unlocked) return undefined
     let active = true
 
+    const report = (err: unknown) => {
+      if (isDecryptError(err)) reportDataProblem(err)
+      // A Family space locked or forgotten during the run: nothing to do.
+      else if (isSpaceLockedError(err)) return
+      else console.error('Could not create recurring transactions:', err)
+    }
+
+    // Personal (today's call), then every Family space this device holds a
+    // key for, whichever space is active; one toast for all of them.
     const run = async () => {
+      let created = 0
+      let itemsTouched = 0
       try {
-        const { created, itemsTouched } = await processDueRecurring()
-        if (!active) return
-        if (created > 0) toast.success(recurringCreatedMessage(created))
-        if (itemsTouched > 0) {
-          for (const queryKey of RECURRING_QUERY_KEYS) {
-            void queryClient.invalidateQueries({ queryKey: [...queryKey] })
-          }
-        }
+        const outcome = await processDueRecurring()
+        created += outcome.created
+        itemsTouched += outcome.itemsTouched
       } catch (err) {
-        if (isDecryptError(err)) reportDataProblem(err)
-        else console.error('Could not create recurring transactions:', err)
+        report(err)
+      }
+      let spaceIds: Array<string> = []
+      try {
+        spaceIds = await listHeldSpaceIds()
+      } catch (err) {
+        report(err)
+      }
+      for (const spaceId of spaceIds) {
+        try {
+          const outcome = await dbFor(spaceId).processDueRecurring()
+          created += outcome.created
+          itemsTouched += outcome.itemsTouched
+        } catch (err) {
+          report(err)
+        }
+      }
+      if (!active) return
+      if (created > 0) toast.success(recurringCreatedMessage(created))
+      if (itemsTouched > 0) {
+        for (const queryKey of RECURRING_QUERY_KEYS) {
+          void queryClient.invalidateQueries({ queryKey: [...queryKey] })
+        }
       }
     }
 

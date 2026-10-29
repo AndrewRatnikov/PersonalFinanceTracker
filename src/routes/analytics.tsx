@@ -18,8 +18,9 @@ import ConversionPendingNote from '@/components/ConversionPendingNote'
 import DashboardStats from '@/components/index/DashboardStats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import { getExpensesForRange } from '@/lib/localDb'
 import { formatMoney, mainAmountOf } from '@/lib/money'
+import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { spaceArgs } from '@/lib/spaces/spaceDb'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 export type AnalyticsSearch = {
@@ -85,11 +86,18 @@ function AnalyticsPage() {
   const mainCurrency = settingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
   const fetchExchangeRates = settingsQuery.data?.fetchExchangeRates ?? true
 
+  const spaceId = useActiveSpace()
+  const db = useSpaceDb()
+
   const analyticsQuery = useQuery({
     // The language is in the key: the timeline labels are formatted in it.
-    queryKey: ['analytics', search.from, search.to, mainCurrency, lang],
+    queryKey: spaceQueryKey(spaceId, 'analytics', search.from, search.to, mainCurrency, lang),
     queryFn: () =>
-      computeRangeAnalytics({ from: search.from, to: search.to }, mainCurrency),
+      computeRangeAnalytics(
+        { from: search.from, to: search.to },
+        mainCurrency,
+        ...spaceArgs(spaceId),
+      ),
     enabled: settingsReady,
   })
 
@@ -106,8 +114,8 @@ function AnalyticsPage() {
   )
 
   const monthlyExpensesQuery = useQuery({
-    queryKey: ['expenses', from, to],
-    queryFn: () => getExpensesForRange(from, to),
+    queryKey: spaceQueryKey(spaceId, 'expenses', from, to),
+    queryFn: () => db.getExpensesForRange(from, to),
   })
   const monthlyExpenses = useMemo(
     () => monthlyExpensesQuery.data ?? [],

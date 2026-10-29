@@ -258,10 +258,22 @@ describe('key handling (decisions D1 and D2)', () => {
   })
 
   it('no source file exports a raw key: exportKey is never used', () => {
+    // Explicit allowlist: spaceCrypto.ts must export the extractable identity private JWK
+    // and the ECIES ephemeral public key (both JWK). Everything else stays forbidden.
+    const ALLOWED = ['lib/spaces/spaceCrypto.ts']
     const offenders = appSources()
+      .filter((f) => !ALLOWED.includes(f.path))
       .filter((f) => /\bexportKey\b/.test(code(f.text)))
       .map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  it('spaceCrypto.ts only ever exports keys as jwk, never raw', () => {
+    const text = source('lib/spaces/spaceCrypto.ts')
+    const calls = text.match(/\bexportKey\s*\(\s*[^,)\s]*/g) ?? []
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) expect(call).toMatch(/exportKey\s*\(\s*['"]jwk['"]/)
+    expect(text).not.toMatch(/exportKey\s*\(\s*['"]raw['"]/)
   })
 
   it('vault.ts exposes getSyncKeys and imports HKDF material as non-extractable', () => {

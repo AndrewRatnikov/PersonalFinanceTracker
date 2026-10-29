@@ -15,8 +15,8 @@ import { errorMessage, validationMessage } from '@/i18n/errors'
 import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
-import { addIncome, addRepeatingIncome } from '@/lib/localDb'
 import { createIncomeSchema } from '@/lib/schemas'
+import { useSpaceDb } from '@/lib/spaces/react'
 
 import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
 
@@ -62,6 +62,7 @@ export function AddIncomeForm({
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
+  const db = useSpaceDb()
   const { t } = useT()
 
   // The first category is the default, even when the list arrives later or
@@ -101,7 +102,8 @@ export function AddIncomeForm({
     }: {
       data: CreateIncomeInput
       repeat: QuickRepeat
-    }) => (unit === 'none' ? addIncome(data) : addRepeatingIncome(data, unit)),
+    }) =>
+      unit === 'none' ? db.addIncome(data) : db.addRepeatingIncome(data, unit),
     onSuccess: (_saved, { repeat: unit }) => {
       setAmount('')
       setDescription('')

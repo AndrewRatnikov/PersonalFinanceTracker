@@ -20,6 +20,8 @@ import { isDecryptError } from '@/lib/dataErrors'
 import { reportDataProblem } from '@/lib/dataProblem'
 import { exportAllLocalData } from '@/lib/localExport'
 import { importLocalDataFile } from '@/lib/localImport'
+import { useActiveSpace } from '@/lib/spaces/react'
+import { spaceArgs, withSpaceOption } from '@/lib/spaces/spaceDb'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -54,6 +56,7 @@ const ROW_ERROR_KEYS: Record<ImportRowError['code'], MessageKey> = {
 
 export function DataToolsTab() {
   const queryClient = useQueryClient()
+  const spaceId = useActiveSpace()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { t, plural } = useT()
 
@@ -111,7 +114,8 @@ export function DataToolsTab() {
   const handleExport = async () => {
     setExportPending(true)
     try {
-      await exportAllLocalData()
+      // CSV is per space: the active one (always personal in this run).
+      await exportAllLocalData(...spaceArgs(spaceId))
     } catch (err) {
       console.error('Export failed:', err)
       toast.error(t('toasts.exportFailed', { error: errorMessage(err) }))
@@ -126,8 +130,8 @@ export function DataToolsTab() {
   ): Promise<FileImportResult> => {
     try {
       const { type, result } = options
-        ? await importLocalDataFile(file, options)
-        : await importLocalDataFile(file)
+        ? await importLocalDataFile(file, withSpaceOption(options, spaceId))
+        : await importLocalDataFile(file, ...spaceArgs(spaceId))
       return { filename: file.name, file, type, result }
     } catch (err) {
       return {

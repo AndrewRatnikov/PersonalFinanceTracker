@@ -1,15 +1,10 @@
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
-import type { Category, Currency } from '../../lib/domain'
+import type { Category, Currency, UpdateCategoryInput } from '../../lib/domain'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { CURRENCIES, isCurrency } from '@/lib/domain'
-import {
-  deleteCategory,
-  deleteIncomeCategory,
-  updateCategory,
-  updateIncomeCategory,
-} from '@/lib/localDb'
+import { useSpaceDb } from '@/lib/spaces/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -47,7 +42,10 @@ export function CategoryRow({
   const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
   const { t } = useT()
 
-  const update = kind === 'income' ? updateIncomeCategory : updateCategory
+  const db = useSpaceDb()
+  // The handle's members are read at call time only.
+  const update = (input: UpdateCategoryInput) =>
+    kind === 'income' ? db.updateIncomeCategory(input) : db.updateCategory(input)
 
   // Renaming never sends defaultCurrency, so the stored value is kept.
   const save = async () => {
@@ -91,8 +89,8 @@ export function CategoryRow({
   const remove = async () => {
     setIsPending(true)
     try {
-      const del = kind === 'income' ? deleteIncomeCategory : deleteCategory
-      await del(category.id)
+      if (kind === 'income') await db.deleteIncomeCategory(category.id)
+      else await db.deleteCategory(category.id)
       onMutate()
     } catch (e: unknown) {
       onError(errorMessage(e))

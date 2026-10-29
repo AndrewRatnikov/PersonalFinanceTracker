@@ -6,7 +6,7 @@ import type { Category, Expense } from '@/lib/domain'
 import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
 import type { RepeatCandidate } from '@/lib/repeatLast'
 import { useT } from '@/i18n'
-import { addExpense, deleteExpense } from '@/lib/localDb'
+import { useSpaceDb } from '@/lib/spaces/react'
 import {
   repeatLastCandidates,
   repeatLastLabel,
@@ -44,6 +44,7 @@ export function RepeatLastChips({
   onCustomize,
 }: RepeatLastChipsProps) {
   const queryClient = useQueryClient()
+  const db = useSpaceDb()
   const { t } = useT()
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Set when a long press fired, so the click that follows doesn't add.
@@ -71,7 +72,7 @@ export function RepeatLastChips({
 
   const undo = async (saved: Expense) => {
     try {
-      await deleteExpense(saved.id, saved.createdAt)
+      await db.deleteExpense(saved.id, saved.createdAt)
       invalidate()
       toast.success(t('toasts.removed'))
     } catch {
@@ -82,7 +83,7 @@ export function RepeatLastChips({
   const add = async (candidate: RepeatCandidate, category: Category) => {
     try {
       // No createdAt: the store dates it now (today).
-      const saved = await addExpense({
+      const saved = await db.addExpense({
         amount: candidate.amount,
         currency: candidate.currency,
         categoryId: candidate.categoryId,
