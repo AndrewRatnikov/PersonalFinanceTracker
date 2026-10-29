@@ -24,7 +24,7 @@ export interface LegalContent {
   privacy: LegalDoc
 }
 
-export const LEGAL_LAST_UPDATED = '2026-10-24'
+export const LEGAL_LAST_UPDATED = '2026-10-29'
 
 export const TERMS_PATH = '/terms'
 export const PRIVACY_PATH = '/privacy'
