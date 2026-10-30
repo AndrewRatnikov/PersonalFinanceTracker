@@ -1,7 +1,8 @@
 // No CONTRACT_GAPs: the Sync tab rules are specified in plan section 10
 // (Settings route) and the Interface Contract (route: settings). The flag is a
 // mutable getter so every combination of ENABLE_SYNC and accounts-visible runs
-// here; SyncTab and the other tab bodies are light fakes.
+// here; SyncTab and the other tab bodies are light fakes. Family run: the
+// featureFlags mock gains ENABLE_SPACES: false, so these counts are unchanged.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
@@ -24,6 +25,7 @@ vi.mock('@/lib/accountSession', () => ({
 }))
 vi.mock('@/lib/featureFlags', () => ({
   ENABLE_ACCOUNTS: true,
+  ENABLE_SPACES: false,
   get ENABLE_SYNC() {
     return flags.sync
   },
@@ -126,6 +128,11 @@ describe('Sync tab with ENABLE_SYNC and visible accounts', () => {
     renderSettings()
     expect(screen.getByTestId('fake-account-tab')).toBeTruthy()
     expect(screen.queryByTestId('fake-sync-tab')).toBeNull()
+  })
+
+  it('has no Family trigger while ENABLE_SPACES is off', () => {
+    renderSettings()
+    expect(screen.queryByTestId('settings-tab-family')).toBeNull()
   })
 })
 
