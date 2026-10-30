@@ -47,6 +47,7 @@ let beforeRows = 0
 let pendingStatus = ''
 let rowsWhilePending: Array<number> = []
 let pushesWhilePending = 0
+let pendingExpenseId = ''
 
 beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -64,6 +65,9 @@ beforeAll(async () => {
   for (let i = 1; i <= 5; i++) await familyExpense(o1, spaceId, i * 100, `Marker row ${i}`)
   await settle([o1, b1, c1], 3)
   beforeRows = (await serverRows(ctx, spaceId)).length
+
+  // A Family edit made on O1 right before the removal, not yet cycled.
+  pendingExpenseId = (await familyExpense(o1, spaceId, 777, 'Marker written before removal')).id
 
   // The first rotation attempt fails offline.
   let failed = 0
@@ -97,8 +101,10 @@ describe('while the rotation has not succeeded', () => {
     expect(new Set(rowsWhilePending)).toEqual(new Set([1]))
   })
 
-  it('no push went out', () => {
+  it('no push went out and the edit made before the removal is not on the server yet', async () => {
+    expect((await familyExpenses(o1, spaceId)).map((e) => e.id)).toContain(pendingExpenseId)
     expect(pushesWhilePending).toBe(0)
+    expect(rowsWhilePending.length).toBe(beforeRows)
   })
 })
 
@@ -108,12 +114,12 @@ describe('after the rotation and the re-encryption', () => {
 
     const my = await act(o1, () => spacesOf(o1).getMySpace())
     expect(my?.key_version).toBe(2)
-    expect(rows.length).toBe(beforeRows)
+    expect(rows.length).toBe(beforeRows + 1)
     expect(new Set(rows.map((r) => r.key_version))).toEqual(new Set([2]))
   })
 
-  it('the record keys did not change (rows were overwritten in place)', async () => {
-    expect((await serverRows(ctx, spaceId)).length).toBe(beforeRows)
+  it('the record keys did not change (old rows were overwritten in place, the pending edit added one)', async () => {
+    expect((await serverRows(ctx, spaceId)).length).toBe(beforeRows + 1)
   })
 
   it('the owner holds both versions and lists the remaining members in the wrap set', async () => {
@@ -134,8 +140,12 @@ describe('after the rotation and the re-encryption', () => {
 describe('B1 after the rotation', () => {
   it('its next push gets key_outdated, adopts version 2 and succeeds', async () => {
     const written = await familyExpense(b1, spaceId, 9999, 'Marker after rotation')
+    const pushesBefore = b1.count('push_space_records')
 
     await settle([b1, o1])
+
+    // key_outdated happened: the first push was refused, so there was a retry.
+    expect(b1.count('push_space_records') - pushesBefore).toBeGreaterThanOrEqual(2)
 
     const entry = await act(b1, () => b1.localDb.getSpaceKeyEntry(spaceId))
     expect(entry?.keyVersion).toBe(2)
@@ -144,6 +154,7 @@ describe('B1 after the rotation', () => {
     expect((await familyExpenses(o1, spaceId)).map((e) => e.id)).toContain(written.id)
     const rows = await serverRows(ctx, spaceId)
     expect(new Set(rows.map((r) => r.key_version))).toEqual(new Set([2]))
+    expect(rows.length).toBe(beforeRows + 2)
   })
 
   it('still reads everything O wrote before the rotation', async () => {

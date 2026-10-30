@@ -45,7 +45,8 @@ let personalWhilePaused = ''
 let rowsWhilePaused = 0
 let queuedId = ''
 let serverSawQueued = true
-let personalLandedOnServer = 0
+let personalRowsBefore = 0
+let personalRowsWhilePaused = 0
 
 beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -58,6 +59,10 @@ beforeAll(async () => {
   await settle([o1, b1], 2)
   planId = (await act(o1, () => o1.api.getSyncStatus())).plan_id
 
+  const personalRows = async () =>
+    (await ctx.admin<{ n: number }>('select count(*)::int as n from public.sync_records where user_id = $1', [b1.state.userId]))[0].n
+  personalRowsBefore = await personalRows()
+
   await withPlanFeatures(ctx, planId, { shared_spaces: false }, async () => {
     rowsWhilePaused = (await serverRows(ctx, spaceId)).length
     queuedId = (await familyExpense(b1, spaceId, 321, 'Marker queued while paused')).id
@@ -67,9 +72,7 @@ beforeAll(async () => {
     pausedMember = b1.family?.getState().status ?? ''
     personalWhilePaused = b1.engine.getState().status
     serverSawQueued = (await serverRows(ctx, spaceId)).length !== rowsWhilePaused
-    personalLandedOnServer = (
-      await ctx.admin<{ n: number }>("select count(*)::int as n from public.sync_records where user_id = $1", [b1.state.userId])
-    )[0].n
+    personalRowsWhilePaused = await personalRows()
   })
   await settle([b1, o1], 3)
 }, 300_000)
@@ -89,7 +92,7 @@ describe('while the owner plan lacks shared_spaces', () => {
 
   it('personal sync keeps working and is not paused', () => {
     expect(personalWhilePaused).toBe('synced')
-    expect(personalLandedOnServer).toBeGreaterThan(0)
+    expect(personalRowsWhilePaused).toBeGreaterThan(personalRowsBefore)
   })
 
   it('a Family edit is kept locally and does not reach the server', async () => {
@@ -109,6 +112,32 @@ describe('after access returns', () => {
   it('a Family error never changed the personal status', async () => {
     await cycle(b1)
 
+    expect(b1.engine.getState().status).toBe('synced')
+  })
+})
+
+describe('when the personal stream fails for one cycle (criterion 3)', () => {
+  it('the Family stream still runs and pushes while the personal state is error', async () => {
+    const rowsBefore = (await serverRows(ctx, spaceId)).length
+    const written = await familyExpense(b1, spaceId, 654, 'Marker family edit during personal failure')
+    await act(b1, () => b1.localDb.addCategory({ name: 'Marker personal edit during failure' }))
+    const familyCallsBefore = b1.count('get_my_space')
+    b1.intercept = (call) =>
+      call.fn === 'push_records' || call.fn === 'pull_records'
+        ? { data: null, error: { message: 'boom' }, status: 500 }
+        : undefined
+
+    await cycle(b1).catch(() => undefined)
+    b1.intercept = null
+
+    expect(b1.engine.getState().status).toBe('error')
+    expect(b1.count('get_my_space')).toBeGreaterThan(familyCallsBefore)
+    expect(b1.family?.getState().status).toBe('synced')
+    const rows = await serverRows(ctx, spaceId)
+    expect(rows.length).toBeGreaterThan(rowsBefore)
+
+    await settle([o1, b1], 2)
+    expect((await familyExpenses(o1, spaceId)).map((e) => e.id)).toContain(written.id)
     expect(b1.engine.getState().status).toBe('synced')
   })
 })

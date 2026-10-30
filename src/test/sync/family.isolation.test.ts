@@ -94,16 +94,14 @@ describe('Family records stay out of personal data', () => {
   })
 
   it('the personal server store does not hold the Family expense, and the Family store does not hold the personal one', async () => {
-    const personalKeys = (await ctx.admin<{ record_key: string }>('select record_key from public.sync_records where user_id = $1', [ownerUserId])).map(
-      (r) => r.record_key,
-    )
-    const familyKeys = (await serverRows(ctx, spaceId)).map((r) => r.record_key)
-    const keys = (await act(o1, () => o1.localDb.listChangedRecords(-1))).records.length
+    const personalRows = (await ctx.admin<{ record_key: string }>('select record_key from public.sync_records where user_id = $1', [ownerUserId])).length
+    const familyRows = (await serverRows(ctx, spaceId)).length
+    const personalLocal = (await act(o1, () => o1.localDb.listChangedRecords(-1))).records.length
 
-    expect(keys).toBeGreaterThan(0)
-    expect(personalKeys.length).toBeGreaterThan(0)
-    expect(familyKeys.length).toBeGreaterThan(0)
-    expect(personalKeys.filter((k) => familyKeys.includes(k))).toEqual([])
+    expect(personalLocal).toBeGreaterThan(0)
+    expect(familyRows).toBeGreaterThan(0)
+    // Exactly the personal records are in the personal store: no Family row leaked in.
+    expect(personalRows).toBe(personalLocal)
   })
 
   it('the Family change list holds no personal expense or personal category', async () => {

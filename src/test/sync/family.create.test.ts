@@ -113,7 +113,7 @@ describe('creating a Family', () => {
 
     expect(profiles.map((p) => p.id)).toEqual([userIdOf(o.device)])
     expect(profiles[0].color).toMatch(/^var\(--/)
-    expect(profiles[0].displayName.length).toBeGreaterThan(0)
+    expect(profiles[0].displayName).toBe(o.user.email.split('@')[0])
   })
 
   it('the Family state is synced', () => {

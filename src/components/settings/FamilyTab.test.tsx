@@ -10,7 +10,7 @@
 // the runtime, the entitlements and the backup are fakes; there is no jest-dom.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
@@ -23,6 +23,7 @@ import { useAccountSession } from '@/lib/accountSession'
 import { useSyncStatus } from '@/lib/cloud/entitlements'
 import { OFF_FAMILY_STATE, useFamilySyncState, useSyncState } from '@/lib/sync/react'
 import { getSyncRuntime } from '@/lib/sync/runtime'
+import { safetyCode } from '@/lib/spaces/spaceCrypto'
 import { FamilyTab } from '@/components/settings/FamilyTab'
 
 vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: true, ENABLE_SYNC: true, ENABLE_SPACES: true }))
@@ -449,6 +450,148 @@ describe.each(LANGS)('the owner overview (%s)', (lang) => {
 
     expect(screen.getByTestId('family-delete-btn')).toBeTruthy()
     expect(screen.queryByTestId('family-leave-btn')).toBeNull()
+  })
+})
+
+const DAVE = 'user-dave'
+const EVE = 'user-eve'
+
+function rowOf(userId: string): HTMLElement {
+  const row = screen
+    .getAllByTestId('family-member-row')
+    .find((r) => within(r).getByTestId('family-member-email').textContent?.includes(`${userId}@example.com`))
+  if (!row) throw new Error(`no member row for ${userId}`)
+  return row
+}
+
+function requestRowOf(userId: string): HTMLElement {
+  const row = screen
+    .getAllByTestId('family-request-row')
+    .find((r) => within(r).getByTestId('family-request-email').textContent?.includes(`${userId}@example.com`))
+  if (!row) throw new Error(`no request row for ${userId}`)
+  return row
+}
+
+describe.each(LANGS)('the members list as the owner (%s)', (lang) => {
+  beforeEach(() => {
+    setLang(lang, { persist: false })
+    familyActions.getOverview.mockResolvedValue({
+      info: { id: 'space', name: 'Home', createdAt: NOW, updatedAt: NOW },
+      profiles: [
+        { id: ME, displayName: 'Me', color: 'var(--chart-1)', updatedAt: NOW },
+        { id: BOB, displayName: 'Bobby', color: 'var(--chart-2)', updatedAt: NOW },
+      ],
+      entryCount: 3,
+    })
+  })
+
+  function asOwner() {
+    use({
+      family: family({
+        space: mySpace({ members: [member(ME, 'active', 'owner'), member(BOB, 'active'), member(DAVE, 'active')] }),
+      }),
+    })
+  }
+
+  it('shows the profile name, or the email when there is no profile, with email, role and joined', async () => {
+    asOwner()
+    renderTab()
+
+    await waitFor(() => expect(within(rowOf(BOB)).getByTestId('family-member-name').textContent).toBe('Bobby'))
+    expect(within(rowOf(ME)).getByTestId('family-member-name').textContent).toBe('Me')
+    expect(within(rowOf(DAVE)).getByTestId('family-member-name').textContent).toBe(`${DAVE}@example.com`)
+    expect(within(rowOf(BOB)).getByTestId('family-member-email').textContent).toBe(`${BOB}@example.com`)
+    expect(within(rowOf(ME)).getByTestId('family-member-role').textContent).toBe(t(lang, 'family.members.owner'))
+    expect(within(rowOf(BOB)).getByTestId('family-member-role').textContent).toBe(t(lang, 'family.members.member'))
+    const joinedPrefix = t(lang, 'family.members.joined', { date: '' }).trim()
+    expect(within(rowOf(BOB)).getByTestId('family-member-joined').textContent).toContain(joinedPrefix)
+  })
+
+  it('marks only the own row with You', () => {
+    asOwner()
+    renderTab()
+
+    expect(within(rowOf(ME)).getByTestId('family-member-you').textContent).toContain(t(lang, 'family.members.you'))
+    expect(within(rowOf(BOB)).queryByTestId('family-member-you')).toBeNull()
+    expect(within(rowOf(DAVE)).queryByTestId('family-member-you')).toBeNull()
+    expect(screen.getAllByTestId('family-member-you')).toHaveLength(1)
+  })
+
+  it('other rows have Remove and Transfer, the own row has neither', () => {
+    asOwner()
+    renderTab()
+
+    expect(within(rowOf(ME)).queryByTestId('family-member-remove-btn')).toBeNull()
+    expect(within(rowOf(ME)).queryByTestId('family-member-transfer-btn')).toBeNull()
+    expect(within(rowOf(BOB)).getByTestId('family-member-remove-btn')).toBeTruthy()
+    expect(within(rowOf(DAVE)).getByTestId('family-member-transfer-btn')).toBeTruthy()
+  })
+
+  it('Remove opens the dialog with the body text and calls removeMember only after confirming', async () => {
+    asOwner()
+    renderTab()
+
+    fireEvent.click(within(rowOf(DAVE)).getByTestId('family-member-remove-btn'))
+
+    expect(screen.getByTestId('family-remove-dialog').textContent).toContain(t(lang, 'family.remove.body'))
+    expect(familyActions.removeMember).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('family-remove-confirm'))
+
+    await waitFor(() => expect(familyActions.removeMember).toHaveBeenCalledWith(DAVE))
+    expect(familyActions.removeMember).toHaveBeenCalledTimes(1)
+    expect(familyActions.transferOwnership).not.toHaveBeenCalled()
+  })
+
+  it('Transfer opens the dialog and calls transferOwnership only after confirming', async () => {
+    asOwner()
+    renderTab()
+
+    fireEvent.click(within(rowOf(BOB)).getByTestId('family-member-transfer-btn'))
+
+    expect(screen.getByTestId('family-transfer-dialog').textContent).toContain(t(lang, 'family.transfer.body'))
+    expect(familyActions.transferOwnership).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('family-transfer-confirm'))
+
+    await waitFor(() => expect(familyActions.transferOwnership).toHaveBeenCalledWith(BOB))
+    expect(familyActions.transferOwnership).toHaveBeenCalledTimes(1)
+    expect(familyActions.removeMember).not.toHaveBeenCalled()
+  })
+})
+
+describe.each(LANGS)('the pending request rows (%s)', (lang) => {
+  beforeEach(() => setLang(lang, { persist: false }))
+
+  it('show the time, the compare hint with the email, and the safety code of the key', async () => {
+    const carolKey = { kty: 'EC', crv: 'P-256', x: 'Q2Fyb2wtWC1jb29yZA', y: 'Q2Fyb2wtWS1jb29yZA' }
+    const eveKey = { kty: 'EC', crv: 'P-256', x: 'RXZlLVgtY29vcmQ', y: 'RXZlLVktY29vcmQ' }
+    use({
+      family: family({
+        space: mySpace({
+          members: [
+            member(ME, 'active', 'owner'),
+            { ...member(CAROL, 'pending'), public_key: carolKey },
+            { ...member(EVE, 'pending'), public_key: eveKey },
+          ],
+        }),
+      }),
+    })
+    renderTab()
+
+    const carolCode = await safetyCode(carolKey)
+    const eveCode = await safetyCode(eveKey)
+    expect(carolCode).not.toBe(eveCode)
+
+    await waitFor(() => expect(within(requestRowOf(CAROL)).getByTestId('family-request-safety-code').textContent).toContain(carolCode))
+    await waitFor(() => expect(within(requestRowOf(EVE)).getByTestId('family-request-safety-code').textContent).toContain(eveCode))
+    expect(within(requestRowOf(CAROL)).getByTestId('family-request-safety-code').textContent).not.toContain(eveCode)
+    expect(within(requestRowOf(CAROL)).getByTestId('family-request-hint').textContent).toContain(
+      t(lang, 'family.requests.hint', { email: `${CAROL}@example.com` }),
+    )
+    expect(within(requestRowOf(EVE)).getByTestId('family-request-hint').textContent).toContain(
+      t(lang, 'family.requests.hint', { email: `${EVE}@example.com` }),
+    )
+    const askedPrefix = t(lang, 'family.requests.asked', { when: '' }).trim()
+    expect(within(requestRowOf(CAROL)).getByTestId('family-request-time').textContent).toContain(askedPrefix)
   })
 })
 

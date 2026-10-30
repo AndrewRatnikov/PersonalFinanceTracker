@@ -156,6 +156,7 @@ describe('authors', () => {
     for (const d of [o1, b1]) {
       const found = (await familyExpenses(d, spaceId)).find((x) => x.id === e.id)
       expect(found?.createdBy, d.name).toBe(userO.userId)
+      expect(found?.paidBy, d.name).toBe(userO.userId)
       expect(found?.updatedBy, d.name).toBe(userB.userId)
       expect(found?.amount, d.name).toBe(31)
     }

@@ -24,6 +24,7 @@ import {
   firstDevice,
   joinFamily,
   newUser,
+  nextDevice,
   serverRows,
   settle,
   spacesOf,
@@ -42,6 +43,7 @@ vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 })
 let ctx: SqlTestDb
 let o1: SimDevice
 let b1: SimDevice
+let b2: SimDevice
 let c1: SimDevice
 let d1: SimDevice
 let spaceId: string
@@ -56,17 +58,20 @@ beforeAll(async () => {
   vi.setSystemTime(new Date('2026-10-30T09:00:00.000Z'))
   ctx = await startFamilyDb()
   o1 = await firstDevice(await newUser(ctx), 'O1')
-  b1 = await firstDevice(await newUser(ctx), 'B1')
+  const userB = await newUser(ctx)
+  b1 = await firstDevice(userB, 'B1')
   c1 = await firstDevice(await newUser(ctx), 'C1')
   d1 = await firstDevice(await newUser(ctx), 'D1')
   spaceId = await createFamilyOn(o1, 'Lifecycle')
   for (const joiner of [b1, c1, d1]) await joinFamily(o1, joiner)
+  // B's second device, restored after B joined.
+  b2 = await nextDevice(userB, 'B2')
   await familyExpense(o1, spaceId, 500, 'Marker lifecycle')
-  await settle([o1, b1, c1, d1], 3)
+  await settle([o1, b1, b2, c1, d1], 3)
 }, 300_000)
 
 afterAll(async () => {
-  for (const d of [o1, b1, c1, d1]) d.dispose()
+  for (const d of [o1, b1, b2, c1, d1]) d.dispose()
   vi.useRealTimers()
   await ctx.close()
 })
@@ -166,6 +171,9 @@ describe('delete the Family', () => {
   })
 
   it('the right name removes everything on the server and forgets the owner copy', async () => {
+    await settle([b2, b1], 2)
+    expect((await act(b2, () => b2.localDb.getSpaceKeyEntry(spaceId)))?.status).toBe('active')
+
     await act(b1, () => familyActionsOf(b1).deleteFamily('Our Home'))
 
     for (const [table, column] of [
@@ -192,6 +200,13 @@ describe('delete the Family', () => {
       (e: unknown) => e,
     )
     expect(isSpaceReadOnlyError(err)).toBe(true)
+  })
+
+  it("the deleting owner's other device forgets the Family as well", async () => {
+    await settle([b2], 2)
+
+    expect(await act(b2, () => b2.localDb.getSpaceKeyEntry(spaceId))).toBeNull()
+    expect(b2.family?.getState().status).toBe('none')
   })
 
   it('the owner device lists no spaces any more after a further cycle', async () => {

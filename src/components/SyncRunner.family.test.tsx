@@ -4,7 +4,7 @@
 // are fakes; the existing engine behaviour stays covered by SyncRunner.test.tsx.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Lang } from '@/i18n/lang'
@@ -12,6 +12,7 @@ import type { FamilyStreamEvent, FamilySyncState } from '@/lib/sync/types'
 import { setLang, translate } from '@/i18n/core'
 import { useAccountSession, useAccountsVisible } from '@/lib/accountSession'
 import { reportDataProblem } from '@/lib/dataProblem'
+import { OFF_FAMILY_STATE, useFamilySyncState, useSyncState } from '@/lib/sync/react'
 import { getSyncRuntime } from '@/lib/sync/runtime'
 import { SyncRunner } from '@/components/SyncRunner'
 
@@ -22,7 +23,7 @@ const { toastFn, engine, family, setUserId } = vi.hoisted(() => ({
   setUserId: vi.fn(),
 }))
 
-vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: true, ENABLE_SYNC: true }))
+vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: true, ENABLE_SYNC: true, ENABLE_SPACES: true }))
 vi.mock('sonner', () => ({
   toast: Object.assign(toastFn, { success: vi.fn(), error: vi.fn() }),
 }))
@@ -150,6 +151,63 @@ describe('data problems', () => {
     emitFamily({ type: 'data-problem', error })
 
     expect(reportDataProblem).toHaveBeenCalledWith(error)
+  })
+})
+
+describe('useSyncState(spaceId) with the flags on', () => {
+  function fakeStream(initial: FamilySyncState) {
+    let current = initial
+    const listeners = new Set<() => void>()
+    return {
+      getState: () => current,
+      subscribe: (l: () => void) => {
+        listeners.add(l)
+        return () => {
+          listeners.delete(l)
+        }
+      },
+      onEvent: () => () => undefined,
+      set: (next: FamilySyncState) => {
+        current = next
+        for (const l of Array.from(listeners)) l()
+      },
+    }
+  }
+
+  function Probe({ id }: { id: string }) {
+    const s = useSyncState(id)
+    return <output data-status={s.status} data-space={s.spaceId ?? ''} />
+  }
+
+  function FamilyProbe() {
+    const s = useFamilySyncState()
+    return <output data-status={s.status} />
+  }
+
+  it('returns the stream state for the matching id, OFF_FAMILY_STATE for another, and follows updates', () => {
+    const stream = fakeStream(state('synced'))
+    vi.mocked(getSyncRuntime).mockReturnValue({ engine, actions: {}, family: stream, familyActions: {}, setUserId } as never)
+
+    const { container } = render(
+      <>
+        <Probe id={SPACE} />
+        <Probe id="another-space-id" />
+        <FamilyProbe />
+      </>,
+    )
+    const outputs = container.querySelectorAll('output')
+
+    expect(outputs[0].getAttribute('data-status')).toBe('synced')
+    expect(outputs[0].getAttribute('data-space')).toBe(SPACE)
+    expect(outputs[1].getAttribute('data-status')).toBe(OFF_FAMILY_STATE.status)
+    expect(outputs[1].getAttribute('data-space')).toBe('')
+    expect(outputs[2].getAttribute('data-status')).toBe('synced')
+
+    act(() => stream.set(state('paused')))
+
+    expect(outputs[0].getAttribute('data-status')).toBe('paused')
+    expect(outputs[1].getAttribute('data-status')).toBe(OFF_FAMILY_STATE.status)
+    expect(outputs[2].getAttribute('data-status')).toBe('paused')
   })
 })
 

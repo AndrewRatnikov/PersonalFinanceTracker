@@ -370,10 +370,19 @@ describe('createFamily', () => {
 
   it('writes the creator profile named after the email local part', async () => {
     const r = rig()
+    // After create_space the server lists the creator as the owner member.
+    r.spaces.createSpace.mockImplementation((spaceId: string) => {
+      r.order.push('createSpace')
+      r.my = mySpace({ members: [member(ME, 'active', myPair, 'owner')] })
+      return Promise.resolve({ space_id: spaceId, key_version: 1 })
+    })
 
     await r.actions.createFamily({ name: 'Home' })
 
-    expect(r.local.upsertMemberProfile).toHaveBeenCalledWith(SPACE, expect.objectContaining({ id: ME, color: expect.stringMatching(/^var\(--/) }))
+    expect(r.local.upsertMemberProfile).toHaveBeenCalledWith(
+      SPACE,
+      expect.objectContaining({ id: ME, displayName: 'user-me', color: expect.stringMatching(/^var\(--/) }),
+    )
   })
 
   it('returns already-in-space and touches nothing locally when the server has another space', async () => {

@@ -26,7 +26,7 @@ import type {
   FamilySyncState,
 } from '@/lib/sync/types'
 import { CloudError } from '@/lib/cloud/rpc'
-import { base64ToBytes, bytesToBase64 } from '@/lib/crypto'
+import { bytesToBase64 } from '@/lib/crypto'
 import {
   generateIdentityKeyPair,
   generateIndexKey,
@@ -628,7 +628,12 @@ describe('push and key_outdated', () => {
   it('a second key_outdated is an error and pushedRev does not advance', async () => {
     const w = setup({ meta: { pushedRev: 1 } })
     w.changed = { maxRev: 9, records: [expenseRecord('mine')] }
+    const sk2 = generateSpaceKey()
+    const wrapV2 = await wrapSpaceKeyBundleForPublicKey({ v: 1, keyVersion: 2, sk: sk2, indexKey }, ownerPair.publicKeyJwk)
     w.spaces.pushSpaceRecords.mockRejectedValue(new CloudError('key_outdated', 'MINIMA:key_outdated:2'))
+    w.spaces.getMySpace.mockResolvedValueOnce(ownerSpace()).mockResolvedValue(
+      ownerSpace({ key_version: 2, my_keys: [{ key_version: 1, wrapped_key: wrapV1 }, { key_version: 2, wrapped_key: wrapV2 }] }),
+    )
 
     await run(w)
 
@@ -967,9 +972,5 @@ describe('state store', () => {
     registered?.(SPACE)
 
     expect(listener).toHaveBeenCalledTimes(1)
-  })
-
-  it('decodes nothing it cannot read: the stored key stays base64 of 32 bytes', () => {
-    expect(base64ToBytes(bytesToBase64(sk1)).byteLength).toBe(32)
   })
 })
