@@ -1,17 +1,22 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Copy, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { CategoryRow } from './CategoryRow'
 import type { Category } from '@/lib/domain'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
+import { copyCategoriesFromSpace } from '@/lib/localDb'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
+import { PERSONAL_SPACE_ID } from '@/lib/spaces/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { QueryErrorState } from '@/components/QueryErrorState'
+import { SpaceSettingsHeader } from '@/components/space/SpaceSettingsHeader'
 
 type CategoryKind = 'expense' | 'income'
 
@@ -23,6 +28,8 @@ interface CategorySectionProps {
   onAdd: (input: { name: string; icon: string | null }) => Promise<unknown>
   onMutate: () => Promise<unknown>
   onError: (msg: string | null) => void
+  /** A read-only Family copy: adding is disabled. */
+  readOnly: boolean
 }
 
 // One list (expense or income categories) with its add card and rows.
@@ -34,6 +41,7 @@ function CategorySection({
   onAdd,
   onMutate,
   onError,
+  readOnly,
 }: CategorySectionProps) {
   const [isPending, setIsPending] = useState(false)
   const [newName, setNewName] = useState('')
@@ -103,7 +111,7 @@ function CategorySection({
                 data-testid="income-category-add-btn"
                 type="button"
                 onClick={handleAdd}
-                disabled={isPending || !newName.trim()}
+                disabled={isPending || readOnly || !newName.trim()}
                 className="px-3"
                 aria-label={t('settings.categories.addIncomeLabel')}
               >
@@ -131,9 +139,10 @@ function CategorySection({
               />
               <Button
                 id="add-category-btn"
+                data-testid="category-add-btn"
                 type="button"
                 onClick={handleAdd}
-                disabled={isPending || !newName.trim()}
+                disabled={isPending || readOnly || !newName.trim()}
                 className="px-3"
                 aria-label={t('settings.categories.addLabel')}
               >
@@ -182,6 +191,9 @@ export function CategoriesTab() {
 
   const spaceId = useActiveSpace()
   const db = useSpaceDb()
+  const { t, plural } = useT()
+  const { isFamily, readOnly } = useSpaceSwitch()
+  const [copying, setCopying] = useState(false)
 
   const categoriesQuery = useQuery({
     queryKey: spaceQueryKey(spaceId, 'categories'),
@@ -201,6 +213,26 @@ export function CategoriesTab() {
       queryClient.invalidateQueries({ queryKey: ['income'] }),
     ])
 
+  // Family only: adds every Personal category whose name is missing here.
+  const copyFromPersonal = async () => {
+    setError(null)
+    setCopying(true)
+    try {
+      const result = await copyCategoriesFromSpace({ from: PERSONAL_SPACE_ID, to: spaceId })
+      const added = result.categories + result.incomeCategories
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['categories'] }),
+        queryClient.invalidateQueries({ queryKey: ['incomeCategories'] }),
+      ])
+      if (added > 0) toast.success(plural('move.copyCategoriesDone', added))
+      else toast(t('move.copyCategoriesNone'))
+    } catch (e: unknown) {
+      setError(errorMessage(e))
+    } finally {
+      setCopying(false)
+    }
+  }
+
   if (categoriesQuery.isError) {
     return (
       <div data-testid="categories-tab" className="flex flex-col gap-6">
@@ -217,6 +249,24 @@ export function CategoriesTab() {
         </Alert>
       )}
 
+      <SpaceSettingsHeader />
+
+      {isFamily && (
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="categories-copy-from-personal"
+            onClick={() => void copyFromPersonal()}
+            disabled={copying || readOnly}
+            className="min-h-11 sm:min-h-9"
+          >
+            <Copy className="h-4 w-4" />
+            {t('move.copyCategories')}
+          </Button>
+        </div>
+      )}
+
       <CategorySection
         kind="expense"
         categories={categoriesQuery.data ?? []}
@@ -225,6 +275,7 @@ export function CategoriesTab() {
         onAdd={(input) => db.addCategory(input)}
         onMutate={refreshExpense}
         onError={setError}
+        readOnly={readOnly}
       />
 
       <CategorySection
@@ -235,6 +286,7 @@ export function CategoriesTab() {
         onAdd={(input) => db.addIncomeCategory(input)}
         onMutate={refreshIncome}
         onError={setError}
+        readOnly={readOnly}
       />
     </div>
   )
