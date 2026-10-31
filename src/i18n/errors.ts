@@ -125,6 +125,47 @@ function codedMessage(err: ErrorLike): string | null {
   }
 }
 
+// Family (spaces) errors: server codes from CloudError, the client-side
+// FamilyActionError codes and SpaceReadOnlyError. Anything else is the
+// generic text with its code.
+const FAMILY_CLOUD_KEYS: Record<string, MessageKey> = {
+  invite_invalid: 'family.errors.inviteInvalid',
+  already_in_space: 'family.errors.alreadyInSpace',
+  member_limit: 'family.errors.memberLimit',
+  space_paused: 'family.errors.paused',
+  network: 'family.errors.offline',
+  // create_invite raises quota_exceeded for a 6th open invite.
+  quota_exceeded: 'family.errors.inviteLimit',
+  not_space_owner: 'family.errors.notOwner',
+  owner_must_transfer_or_delete: 'family.errors.ownerMustTransfer',
+  not_signed_in: 'family.signIn.body',
+}
+
+const FAMILY_ACTION_KEYS: Record<string, MessageKey> = {
+  not_signed_in: 'family.signIn.body',
+  sync_off: 'family.errors.syncOff',
+  not_in_plan: 'family.errors.notInPlan',
+  not_owner: 'family.errors.notOwner',
+  name_mismatch: 'family.errors.nameMismatch',
+  invalid_name: 'family.errors.invalidName',
+}
+
+function lookupKey(table: Record<string, MessageKey>, code: string): MessageKey | null {
+  return Object.prototype.hasOwnProperty.call(table, code) ? table[code] : null
+}
+
+export function familyErrorMessage(err: unknown): string {
+  const e = (typeof err === 'object' && err !== null ? err : {}) as { name?: unknown; code?: unknown }
+  const name = typeof e.name === 'string' ? e.name : ''
+  const code = typeof e.code === 'string' ? e.code : ''
+  let key: MessageKey | null = null
+  if (name === 'CloudError') key = lookupKey(FAMILY_CLOUD_KEYS, code)
+  else if (name === 'FamilyActionError') key = lookupKey(FAMILY_ACTION_KEYS, code)
+  else if (name === 'SpaceReadOnlyError') key = 'family.errors.readOnly'
+  if (key) return t(key)
+  return t('family.errors.generic', { code: code || name || 'unknown' })
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) {
     const coded = codedMessage(err as ErrorLike)
