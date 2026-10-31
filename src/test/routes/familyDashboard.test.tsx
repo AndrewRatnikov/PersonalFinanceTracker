@@ -223,6 +223,29 @@ describe('the data follows the active space', () => {
     expect(personalTotal).not.toBe(familyTotal)
   })
 
+  it('Left to spend follows the active space budgets and returns after switching back', async () => {
+    const budget = (id: string, monthlyLimit: number) => ({
+      id,
+      categoryId: 'c1',
+      monthlyLimit,
+      currency: 'UAH',
+    })
+    fam.getAllBudgets.mockResolvedValue([budget('bf', 50000)])
+    vi.mocked(getAllBudgets).mockResolvedValue([budget('bp', 1000)] as never)
+    const view = renderPage(familyValue())
+    await screen.findByTestId('family-month-card')
+    const familyLeft = (await screen.findByTestId('dashboard-left-to-spend')).textContent
+
+    view.rerenderWith({ spaceId: 'personal', family: FAMILY })
+    await waitFor(() => expect(screen.queryByTestId('family-month-card')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('dashboard-left-to-spend').textContent).not.toBe(familyLeft))
+    const personalLeft = screen.getByTestId('dashboard-left-to-spend').textContent
+
+    view.rerenderWith(familyValue())
+    await waitFor(() => expect(screen.getByTestId('dashboard-left-to-spend').textContent).toBe(familyLeft))
+    expect(personalLeft).not.toBe(familyLeft)
+  })
+
   it('an expense added in Quick Add while in the Family is stored in the Family only, with Paid by', async () => {
     renderPage(familyValue())
     await screen.findByTestId('family-month-card')

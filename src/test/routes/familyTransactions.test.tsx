@@ -510,6 +510,30 @@ describe('ExpenseDrawer in a Family', () => {
     expect(text).not.toContain('Edited by')
   })
 
+  it('registers a switch guard while open: clean until input, dirty after, close() closes the drawer', () => {
+    const unregister = vi.fn()
+    const registerGuard = vi.fn((_guard: { isDirty: () => boolean; close: () => void }) => unregister)
+    const onOpenChange = vi.fn()
+    renderDrawer(familyValue({ registerGuard }), { onOpenChange })
+
+    expect(registerGuard).toHaveBeenCalledTimes(1)
+    const guard = registerGuard.mock.calls[0][0]
+    expect(guard.isDirty()).toBe(false)
+
+    fireEvent.change(screen.getByTestId('drawer-amount'), { target: { value: '50' } })
+    expect(registerGuard.mock.calls.at(-1)?.[0].isDirty()).toBe(true)
+
+    registerGuard.mock.calls.at(-1)?.[0].close()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('registers no guard while the drawer is closed', () => {
+    const registerGuard = vi.fn(() => () => undefined)
+    renderDrawer(familyValue({ registerGuard }), { open: false })
+
+    expect(registerGuard).not.toHaveBeenCalled()
+  })
+
   it('a read-only Family disables save and delete', () => {
     renderDrawer(familyValue({ readOnly: true }), { mode: 'edit', expense: exp('f1', 100, 'u-me'), initial: undefined })
 

@@ -311,6 +311,46 @@ describe('recurring', () => {
     expect(moved.paidBy).toBe('u-me')
     expect(await getAllRecurring()).toEqual([])
   })
+
+  it('already generated expenses stay in Personal; later occurrences are generated in the Family only', async () => {
+    const cat = await personalFood()
+    const item = await addRecurring(
+      {
+        kind: 'expense',
+        amount: 300,
+        currency: 'UAH',
+        categoryId: cat.id,
+        description: 'rent',
+        frequency: { unit: 'month', interval: 1 },
+        startDate: '2026-09-15',
+        end: { type: 'never' },
+        mode: 'auto',
+      },
+      { createThroughToday: true, today: '2026-10-30' },
+    )
+    const generatedBefore = (await getAllExpenses()).filter((e) => e.recurringId === item.id)
+    expect(generatedBefore.length).toBeGreaterThanOrEqual(1)
+    const idsBefore = generatedBefore.map((e) => e.id).sort()
+    const handledThrough = (await getAllRecurring())[0].handledThrough
+    expect(handledThrough).not.toBeNull()
+
+    await moveRecords({ from: 'personal', to: famId, type: 'recurring', ids: [item.id] })
+
+    const personalAfter = (await getAllExpenses()).filter((e) => e.recurringId === item.id)
+    expect(personalAfter.map((e) => e.id).sort()).toEqual(idsBefore)
+    expect((await spaceDb(famId).getAllExpenses()).filter((e) => e.recurringId === item.id)).toEqual([])
+
+    vi.setSystemTime(new Date('2026-11-20T09:00:00.000Z'))
+    const run = await spaceDb(famId).processDueRecurring('2026-11-20')
+
+    expect(run.created).toBe(1)
+    const famGenerated = (await spaceDb(famId).getAllExpenses()).filter((e) => e.recurringId === item.id)
+    expect(famGenerated).toHaveLength(1)
+    expect(famGenerated[0].occurrenceDate && handledThrough && famGenerated[0].occurrenceDate > handledThrough).toBe(true)
+    expect(famGenerated[0].paidBy).toBe('u-me')
+    const personalLater = (await getAllExpenses()).filter((e) => e.recurringId === item.id)
+    expect(personalLater.map((e) => e.id).sort()).toEqual(idsBefore)
+  })
 })
 
 describe('refusals write nothing', () => {

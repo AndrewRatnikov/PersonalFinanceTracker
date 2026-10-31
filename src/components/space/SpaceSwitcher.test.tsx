@@ -5,14 +5,30 @@
 //   named in the plan for the chip, and by the absence of the class for no one
 //   else (not asserted).
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 import type { ActiveSpaceState } from '@/lib/spaces/switcher'
 import { setLang, translate } from '@/i18n/core'
 import { SpaceSwitchProvider } from '@/lib/spaces/switcher'
+import { setVaultPhase } from '@/lib/vaultSession'
+import Header from '@/components/Header'
 import { SpaceChip, SpaceSwitcher } from '@/components/space/SpaceSwitcher'
+
+// Header.family.test.tsx is not in the plan's Files table, so the Header wiring
+// cases live here.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ to, children, ...rest }: { to: string; children?: ReactNode; [key: string]: unknown }) => (
+    <a href={to} {...rest}>
+      {children}
+    </a>
+  ),
+}))
+vi.mock('@/lib/accountSession', () => ({ useAccountsVisible: vi.fn(() => false) }))
+vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))
+vi.mock('@/lib/localWipe', () => ({ reloadToHome: vi.fn() }))
 
 const FAMILY = { id: 'fam-1', name: 'Our home', role: 'owner' as const, readOnly: false }
 const switchTo = vi.fn()
@@ -151,6 +167,72 @@ describe('nav variant', () => {
     renderWith({ spaceId: 'fam-1', family: FAMILY }, <SpaceSwitcher variant="nav" />)
 
     fireEvent.click(screen.getByTestId('nav-space-switch-personal'))
+
+    expect(switchTo).toHaveBeenCalledWith('personal')
+  })
+})
+
+describe('Header wiring', () => {
+  const LITERAL_COLOUR = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(/
+
+  function renderHeader(value: Partial<ActiveSpaceState>) {
+    setVaultPhase('unlocked')
+    const client = new QueryClient()
+    return render(
+      <QueryClientProvider client={client}>
+        <SpaceSwitchProvider value={{ switchTo, ...value }}>
+          <Header />
+        </SpaceSwitchProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('hosts the switcher, sync icon and chip inside the header root, marked family with a themed accent', () => {
+    const { container } = renderHeader({ spaceId: 'fam-1', family: FAMILY, familyStatus: 'synced' })
+
+    const root = container.querySelector('header')
+    if (!root) throw new Error('no header root')
+    expect(root.getAttribute('data-active-space')).toBe('family')
+    expect(root.contains(screen.getByTestId('space-switcher'))).toBe(true)
+    expect(root.contains(screen.getByTestId('space-sync-state'))).toBe(true)
+    expect(root.contains(screen.getByTestId('space-chip'))).toBe(true)
+    expect(screen.getByTestId('space-sync-state').getAttribute('data-status')).toBe('synced')
+    expect(root.className).not.toMatch(LITERAL_COLOUR)
+  })
+
+  it('is marked personal in Personal and the accent class differs from the Family one', () => {
+    const family = renderHeader({ spaceId: 'fam-1', family: FAMILY, familyStatus: 'synced' })
+    const familyClass = family.container.querySelector('header')?.className
+    family.unmount()
+
+    const { container } = renderHeader({ spaceId: 'personal', family: FAMILY, familyStatus: 'synced' })
+    const root = container.querySelector('header')
+    expect(root?.getAttribute('data-active-space')).toBe('personal')
+    expect(root?.className).not.toBe(familyClass)
+    expect(root?.className ?? '').not.toMatch(LITERAL_COLOUR)
+  })
+
+  it('without a Family there is no attribute and no switcher element', () => {
+    const { container } = renderHeader({ spaceId: 'personal', family: null })
+
+    expect(container.querySelector('header')?.hasAttribute('data-active-space')).toBe(false)
+    expect(screen.queryByTestId('space-switcher')).toBeNull()
+    expect(screen.queryByTestId('space-chip')).toBeNull()
+  })
+
+  it('the menu sheet holds the nav switcher', () => {
+    renderHeader({ spaceId: 'fam-1', family: FAMILY, familyStatus: 'synced' })
+    expect(screen.queryByTestId('nav-space-switcher')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('header-menu-btn'))
+
+    expect(screen.getByTestId('nav-space-switcher')).toBeTruthy()
+  })
+
+  it('tapping the header chip switches to the other space', () => {
+    renderHeader({ spaceId: 'fam-1', family: FAMILY, familyStatus: 'synced' })
+
+    fireEvent.click(screen.getByTestId('space-chip'))
 
     expect(switchTo).toHaveBeenCalledWith('personal')
   })
