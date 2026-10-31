@@ -80,6 +80,7 @@ export const recurringInputSchema = z
       }),
     ]),
     mode: z.enum(['auto', 'ask']),
+    paidBy: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     // zod runs this even when a field had a non-fatal issue, so check shapes.
