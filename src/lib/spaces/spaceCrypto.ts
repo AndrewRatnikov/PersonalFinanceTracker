@@ -121,13 +121,17 @@ async function sealWith(key: CryptoKey, sk: Uint8Array): Promise<{ iv: string; c
   }
 }
 
-async function openWith(key: CryptoKey, iv: Uint8Array<ArrayBuffer>, ct: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
-  let opened: Uint8Array<ArrayBuffer>
+// The length-free open: the plaintext of any size (a key bundle).
+async function openRawWith(key: CryptoKey, iv: Uint8Array<ArrayBuffer>, ct: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   try {
-    opened = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct))
+    return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct))
   } catch {
     throw new SpaceKeyError('unwrap-failed', 'The space key could not be unwrapped')
   }
+}
+
+async function openWith(key: CryptoKey, iv: Uint8Array<ArrayBuffer>, ct: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  const opened = await openRawWith(key, iv, ct)
   if (opened.byteLength !== SPACE_KEY_BYTES) {
     opened.fill(0)
     throw new SpaceKeyError('invalid', 'The unwrapped space key is not 32 bytes')
@@ -188,6 +192,15 @@ export async function unwrapSpaceKey(
   wrapped: WrappedSpaceKey,
   myPrivateJwk: JsonWebKey,
 ): Promise<Uint8Array<ArrayBuffer>> {
+  const { key, iv, ct } = await envelopeKey(wrapped, myPrivateJwk)
+  return openWith(key, iv, ct)
+}
+
+// The ECIES receiving side: the AES key of an envelope for my private key.
+async function envelopeKey(
+  wrapped: WrappedSpaceKey,
+  myPrivateJwk: JsonWebKey,
+): Promise<{ key: CryptoKey; iv: Uint8Array<ArrayBuffer>; ct: Uint8Array<ArrayBuffer> }> {
   const { iv, ct } = decodeParts(wrapped)
   const epkJwk = (wrapped as { epk?: unknown }).epk
   if (typeof epkJwk !== 'object' || epkJwk === null) {
@@ -212,7 +225,120 @@ export async function unwrapSpaceKey(
     throw new SpaceKeyError('unwrap-failed', 'The space key could not be unwrapped')
   }
   const key = await aesKeyFrom(bits, SPACE_KEY_WRAP_INFO)
-  return openWith(key, iv, ct)
+  return { key, iv, ct }
+}
+
+// ---- Key bundles (spec §22, decision D1) -----------------------------------
+// What is wrapped for a member: UTF-8 JSON
+// {"v":1,"keyVersion":n,"sk":"<b64>","indexKey":"<b64>"}. The index key never
+// changes (Family record keys stay stable across rotations); sk is per version.
+
+export interface SpaceKeyBundle {
+  v: 1
+  keyVersion: number
+  sk: Uint8Array
+  indexKey: Uint8Array
+}
+
+export function generateIndexKey(): Uint8Array<ArrayBuffer> {
+  return crypto.getRandomValues(new Uint8Array(SPACE_KEY_BYTES))
+}
+
+export function encodeSpaceKeyBundle(bundle: SpaceKeyBundle): Uint8Array<ArrayBuffer> {
+  if (bundle.sk.byteLength !== SPACE_KEY_BYTES || bundle.indexKey.byteLength !== SPACE_KEY_BYTES) {
+    throw new SpaceKeyError('invalid', 'A key bundle holds two 32-byte keys')
+  }
+  const json = JSON.stringify({
+    v: 1,
+    keyVersion: bundle.keyVersion,
+    sk: bytesToBase64(bundle.sk),
+    indexKey: bytesToBase64(bundle.indexKey),
+  })
+  return utf8.encode(json)
+}
+
+function decodeKey32(value: unknown): Uint8Array<ArrayBuffer> | null {
+  if (typeof value !== 'string') return null
+  try {
+    const bytes = base64ToBytes(value)
+    return bytes.byteLength === SPACE_KEY_BYTES ? bytes : null
+  } catch {
+    return null
+  }
+}
+
+export function decodeSpaceKeyBundle(bytes: Uint8Array): SpaceKeyBundle {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+  } catch {
+    throw new SpaceKeyError('invalid', 'Malformed key bundle')
+  }
+  const obj =
+    typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  const keyVersion = obj?.keyVersion
+  if (
+    !obj ||
+    obj.v !== 1 ||
+    typeof keyVersion !== 'number' ||
+    !Number.isInteger(keyVersion) ||
+    keyVersion < 1
+  ) {
+    throw new SpaceKeyError('invalid', 'Malformed key bundle')
+  }
+  const sk = decodeKey32(obj.sk)
+  const indexKey = decodeKey32(obj.indexKey)
+  if (!sk || !indexKey) {
+    sk?.fill(0)
+    indexKey?.fill(0)
+    throw new SpaceKeyError('invalid', 'Malformed key bundle')
+  }
+  return { v: 1, keyVersion, sk, indexKey }
+}
+
+// The same ECIES envelope as wrapSpaceKeyForPublicKey, over the encoded bundle.
+export async function wrapSpaceKeyBundleForPublicKey(
+  bundle: SpaceKeyBundle,
+  recipientPublicJwk: JsonWebKey,
+): Promise<WrappedSpaceKey> {
+  const plain = encodeSpaceKeyBundle(bundle)
+  try {
+    return await wrapSpaceKeyForPublicKey(plain, recipientPublicJwk)
+  } finally {
+    plain.fill(0)
+  }
+}
+
+export async function unwrapSpaceKeyBundle(
+  wrapped: WrappedSpaceKey,
+  myPrivateJwk: JsonWebKey,
+): Promise<SpaceKeyBundle> {
+  const { key, iv, ct } = await envelopeKey(wrapped, myPrivateJwk)
+  const plain = await openRawWith(key, iv, ct)
+  try {
+    return decodeSpaceKeyBundle(plain)
+  } finally {
+    plain.fill(0)
+  }
+}
+
+// RFC 7638 member order: exactly crv, kty, x, y.
+export function canonicalPublicJwk(jwk: JsonWebKey): string {
+  return JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y })
+}
+
+// The first 6 bytes of SHA-256(canonical JWK) as XXXX-XXXX-XXXX upper-case
+// hex. Owner and joiner compute it from the same public key and compare.
+export async function safetyCode(publicJwk: JsonWebKey): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', utf8.encode(canonicalPublicJwk(publicJwk))),
+  )
+  let hex = ''
+  for (const b of digest.slice(0, 6)) hex += b.toString(16).padStart(2, '0')
+  hex = hex.toUpperCase()
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`
 }
 
 // Reserved: not used. Invites carry no key (see invite.ts); kept for a possible future flow.
