@@ -340,6 +340,13 @@ describe('Categories: Copy categories from Personal', () => {
     renderTab(<CategoriesTab />, familyValue({ readOnly: true }))
 
     expect((await screen.findByTestId<HTMLButtonElement>('categories-copy-from-personal')).disabled).toBe(true)
+    // Names must be non-empty, otherwise the add buttons are disabled by the existing empty-name rule.
+    fireEvent.change(screen.getByPlaceholderText(translate('en', 'settings.categories.expenseNamePlaceholder')), {
+      target: { value: 'Pets' },
+    })
+    fireEvent.change(screen.getByPlaceholderText(translate('en', 'settings.categories.incomeNamePlaceholder')), {
+      target: { value: 'Bonus' },
+    })
     expect(screen.getByTestId<HTMLButtonElement>('category-add-btn').disabled).toBe(true)
     expect(screen.getByTestId<HTMLButtonElement>('income-category-add-btn').disabled).toBe(true)
     await waitFor(() => expect(screen.getAllByTestId('category-row').length).toBeGreaterThan(0))
@@ -355,7 +362,11 @@ describe('Categories: Copy categories from Personal', () => {
     fireEvent.change(screen.getByPlaceholderText(translate('en', 'settings.categories.expenseNamePlaceholder')), {
       target: { value: 'Pets' },
     })
+    fireEvent.change(screen.getByPlaceholderText(translate('en', 'settings.categories.incomeNamePlaceholder')), {
+      target: { value: 'Bonus' },
+    })
     expect(add.disabled).toBe(false)
+    expect(screen.getByTestId<HTMLButtonElement>('income-category-add-btn').disabled).toBe(false)
     expect(add.id).toBe('add-category-btn')
   })
 })
