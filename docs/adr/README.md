@@ -29,6 +29,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-28](2026-10-28-spaces-personal-plus-family-space-key-identity.md) | Spaces: personal plus one Family space, per-space key, member identity keys | Accepted |
 | [2026-10-29](2026-10-29-family-space-server-invite-approval-key-rotation.md) | Family space server: invite token without key, owner approval with key wrap, key rotation on removal, owner-plan permissions | Accepted |
 | [2026-10-31](2026-10-31-family-sharing-flows-key-bundle-rotation-read-only.md) | Family sharing flows: key bundle with fixed index key, approval with safety code, rotation and re-encryption, read-only after removal | Accepted |
+| [2026-10-31](2026-10-31-family-ux-one-active-space-move-as-create-tombstone.md) | Family UX: one active space for the whole app, move as create + tombstone across spaces | Accepted |
 
 ## Where else decisions live
 
