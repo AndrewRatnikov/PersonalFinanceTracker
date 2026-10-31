@@ -21,6 +21,8 @@ export type TransactionsSearch = {
   amount?: string
   currency?: Currency
   description?: string
+  /** Which space the add drawer opens in; kept only with `add: 'expense'`. */
+  space?: 'personal' | 'family'
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,100}$/
@@ -140,6 +142,9 @@ export function validateTransactionsSearch(
   if (currency !== undefined) result.currency = currency
   const description = validDescription(search.description)
   if (description !== undefined) result.description = description
+  if (search.space === 'personal' || search.space === 'family') {
+    result.space = search.space
+  }
   return result
 }
 
