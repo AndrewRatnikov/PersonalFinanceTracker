@@ -17,6 +17,8 @@ export type AppErrorCode =
   | 'import-needs-categories'
   | 'import-empty-file'
   | 'import-unknown-columns'
+  | 'move-same-space'
+  | 'move-too-many'
 
 export class AppError extends Error {
   readonly code: AppErrorCode

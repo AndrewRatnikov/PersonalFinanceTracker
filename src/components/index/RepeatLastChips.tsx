@@ -7,6 +7,7 @@ import type { ExpenseDrawerInitial } from '@/lib/expenseDraft'
 import type { RepeatCandidate } from '@/lib/repeatLast'
 import { useT } from '@/i18n'
 import { useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import {
   repeatLastCandidates,
   repeatLastLabel,
@@ -46,6 +47,8 @@ export function RepeatLastChips({
   const queryClient = useQueryClient()
   const db = useSpaceDb()
   const { t } = useT()
+  // A read-only Family copy can be browsed but not added to.
+  const { readOnly } = useSpaceAccess()
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Set when a long press fired, so the click that follows doesn't add.
   const longPressed = useRef(false)
@@ -138,6 +141,7 @@ export function RepeatLastChips({
           <button
             type="button"
             data-testid="repeat-last-chip"
+            disabled={readOnly}
             onClick={() => {
               if (longPressed.current) {
                 longPressed.current = false
@@ -150,7 +154,7 @@ export function RepeatLastChips({
             onPointerLeave={clearPress}
             onPointerCancel={clearPress}
             onContextMenu={(e) => e.preventDefault()}
-            className="min-h-11 px-3 text-sm font-medium select-none hover:bg-muted sm:min-h-9"
+            className="min-h-11 px-3 text-sm font-medium select-none hover:bg-muted disabled:opacity-50 sm:min-h-9"
           >
             {repeatLastLabel(candidate, category)}
           </button>
@@ -160,8 +164,9 @@ export function RepeatLastChips({
             aria-label={t('dashboard.editBeforeAdding', {
               item: repeatLastText(candidate, category),
             })}
+            disabled={readOnly}
             onClick={() => onCustomize(initialFor(candidate))}
-            className="min-h-11 min-w-11 border-l border-border px-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:min-h-9 sm:min-w-9"
+            className="min-h-11 min-w-11 border-l border-border px-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 sm:min-h-9 sm:min-w-9"
           >
             …
           </button>

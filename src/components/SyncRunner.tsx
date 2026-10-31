@@ -4,11 +4,12 @@ import { toast } from 'sonner'
 
 import type { DecryptError } from '@/lib/dataErrors'
 import type { FamilySyncStatus, SyncStatusCode } from '@/lib/sync/types'
-import { t } from '@/i18n/core'
+import { plural, t } from '@/i18n/core'
 import { useAccountSession, useAccountsVisible } from '@/lib/accountSession'
 import { isDecryptError } from '@/lib/dataErrors'
 import { reportDataProblem } from '@/lib/dataProblem'
 import { ENABLE_SYNC } from '@/lib/featureFlags'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { getSyncRuntime } from '@/lib/sync/runtime'
 
 interface SyncRunnerProps {
@@ -21,6 +22,10 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
   const queryClient = useQueryClient()
   const userId = session?.userId ?? null
   const lastStatus = useRef<SyncStatusCode | null>(null)
+  // The active space, read at event time (a switch must not resubscribe).
+  const space = useSpaceSwitch()
+  const spaceRef = useRef(space)
+  spaceRef.current = space
 
   // Runs the engine while unlocked and signed in. Sign-out and lock stop it;
   // local data and meta:sync stay, and the same user signing in resumes.
@@ -58,8 +63,8 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
   }, [accountsVisible, queryClient])
 
   // Family events (only when the runtime has a Family stream): the joined and
-  // join-request toasts, data problems, and fresh queries once a Family cycle
-  // has settled.
+  // join-request toasts, data problems, the "N new entries" toast (only when
+  // another space is shown), and fresh queries once a Family cycle has settled.
   useEffect(() => {
     if (!accountsVisible) return
     const family = getSyncRuntime().family
@@ -73,7 +78,19 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
       } else if (event.type === 'data-problem') {
         // The Family stream emits data-problem for undecryptable data only.
         reportDataProblem(event.error as DecryptError)
+      } else if (event.type === 'new-entries') {
+        const current = spaceRef.current
+        if (event.spaceId === current.spaceId) return
+        const name = current.family?.id === event.spaceId ? current.family.name : ''
+        const target = event.spaceId
+        toast(plural('space.newEntries', event.count, { name }), {
+          action: {
+            label: t('space.open'),
+            onClick: () => spaceRef.current.switchTo(target),
+          },
+        })
       } else {
+        // Only `state` is left once new-entries is handled above.
         const previous = lastFamilyStatus
         lastFamilyStatus = event.state.status
         if (previous === 'syncing' && event.state.status !== 'syncing') {

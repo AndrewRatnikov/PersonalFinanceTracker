@@ -12,11 +12,13 @@ import { validationMessage } from '@/i18n/errors'
 import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
+import { PaidBySelect } from '@/components/members/PaidBySelect'
 
 import { createExpenseSchema } from '@/lib/schemas'
 
@@ -60,9 +62,15 @@ export default function SpeedEntryForm({
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const { t } = useT()
+  // Family only: who paid (default me). Personal adds no paidBy key.
+  const { isFamily, directory, memberId, readOnly } = useSpaceSwitch()
+  const showPaidBy = isFamily && directory !== null
+  const [paidBy, setPaidBy] = useState<string | null>(null)
+  const payer = paidBy ?? memberId ?? ''
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault()
+    if (readOnly) return
     setErrors({})
 
     const result = createExpenseSchema.safeParse({
@@ -83,8 +91,10 @@ export default function SpeedEntryForm({
       return
     }
 
+    const data: CreateExpenseInput =
+      showPaidBy && payer !== '' ? { ...result.data, paidBy: payer } : result.data
     try {
-      await onSubmit(result.data, repeat)
+      await onSubmit(data, repeat)
     } catch {
       // The caller's mutation onError already shows a toast; keep what the user typed.
       return
@@ -231,10 +241,22 @@ export default function SpeedEntryForm({
             </select>
           </div>
 
+          {showPaidBy && (
+            <PaidBySelect
+              value={payer}
+              onChange={setPaidBy}
+              label={t('members.paidBy')}
+              directory={directory}
+              memberId={memberId}
+              disabled={isPending || readOnly}
+            />
+          )}
+
           {/* Submit */}
           <Button
             type="submit"
-            disabled={isPending}
+            data-testid="speed-entry-submit"
+            disabled={isPending || readOnly}
             className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
           >
             {isPending ? t('common.saving') : t('dashboard.quickAdd.save')}

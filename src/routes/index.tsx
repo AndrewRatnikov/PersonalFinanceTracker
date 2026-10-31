@@ -10,6 +10,8 @@ import { useT } from '@/i18n'
 
 import { BackupReminderBanner } from '@/components/index/BackupReminderBanner'
 import DashboardSummarySection from '@/components/index/DashboardSummarySection'
+import { FamilyEmptyState } from '@/components/index/FamilyEmptyState'
+import { MemberSummaryCard } from '@/components/index/MemberSummaryCard'
 import RecentActivityList from '@/components/index/RecentActivityList'
 import RecurringDashboardSection from '@/components/index/RecurringDashboardSection'
 import { RecoveryKeyBanner } from '@/components/index/RecoveryKeyBanner'
@@ -24,6 +26,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { computeDashboardSummary } from '@/lib/dashboardSummary'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { useVaultSession } from '@/lib/vaultSession'
 
@@ -60,6 +63,7 @@ function Dashboard() {
 
   const spaceId = useActiveSpace()
   const db = useSpaceDb()
+  const { family, isFamily, directory } = useSpaceSwitch()
 
   const categoriesQuery = useQuery({
     queryKey: spaceQueryKey(spaceId, 'categories'),
@@ -185,28 +189,49 @@ function Dashboard() {
     )
   }
 
+  // Family: an empty space offers its first steps; otherwise this month by member.
+  const familyEmpty = isFamily && expenses.length === 0 && income.length === 0
+
   return (
     <PageShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <InstallHintCard />
         <RecoveryKeyBanner />
         <BackupReminderBanner />
+        {familyEmpty && <FamilyEmptyState onAddFirst={() => setDrawerInitial({})} />}
         <DashboardSummarySection
           summary={summary}
           fetchExchangeRates={fetchExchangeRates}
         />
+        {isFamily && directory !== null && !familyEmpty && (
+          <MemberSummaryCard
+            expenses={expenses}
+            directory={directory}
+            mainCurrency={mainCurrency}
+          />
+        )}
         <RecurringDashboardSection today={todayStr} />
 
         <section>
           <h2 className="text-xl font-bold mb-4">{t('dashboard.quickAdd.title')}</h2>
+          {isFamily && family !== null && (
+            <p
+              data-testid="quick-add-space-cue"
+              className="-mt-3 mb-4 text-sm font-medium text-primary"
+            >
+              {t('space.adding', { name: family.name })}
+            </p>
+          )}
           {categories.length > 0 ? (
             <div className="flex flex-col gap-4">
               <RepeatLastChips
+                key={`repeat-${spaceId}`}
                 expenses={expenses}
                 categories={categories}
                 onCustomize={setDrawerInitial}
               />
               <SpeedEntryForm
+                key={`quick-add-${spaceId}`}
                 categories={categories}
                 onSubmit={handleCreateExpense}
                 isPending={isPending}

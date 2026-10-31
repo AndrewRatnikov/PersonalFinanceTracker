@@ -220,6 +220,8 @@ export interface CreateIncomeInput {
 export interface CreateCategoryInput {
   name: string
   icon?: string | null
+  /** Optional preselected currency; an unknown value is rejected. */
+  defaultCurrency?: Currency
 }
 
 export interface UpdateCategoryInput {
@@ -288,6 +290,11 @@ export interface RecurringItem {
   /** Family space only: the member who created / last changed it. */
   createdBy?: string
   updatedBy?: string
+  /**
+   * Family space only: who pays / receives it. Generated entries inherit it;
+   * without it they get the generating member.
+   */
+  paidBy?: string
   /** ISO time of the soft delete; a record with it is a tombstone (see isLive). */
   deletedAt?: string
   /** Local change sequence number (meta:sync); never leaves the device. */
@@ -304,6 +311,8 @@ export interface CreateRecurringInput {
   startDate: string
   end: RecurringEnd
   mode: RecurringMode
+  /** Family space only: who pays / receives it; ignored in personal. */
+  paidBy?: string
 }
 
 export type UpdateRecurringInput = Partial<CreateRecurringInput>

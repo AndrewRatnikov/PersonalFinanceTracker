@@ -26,6 +26,7 @@ import { META_SETTINGS_KEY } from './vault'
 import { withWriteLock } from './writeLock'
 import type { UseStore } from 'idb-keyval'
 import type { Currency } from './domain'
+import type { OpenAppIn } from './spaces/activeSpace'
 import type { SpaceOption } from './spaces/spaceDb'
 
 export type AutoLockMinutes = 0 | 1 | 5 | 15 | 60 // 0 = Off
@@ -101,6 +102,44 @@ export async function updateAppSettings(
   await withWriteLock(META_SETTINGS_KEY, async () => {
     const stored = await readRaw(store)
     await set(META_SETTINGS_KEY, { ...stored, ...patch }, store)
+  })
+}
+
+// ── Open the app in (device-only, meta:settings `openAppIn`) ─────────────────
+// Kept out of AppSettings on purpose: getAppSettings' shape stays unchanged.
+
+export const OPEN_APP_IN_QUERY_KEY = ['settings', 'open-app-in'] as const
+
+export const OPEN_APP_IN_OPTIONS: ReadonlyArray<OpenAppIn> = [
+  'last',
+  'personal',
+  'family',
+]
+
+export const DEFAULT_OPEN_APP_IN: OpenAppIn = 'last'
+
+function isOpenAppIn(value: unknown): value is OpenAppIn {
+  return OPEN_APP_IN_OPTIONS.some((option) => option === value)
+}
+
+export async function getOpenAppIn(): Promise<OpenAppIn> {
+  try {
+    const store = getLocalStore()
+    if (!store) return DEFAULT_OPEN_APP_IN
+    const raw = await readRaw(store)
+    return raw && isOpenAppIn(raw.openAppIn) ? raw.openAppIn : DEFAULT_OPEN_APP_IN
+  } catch {
+    return DEFAULT_OPEN_APP_IN
+  }
+}
+
+export async function setOpenAppIn(value: OpenAppIn): Promise<void> {
+  if (!isOpenAppIn(value)) return
+  const store = getLocalStore()
+  if (!store) return
+  await withWriteLock(META_SETTINGS_KEY, async () => {
+    const stored = await readRaw(store)
+    await set(META_SETTINGS_KEY, { ...stored, openAppIn: value }, store)
   })
 }
 

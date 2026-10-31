@@ -1,7 +1,9 @@
 // No CONTRACT_GAPs: the landing copy rules are specified in plan section 10 and
 // the Interface Contract (component changes: LandingPage). Flags are mutable
 // getters; the sync copy appears only with ENABLE_SYNC and visible accounts and
-// the page is otherwise identical.
+// the page is otherwise identical. ENABLE_SPACES is part of the mock because
+// the landing page now reads it (run D); it is false here so this file keeps
+// testing the sync copy only.
 
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +19,7 @@ const flags = vi.hoisted(() => ({ sync: true }))
 
 vi.mock('@/lib/featureFlags', () => ({
   ENABLE_ACCOUNTS: true,
+  ENABLE_SPACES: false,
   get ENABLE_SYNC() {
     return flags.sync
   },

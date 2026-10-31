@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { Loader2 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { computeRangeAnalytics } from '../lib/localAnalytics'
 import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
@@ -14,13 +14,17 @@ import { QueryErrorState } from '../components/QueryErrorState'
 import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
 import { useT } from '@/i18n'
 import { formatShortMonth } from '@/i18n/format'
+import { MemberBreakdown } from '@/components/analytics/MemberBreakdown'
 import ConversionPendingNote from '@/components/ConversionPendingNote'
 import DashboardStats from '@/components/index/DashboardStats'
+import { MemberFilter } from '@/components/members/MemberFilter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { filterByMember, memberFilterOptions } from '@/lib/memberStats'
 import { formatMoney, mainAmountOf } from '@/lib/money'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
 import { spaceArgs } from '@/lib/spaces/spaceDb'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 export type AnalyticsSearch = {
@@ -88,17 +92,45 @@ function AnalyticsPage() {
 
   const spaceId = useActiveSpace()
   const db = useSpaceDb()
+  // Family: a member filter on every number, and totals by member.
+  const { isFamily, directory } = useSpaceSwitch()
+  const showMembers = isFamily && directory !== null
+  const [memberFilter, setMemberFilter] = useState('all')
+  const [shownSpaceId, setShownSpaceId] = useState(spaceId)
+  if (shownSpaceId !== spaceId) {
+    setShownSpaceId(spaceId)
+    setMemberFilter('all')
+  }
+  const memberId = showMembers && memberFilter !== 'all' ? memberFilter : undefined
 
   const analyticsQuery = useQuery({
     // The language is in the key: the timeline labels are formatted in it.
-    queryKey: spaceQueryKey(spaceId, 'analytics', search.from, search.to, mainCurrency, lang),
+    queryKey: spaceQueryKey(
+      spaceId,
+      'analytics',
+      search.from,
+      search.to,
+      mainCurrency,
+      lang,
+      ...(showMembers ? ['members', memberId ?? 'all'] : []),
+    ),
     queryFn: () =>
-      computeRangeAnalytics(
-        { from: search.from, to: search.to },
-        mainCurrency,
-        ...spaceArgs(spaceId),
-      ),
+      showMembers
+        ? computeRangeAnalytics({ from: search.from, to: search.to }, mainCurrency, {
+            spaceId,
+            byMember: true,
+            ...(memberId !== undefined ? { memberId } : {}),
+          })
+        : computeRangeAnalytics(
+            { from: search.from, to: search.to },
+            mainCurrency,
+            ...spaceArgs(spaceId),
+          ),
     enabled: settingsReady,
+    // A member filter change keeps the page (and the filter) on screen while
+    // it recomputes; another space never shows the previous space's numbers.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === spaceId ? previous : undefined,
   })
 
   const todayStr = dayjs().format('YYYY-MM-DD')
@@ -123,10 +155,21 @@ function AnalyticsPage() {
   )
   const analytics = analyticsQuery.data
 
+  const memberOptions = useMemo(
+    () => (showMembers ? memberFilterOptions(directory, monthlyExpenses) : []),
+    [showMembers, directory, monthlyExpenses],
+  )
+  // The 12-month chart follows the member filter too (in memory).
+  const memberExpenses = useMemo(
+    () =>
+      memberId !== undefined ? filterByMember(monthlyExpenses, memberId) : monthlyExpenses,
+    [monthlyExpenses, memberId],
+  )
+
   const monthlyStats = useMemo(
-    () => computeMonthlyStats(monthlyExpenses, dayjs(todayStr), mainCurrency),
+    () => computeMonthlyStats(memberExpenses, dayjs(todayStr), mainCurrency),
     // lang re-labels the months.
-    [monthlyExpenses, todayStr, mainCurrency, lang],
+    [memberExpenses, todayStr, mainCurrency, lang],
   )
 
   // Check for errors before the spinner: a failed query must never spin forever.
@@ -174,6 +217,14 @@ function AnalyticsPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
         <AnalyticsFilters analytics={analytics} search={search} />
 
+        {showMembers && (
+          <MemberFilter
+            value={memberFilter}
+            onChange={setMemberFilter}
+            options={memberOptions}
+          />
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div data-testid="analytics-total-spent">
             <StatCard
@@ -215,6 +266,23 @@ function AnalyticsPage() {
                 ariaLabel={t('analytics.incomeByCategory')}
               />
             </section>
+
+            {showMembers && analytics.members && (
+              <>
+                <MemberBreakdown
+                  kind="expense"
+                  rows={analytics.members.expense}
+                  directory={directory}
+                  mainCurrency={mainCurrency}
+                />
+                <MemberBreakdown
+                  kind="income"
+                  rows={analytics.members.income}
+                  directory={directory}
+                  mainCurrency={mainCurrency}
+                />
+              </>
+            )}
 
             <section>
               <h2 className="text-sm font-semibold mb-2">{t('analytics.overTime')}</h2>

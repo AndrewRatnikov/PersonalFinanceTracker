@@ -11,6 +11,8 @@ import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { formatMoney } from '@/lib/money'
 import { rateProvider } from '@/lib/rates'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
+import { useMoveRecords } from '@/lib/spaces/useMoveRecords'
 import {
   addDaysToDate,
   formatRecurringAmount,
@@ -25,6 +27,7 @@ import PageShell from '@/components/PageShell'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import RecurringForm from '@/components/recurring/RecurringForm'
 import RecurringRow from '@/components/recurring/RecurringRow'
+import { MoveConfirmDialog } from '@/components/space/MoveConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -51,6 +54,9 @@ function RecurringPage() {
 
   const spaceId = useActiveSpace()
   const db = useSpaceDb()
+  const { family, readOnly } = useSpaceSwitch()
+  const mover = useMoveRecords()
+  const [moving, setMoving] = useState<RecurringItem | null>(null)
 
   const recurringQuery = useQuery({
     queryKey: spaceQueryKey(spaceId, 'recurring'),
@@ -206,6 +212,13 @@ function RecurringPage() {
 
   const rowsBusy = pauseMutation.isPending || deleteMutation.isPending
 
+  const confirmMove = async () => {
+    const target = moving
+    if (target === null) return
+    const moved = await mover.move('recurring', [target.id])
+    if (moved) setMoving(null)
+  }
+
   let content: React.ReactNode = null
   if (failedQueries.length > 0) {
     content = (
@@ -312,6 +325,16 @@ function RecurringPage() {
                 onEdit={(i) => setForm({ mode: 'edit', item: i })}
                 onTogglePaused={(i) => pauseMutation.mutate(i)}
                 onDelete={(i) => deleteMutation.mutate(i)}
+                {...(mover.direction !== null
+                  ? {
+                      onMove: (i: RecurringItem) => setMoving(i),
+                      moveLabel:
+                        mover.direction === 'to-family'
+                          ? t('move.toFamily')
+                          : t('move.toPersonal'),
+                      moveDisabled: mover.disabled || mover.isPending,
+                    }
+                  : {})}
               />
             ))}
           </div>
@@ -337,6 +360,7 @@ function RecurringPage() {
             type="button"
             data-testid="recurring-add-btn"
             onClick={() => setForm({ mode: 'create' })}
+            disabled={readOnly}
             className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0"
           >
             <Plus size={16} />
@@ -346,6 +370,20 @@ function RecurringPage() {
 
         {content}
       </div>
+
+      {mover.direction !== null && family !== null && (
+        <MoveConfirmDialog
+          open={moving !== null}
+          onOpenChange={(open) => {
+            if (!open && !mover.isPending) setMoving(null)
+          }}
+          count={1}
+          direction={mover.direction}
+          familyName={family.name}
+          pending={mover.isPending}
+          onConfirm={() => void confirmMove()}
+        />
+      )}
     </PageShell>
   )
 }

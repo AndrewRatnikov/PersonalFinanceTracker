@@ -55,6 +55,13 @@ consistently; when a new string needs a term that is not here, add it.
 | Transfer ownership | Передати права власника |
 | Owner | Власник |
 | Member | Учасник |
+| Former member | Колишній учасник |
+| Personal (space) | Особисте |
+| Paid by | Хто платив |
+| Received by | Хто отримав |
+| Move to Family | Перенести в сім’ю |
+| Move to Personal | Перенести в особисте |
+| Open the app in | Відкривати застосунок у |
 | Terms of Use | Умови використання |
 | Privacy Policy | Політика конфіденційності |
 

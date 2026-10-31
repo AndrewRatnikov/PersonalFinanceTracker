@@ -4,10 +4,17 @@ import { toast } from 'sonner'
 
 import type { ChangeMainCurrencyResult, ConvertProgress } from '@/lib/conversion'
 import type { Currency } from '@/lib/domain'
+import type { OpenAppIn } from '@/lib/spaces/activeSpace'
 import { LANGS, isLang, useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { formatFullDate } from '@/i18n/format'
-import { updateCurrencySettings } from '@/lib/appSettings'
+import {
+  OPEN_APP_IN_OPTIONS,
+  OPEN_APP_IN_QUERY_KEY,
+  getOpenAppIn,
+  setOpenAppIn,
+  updateCurrencySettings,
+} from '@/lib/appSettings'
 import {
   CONVERSION_STATUS_QUERY_KEY,
   MainCurrencyChangeError,
@@ -21,6 +28,7 @@ import { CURRENCIES, DEFAULT_MAIN_CURRENCY, isCurrency } from '@/lib/domain'
 import { pendingLabel } from '@/lib/money'
 import { spaceQueryKey, useActiveSpace } from '@/lib/spaces/react'
 import { spaceArgs, withSpaceOption } from '@/lib/spaces/spaceDb'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +40,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Card, CardContent } from '@/components/ui/card'
+import { SpaceSettingsHeader } from '@/components/space/SpaceSettingsHeader'
 
 // Everything whose numbers depend on the main currency.
 const QUERIES_AFTER_CHANGE: ReadonlyArray<Array<string>> = [
@@ -51,11 +60,20 @@ type ChangeState =
 
 // Settings → General: the UI language, the main currency (changed through a
 // confirm dialog that converts budgets and recalculates every entry) and the
-// NBU exchange-rate switch.
+// NBU exchange-rate switch. With a Family held: "Open the app in" (device
+// setting) and a "Settings for <space>" header above the per-space currency
+// settings; a read-only Family disables them.
 export function GeneralTab() {
   const queryClient = useQueryClient()
   const { t, plural, lang, setLang } = useT()
   const spaceId = useActiveSpace()
+  const { family, readOnly } = useSpaceSwitch()
+  const openInQuery = useQuery({
+    queryKey: OPEN_APP_IN_QUERY_KEY,
+    queryFn: () => getOpenAppIn(),
+    enabled: family !== null,
+  })
+  const [savingOpenIn, setSavingOpenIn] = useState(false)
   const settingsQuery = useCurrencySettings()
   const statusQuery = useQuery({
     queryKey: spaceQueryKey(spaceId, 'conversion-status'),
@@ -123,6 +141,27 @@ export function GeneralTab() {
     }
   }
 
+  async function changeOpenAppIn(value: string) {
+    const next = OPEN_APP_IN_OPTIONS.find((option) => option === value)
+    if (next === undefined) return
+    setSavingOpenIn(true)
+    try {
+      await setOpenAppIn(next)
+      await queryClient.invalidateQueries({ queryKey: OPEN_APP_IN_QUERY_KEY })
+    } catch (err) {
+      console.error('Saving the start space failed:', err)
+      toast.error(t('settings.general.saveSettingFailed'))
+    } finally {
+      setSavingOpenIn(false)
+    }
+  }
+
+  function openAppInLabel(option: OpenAppIn): string {
+    if (option === 'last') return t('space.openAppInLast')
+    if (option === 'personal') return t('space.personal')
+    return family?.name ?? ''
+  }
+
   async function toggleRates(next: boolean) {
     setSavingSwitch(true)
     try {
@@ -176,6 +215,35 @@ export function GeneralTab() {
         </CardContent>
       </Card>
 
+      {family !== null && (
+        <Card className="border-border bg-card/40">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <label
+              htmlFor="settings-open-app-in"
+              className="text-sm font-medium text-foreground"
+            >
+              {t('space.openAppIn')}
+            </label>
+            <select
+              id="settings-open-app-in"
+              data-testid="settings-open-app-in"
+              value={openInQuery.data ?? 'last'}
+              disabled={savingOpenIn}
+              onChange={(e) => void changeOpenAppIn(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {OPEN_APP_IN_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {openAppInLabel(option)}
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+      )}
+
+      <SpaceSettingsHeader />
+
       <Card className="border-border bg-card/40">
         <CardContent className="flex flex-col gap-3 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -195,7 +263,7 @@ export function GeneralTab() {
               data-testid="settings-main-currency"
               aria-label={t('settings.general.mainCurrency')}
               value={mainCurrency}
-              disabled={settingsQuery.isLoading || running}
+              disabled={settingsQuery.isLoading || running || readOnly}
               onChange={(e) => openDialog(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
@@ -227,7 +295,7 @@ export function GeneralTab() {
               data-testid="settings-fetch-rates"
               checked={fetchExchangeRates}
               aria-checked={fetchExchangeRates}
-              disabled={settingsQuery.isLoading || savingSwitch}
+              disabled={settingsQuery.isLoading || savingSwitch || readOnly}
               onChange={(e) => void toggleRates(e.target.checked)}
               className="h-5 w-5 accent-primary"
             />

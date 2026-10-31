@@ -16,6 +16,7 @@ import { SyncIndicator } from './SyncIndicator'
 import type { MessageKey } from '@/i18n'
 import { useT } from '@/i18n'
 import { useAccountsVisible } from '@/lib/accountSession'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { requestCreateVault, useVaultSession } from '@/lib/vaultSession'
 import {
   Sheet,
@@ -26,6 +27,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
+import { SpaceChip, SpaceSwitcher } from '@/components/space/SpaceSwitcher'
 
 interface NavLink {
   to: '/' | '/analytics' | '/transactions' | '/income' | '/recurring' | '/settings'
@@ -47,6 +49,11 @@ const NAV_LINKS: ReadonlyArray<NavLink> = [
   },
   { to: '/settings', icon: Settings, label: 'nav.settings' },
 ]
+
+const HEADER_CLASS =
+  'sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm'
+// The Family accent comes from a theme token, never a literal colour.
+const HEADER_FAMILY_CLASS = 'border-b-2 border-b-primary/60'
 
 const NAV_LINK_CLASS =
   'flex items-center gap-3 p-3 rounded-md hover:bg-accent transition-colors text-foreground'
@@ -74,6 +81,7 @@ export default function Header() {
   const { phase } = useVaultSession()
   const accountsVisible = useAccountsVisible()
   const { t } = useT()
+  const { family, isFamily } = useSpaceSwitch()
 
   if (phase !== 'unlocked') {
     return (
@@ -180,8 +188,15 @@ export default function Header() {
     )
   }
 
+  // With no Family held the header is exactly today's (no attribute, no element).
+  const spaceAttrs =
+    family === null ? {} : { 'data-active-space': isFamily ? 'family' : 'personal' }
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
+    <header
+      className={isFamily ? `${HEADER_CLASS} ${HEADER_FAMILY_CLASS}` : HEADER_CLASS}
+      {...spaceAttrs}
+    >
       <div className="flex h-16 items-center px-4 md:px-8 max-w-6xl mx-auto">
         <Sheet>
           <SheetTrigger asChild>
@@ -201,6 +216,7 @@ export default function Header() {
             </SheetHeader>
 
             <nav className="flex-1 p-4 overflow-y-auto flex flex-col gap-1">
+              <SpaceSwitcher variant="nav" />
               {NAV_LINKS.map(({ to, icon: Icon, label, testId }) => (
                 <SheetClose key={to} asChild>
                   <Link
@@ -240,6 +256,8 @@ export default function Header() {
           </Link>
         </h1>
         <div className="ml-auto flex items-center gap-1">
+          <SpaceChip />
+          <SpaceSwitcher variant="header" />
           <SyncIndicator />
           <LockButton />
         </div>

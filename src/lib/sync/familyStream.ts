@@ -18,7 +18,9 @@
 //      on failure: pushes wait), announce new join requests once;
 //   7. pull from pullCursor with the keys of each row's key version (one
 //      refresh per cycle for an unknown version; rows still missing a key are
-//      skipped and the cursor stops before the first of them);
+//      skipped and the cursor stops before the first of them); records other
+//      members created are counted into one `new-entries` event, never when
+//      the pull started at cursor 0;
 //   8. push the changes (the full snapshot after a rotation) at the current
 //      version; key_outdated: refresh, adopt, re-encrypt the batch, retry once;
 //   9. compact tombstones, lastSyncAt, synced.
@@ -31,7 +33,7 @@ import type {
   EncryptedSyncRecord,
   SyncKeys,
 } from '@/lib/cloud/types'
-import type { ApplyIncomingOptions } from '@/lib/localDb'
+import type { AppliedIncomingRecord, ApplyIncomingOptions } from '@/lib/localDb'
 import type { SpaceKeyEntry } from '@/lib/spaces/types'
 import type { SyncRecord } from '@/lib/syncRecords'
 import type {
@@ -621,6 +623,21 @@ export function createFamilyStream(deps: FamilyStreamDeps): FamilyStream {
       const pullTotal =
         typeof my.last_seq === 'number' ? Math.max(0, my.last_seq - pullStart) : null
       const recurringIds = new Set<string>()
+      // Records new to this device and written by another member (D3).
+      let newEntries = 0
+      const onApplied = (records: Array<AppliedIncomingRecord>): void => {
+        for (const r of records) {
+          if (
+            r.created &&
+            !r.deleted &&
+            (r.type === 'expense' || r.type === 'income') &&
+            typeof r.createdBy === 'string' &&
+            r.createdBy !== me
+          ) {
+            newEntries++
+          }
+        }
+      }
       for (;;) {
         ctx.checkpoint()
         const page = await spaces.pullSpaceRecords(spaceId, ctx.deviceId, cursor, SYNC_PULL_LIMIT)
@@ -644,7 +661,7 @@ export function createFamilyStream(deps: FamilyStreamDeps): FamilyStream {
           }
           if (!missingSeen) savedCursor = row.seq
         }
-        if (decrypted.length > 0) result.applied += await apply(decrypted, {})
+        if (decrypted.length > 0) result.applied += await apply(decrypted, { onApplied })
         for (const record of decrypted) {
           const recurringId = record.data.recurringId
           if (
@@ -663,6 +680,9 @@ export function createFamilyStream(deps: FamilyStreamDeps): FamilyStream {
         patchState({ progress: { phase: 'pull', done: result.pulled, total: pullTotal } })
         await clock.yieldToUi()
         if (!page.has_more || page.records.length === 0) break
+      }
+      if (pullStart > 0 && newEntries > 0) {
+        emit({ type: 'new-entries', spaceId, count: newEntries })
       }
       if (recurringIds.size > 0) {
         ctx.checkpoint()

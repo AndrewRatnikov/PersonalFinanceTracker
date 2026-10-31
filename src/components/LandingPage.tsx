@@ -14,6 +14,7 @@ import type { RestoreSummary } from '@/lib/backup'
 import type { MessageKey } from '@/i18n'
 import { useT } from '@/i18n'
 import { formatRestoreSummary } from '@/lib/backup'
+import { ENABLE_SPACES } from '@/lib/featureFlags'
 import { requestCreateVault, setVaultPhase } from '@/lib/vaultSession'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -436,6 +437,14 @@ export default function LandingPage() {
                 {t('landing.features.syncLine')}
               </p>
             </SyncAvailable>
+            {ENABLE_SPACES && (
+              <p
+                data-testid="landing-family-feature"
+                className="text-sm font-medium text-[#6366f1] max-w-sm"
+              >
+                {t('landing.features.familyLine')}
+              </p>
+            )}
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-border rounded-xl overflow-hidden">

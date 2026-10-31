@@ -17,8 +17,10 @@ import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { createIncomeSchema } from '@/lib/schemas'
 import { useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 
 import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
+import { PaidBySelect } from '@/components/members/PaidBySelect'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,6 +66,11 @@ export function AddIncomeForm({
   const queryClient = useQueryClient()
   const db = useSpaceDb()
   const { t } = useT()
+  // Family only: who received it (default me). Personal adds no paidBy key.
+  const { isFamily, directory, memberId, readOnly } = useSpaceSwitch()
+  const showPaidBy = isFamily && directory !== null
+  const [paidBy, setPaidBy] = useState<string | null>(null)
+  const payer = paidBy ?? memberId ?? ''
 
   // The first category is the default, even when the list arrives later or
   // the selected one disappears.
@@ -122,6 +129,7 @@ export function AddIncomeForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (readOnly) return
     setErrors({})
 
     const result = createIncomeSchema.safeParse({
@@ -141,7 +149,9 @@ export function AddIncomeForm({
       return
     }
 
-    mutation.mutate({ data: result.data, repeat })
+    const data: CreateIncomeInput =
+      showPaidBy && payer !== '' ? { ...result.data, paidBy: payer } : result.data
+    mutation.mutate({ data, repeat })
   }
 
   return (
@@ -307,10 +317,21 @@ export function AddIncomeForm({
             </select>
           </div>
 
+          {showPaidBy && (
+            <PaidBySelect
+              value={payer}
+              onChange={setPaidBy}
+              label={t('members.receivedBy')}
+              directory={directory}
+              memberId={memberId}
+              disabled={mutation.isPending || readOnly}
+            />
+          )}
+
           <Button
             data-testid="income-form-submit"
             type="submit"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || readOnly}
             className="w-full h-12 text-base font-bold mt-1 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-0 shadow-sm"
           >
             {mutation.isPending ? t('common.saving') : t('income.save')}

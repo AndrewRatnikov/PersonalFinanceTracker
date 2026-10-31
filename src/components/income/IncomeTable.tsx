@@ -1,10 +1,13 @@
-import { Loader2, Repeat, Search, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Loader2, Repeat, Search, Trash2 } from 'lucide-react'
 
 import type { Currency, IncomeEntry } from '@/lib/domain'
+import type { MemberDirectory } from '@/lib/memberStats'
 import { useT } from '@/i18n'
 import { formatFullDate } from '@/i18n/format'
 import { incomeSourceLabel } from '@/lib/incomeCategories'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import EntryAmount from '@/components/EntryAmount'
+import { MemberChip } from '@/components/members/MemberChip'
 
 import {
   Table,
@@ -35,6 +38,20 @@ interface IncomeTableProps {
   /** Amounts in other currencies show their main-currency value or "rate pending". */
   mainCurrency: Currency
   onDelete: (id: string) => void
+  /** Family only: a member chip per row with a payer. */
+  members?: MemberDirectory
+  /** Row selection for a bulk move (only while a Family is held). */
+  selection?: {
+    selected: ReadonlySet<string>
+    onToggle: (id: string) => void
+    onToggleAll: () => void
+  }
+  /** Per-row "Move to Family / Personal" action. */
+  onMove?: (entry: IncomeEntry) => void
+  moveLabel?: string
+  moveDisabled?: boolean
+  /** A read-only Family copy: delete, select and move are disabled. */
+  readOnly?: boolean
 }
 
 export function IncomeTable({
@@ -44,12 +61,41 @@ export function IncomeTable({
   isDeleting,
   mainCurrency,
   onDelete,
+  members,
+  selection,
+  onMove,
+  moveLabel,
+  moveDisabled = false,
+  readOnly: readOnlyProp = false,
 }: IncomeTableProps) {
   const { t } = useT()
+  const access = useSpaceAccess()
+  const readOnly = readOnlyProp || access.readOnly
+  const columns = selection ? 6 : 5
+  const allSelected =
+    selection !== undefined &&
+    income.length > 0 &&
+    income.every((entry) => selection.selected.has(entry.id))
+  const moveText = moveLabel ?? t('move.toFamily')
   return (
     <Table>
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
+          {selection && (
+            <TableHead className="w-12 pl-3 pr-0">
+              <label className="inline-flex size-11 items-center justify-center sm:size-auto">
+                <input
+                  type="checkbox"
+                  data-testid="income-select-all"
+                  aria-label={t('move.selectAll')}
+                  checked={allSelected}
+                  disabled={readOnly || income.length === 0}
+                  onChange={() => selection.onToggleAll()}
+                  className="h-4 w-4"
+                />
+              </label>
+            </TableHead>
+          )}
           <TableHead className="pl-6 font-semibold">{t('common.date')}</TableHead>
           <TableHead className="font-semibold">{t('common.category')}</TableHead>
           <TableHead className="hidden md:table-cell font-semibold">
@@ -65,7 +111,7 @@ export function IncomeTable({
         {isLoading ? (
           <TableRow>
             <TableCell
-              colSpan={5}
+              colSpan={columns}
               className="p-12 text-center text-muted-foreground"
             >
               <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
@@ -74,7 +120,7 @@ export function IncomeTable({
         ) : isError ? (
           <TableRow>
             <TableCell
-              colSpan={5}
+              colSpan={columns}
               className="p-12 text-center text-destructive"
             >
               {t('income.loadFailed')}
@@ -83,7 +129,7 @@ export function IncomeTable({
         ) : income.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={5}
+              colSpan={columns}
               className="p-16 text-center text-muted-foreground"
             >
               <div className="flex flex-col items-center justify-center space-y-4">
@@ -104,6 +150,21 @@ export function IncomeTable({
               data-testid="income-row"
               className="hover:bg-muted/30 transition-colors group"
             >
+              {selection && (
+                <TableCell className="w-12 pl-3 pr-0">
+                  <label className="inline-flex size-11 items-center justify-center sm:size-auto">
+                    <input
+                      type="checkbox"
+                      data-testid="income-select"
+                      aria-label={t('move.selectRow')}
+                      checked={selection.selected.has(entry.id)}
+                      disabled={readOnly}
+                      onChange={() => selection.onToggle(entry.id)}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                </TableCell>
+              )}
               <TableCell className="pl-6 text-sm text-muted-foreground">
                 {formatFullDate(entry.createdAt)}
               </TableCell>
@@ -113,6 +174,11 @@ export function IncomeTable({
               >
                 {entry.category?.icon && (
                   <span className="mr-1.5">{entry.category.icon}</span>
+                )}
+                {members && entry.paidBy !== undefined && (
+                  <span className="mr-1.5 inline-flex align-middle">
+                    <MemberChip memberId={entry.paidBy} directory={members} />
+                  </span>
                 )}
                 <span>{incomeSourceLabel(entry)}</span>
                 {entry.recurringId && (
@@ -133,12 +199,27 @@ export function IncomeTable({
               </TableCell>
               <TableCell className="pr-6 text-right">
                 <div className="flex items-center justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  {onMove && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-testid="income-move-button"
+                      disabled={readOnly || moveDisabled}
+                      onClick={() => onMove(entry)}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      aria-label={moveText}
+                      title={moveText}
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                    </Button>
+                  )}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
-                        disabled={isDeleting}
+                        data-testid="income-delete-button"
+                        disabled={isDeleting || readOnly}
                         className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         aria-label={t('income.delete')}
                         title={t('income.delete')}

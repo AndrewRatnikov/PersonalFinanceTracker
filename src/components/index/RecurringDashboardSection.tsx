@@ -8,6 +8,7 @@ import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { currencyLabel, formatFullDate } from '@/i18n/format'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import {
   dueOccurrences,
   formatRecurringAmount,
@@ -48,6 +49,8 @@ export default function RecurringDashboardSection({
   )
 
   const spaceId = useActiveSpace()
+  // A read-only Family copy shows its due items but can't add or skip them.
+  const { readOnly } = useSpaceAccess()
   const db = useSpaceDb()
 
   const recurringQuery = useQuery({
@@ -126,7 +129,7 @@ export default function RecurringDashboardSection({
     categoryMaps[item.kind].get(item.categoryId)?.name ||
     t('recurring.unknownCategory')
 
-  const busy = confirmMutation.isPending || skipMutation.isPending
+  const busy = confirmMutation.isPending || skipMutation.isPending || readOnly
 
   const handleAdd = (item: RecurringItem, date: string) => {
     const text = amounts[occurrenceKey(item.id, date)]

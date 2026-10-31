@@ -17,19 +17,22 @@ import type { DescriptionSuggestion } from '@/lib/suggestions'
 import type { MessageKey } from '@/i18n'
 import { useT } from '@/i18n'
 import { errorMessage, validationMessage } from '@/i18n/errors'
-import { formatAmount, formatDay } from '@/i18n/format'
+import { formatAmount, formatDay, formatFullDate } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import {
   buildCreatedAt,
   createdAtForDate,
   parseDraftAmount,
 } from '@/lib/expenseDraft'
+import { memberLabel } from '@/lib/memberStats'
 import { formatMoney } from '@/lib/money'
 import { createExpenseSchema, updateExpenseSchema } from '@/lib/schemas'
 import { useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch, useSwitchGuard } from '@/lib/spaces/switcher'
 import { cn } from '@/lib/utils'
 import { CurrencyPicker } from '@/components/CurrencyPicker'
 import { DescriptionSuggestInput } from '@/components/DescriptionSuggestInput'
+import { PaidBySelect } from '@/components/members/PaidBySelect'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -212,6 +215,7 @@ type AddVariables = {
 function ExpenseDrawerForm({
   mode,
   expense,
+  open,
   onOpenChange,
   initial,
   categories,
@@ -224,18 +228,27 @@ function ExpenseDrawerForm({
   const { t } = useT()
   const record = mode === 'edit' ? expense : undefined
   const isEdit = record !== undefined
+  // Family: where the entry goes, who paid, who wrote it; read-only blocks saving.
+  const { family, isFamily, directory, memberId, readOnly } = useSpaceSwitch()
+  const showPaidBy = isFamily && directory !== null
+  const [paidBy, setPaidBy] = useState<string | null>(null)
+  const payer = paidBy ?? record?.paidBy ?? memberId ?? ''
 
   const [today] = useState(todayString)
   const initialDate = record
     ? dayjs(record.createdAt).format('YYYY-MM-DD')
     : today
 
-  const [amount, setAmount] = useState(() =>
+  const [openedAmount] = useState(() =>
     record ? String(record.amount) : (initial?.amount ?? ''),
   )
-  const [description, setDescription] = useState(() =>
+  const [openedDescription] = useState(() =>
     record ? (record.description ?? '') : (initial?.description ?? ''),
   )
+  const [amount, setAmount] = useState(openedAmount)
+  const [description, setDescription] = useState(openedDescription)
+  // The user picked a category, currency, date, repeat or payer.
+  const [fieldsTouched, setFieldsTouched] = useState(false)
   const [date, setDate] = useState(initialDate)
   const [repeat, setRepeat] = useState<QuickRepeat>('none')
   const [errors, setErrors] = useState<Partial<Record<ErrorField, string>>>({})
@@ -290,6 +303,13 @@ function ExpenseDrawerForm({
   }, [refocus, amountRef])
 
   const busyRef = useRef(false)
+
+  // While open, a space switch asks before discarding unsaved changes.
+  useSwitchGuard(open, {
+    isDirty: () =>
+      fieldsTouched || amount !== openedAmount || description !== openedDescription,
+    close: () => onOpenChange(false),
+  })
 
   const invalidateData = (withRecurring: boolean) => {
     void queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -370,6 +390,7 @@ function ExpenseDrawerForm({
   const pickCategory = (id: string) => {
     setChosenCategoryId(id)
     setCategoryPicked(true)
+    setFieldsTouched(true)
     // Follow the new category's default unless the user tapped a currency.
     if (!currencyTouched) setChosenCurrency(null)
   }
@@ -377,6 +398,7 @@ function ExpenseDrawerForm({
   const tapCurrency = (code: Currency) => {
     setChosenCurrency(code)
     setCurrencyTapped(true)
+    setFieldsTouched(true)
   }
 
   const pickSuggestion = (
@@ -393,6 +415,7 @@ function ExpenseDrawerForm({
 
   const changeRepeat = (next: QuickRepeat) => {
     setRepeat(next)
+    setFieldsTouched(true)
     // Repeating entries start today (same as Quick Add).
     if (next !== 'none') setDate(todayString())
   }
@@ -438,6 +461,8 @@ function ExpenseDrawerForm({
     if (!result.success || Object.keys(found).length > 0) return
 
     const input: CreateExpenseInput = { ...result.data }
+    // Family only; Personal input never gets a paidBy key.
+    if (showPaidBy && payer !== '') input.paidBy = payer
     if (repeat === 'none') {
       const createdAt = createdAtForDate(date, todayString())
       if (createdAt !== undefined) input.createdAt = createdAt
@@ -463,18 +488,18 @@ function ExpenseDrawerForm({
     updateMutation.mutate({
       id: target.id,
       originalCreatedAt: target.createdAt,
-      patch: result.data,
+      patch: showPaidBy && payer !== '' ? { ...result.data, paidBy: payer } : result.data,
     })
   }
 
   const save = (another = false) => {
-    if (busyRef.current || busy) return
+    if (busyRef.current || busy || readOnly) return
     if (record) saveEdit(record)
     else saveAdd(another)
   }
 
   const remove = () => {
-    if (!record || busyRef.current || busy) return
+    if (!record || busyRef.current || busy || readOnly) return
     busyRef.current = true
     deleteMutation.mutate({ id: record.id, createdAt: record.createdAt })
   }
@@ -493,6 +518,22 @@ function ExpenseDrawerForm({
       currency !== record.currency ||
       date !== initialDate)
 
+  // "Added by X · Edited by Y, date" (Family, edit mode).
+  const authorship =
+    record !== undefined && isFamily && directory !== null
+      ? [
+          t('members.addedBy', { name: memberLabel(directory, record.createdBy) }),
+          ...(record.updatedBy !== undefined && record.updatedBy !== record.createdBy
+            ? [
+                t('members.editedBy', {
+                  name: memberLabel(directory, record.updatedBy),
+                  date: formatFullDate(record.updatedAt ?? record.createdAt),
+                }),
+              ]
+            : []),
+        ].join(' · ')
+      : null
+
   const repeating = !isEdit && repeat !== 'none'
   const isFuture = !repeating && date !== '' && date > today
 
@@ -502,6 +543,11 @@ function ExpenseDrawerForm({
         <SheetTitle data-testid="expense-drawer-title" className="text-lg">
           {isEdit ? t('drawer.editTitle') : t('drawer.addTitle')}
         </SheetTitle>
+        {isFamily && family !== null && (
+          <p data-testid="drawer-space-cue" className="text-xs font-medium text-primary">
+            {t('space.adding', { name: family.name })}
+          </p>
+        )}
         <SheetDescription className="sr-only">
           {isEdit ? t('drawer.editDescription') : t('drawer.addDescription')}
         </SheetDescription>
@@ -514,6 +560,11 @@ function ExpenseDrawerForm({
             className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground"
           >
             {t('drawer.recurringNote')}
+          </p>
+        )}
+        {authorship !== null && (
+          <p data-testid="drawer-authorship" className="text-xs text-muted-foreground">
+            {authorship}
           </p>
         )}
 
@@ -627,7 +678,10 @@ function ExpenseDrawerForm({
             data-testid="drawer-date"
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value)
+              setFieldsTouched(true)
+            }}
             disabled={repeating}
             aria-invalid={errors.createdAt ? true : undefined}
             className="h-11 sm:h-10"
@@ -671,6 +725,21 @@ function ExpenseDrawerForm({
           />
         </div>
 
+        {/* Paid by (Family only) */}
+        {showPaidBy && (
+          <PaidBySelect
+            value={payer}
+            onChange={(id) => {
+              setPaidBy(id)
+              setFieldsTouched(true)
+            }}
+            label={t('members.paidBy')}
+            directory={directory}
+            memberId={memberId}
+            disabled={busy || readOnly}
+          />
+        )}
+
         {/* f. Repeat (add mode only) */}
         {!isEdit && (
           <div className="space-y-2">
@@ -699,7 +768,7 @@ function ExpenseDrawerForm({
           type="button"
           data-testid="drawer-save"
           onClick={() => save(false)}
-          disabled={busy}
+          disabled={busy || readOnly}
           className="min-h-11 flex-1 sm:min-h-9"
         >
           {t('common.save')}
@@ -711,7 +780,7 @@ function ExpenseDrawerForm({
                 type="button"
                 variant="destructive"
                 data-testid="drawer-delete"
-                disabled={busy}
+                disabled={busy || readOnly}
                 className="min-h-11 sm:min-h-9"
               >
                 {t('common.delete')}
@@ -742,7 +811,7 @@ function ExpenseDrawerForm({
             variant="secondary"
             data-testid="drawer-save-another"
             onClick={() => save(true)}
-            disabled={busy}
+            disabled={busy || readOnly}
             className="min-h-11 flex-1 sm:min-h-9"
           >
             {t('drawer.saveAnother')}
