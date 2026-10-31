@@ -5,6 +5,7 @@ import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
 import { CURRENCIES, isCurrency } from '@/lib/domain'
 import { useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -41,6 +42,8 @@ export function CategoryRow({
   // The value just picked in the currency select, shown while it saves.
   const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
   const { t } = useT()
+  // A read-only Family copy can be browsed but not changed.
+  const { readOnly } = useSpaceAccess()
 
   const db = useSpaceDb()
   // The handle's members are read at call time only.
@@ -172,7 +175,7 @@ export function CategoryRow({
           title={t('settings.categories.defaultCurrency')}
           value={pendingCurrency ?? category.defaultCurrency ?? ''}
           onChange={(e) => void saveCurrency(e.target.value)}
-          disabled={isPending}
+          disabled={isPending || readOnly}
           className="h-11 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-8"
         >
           <option value="">{t('settings.general.mainCurrency')}</option>
@@ -189,6 +192,7 @@ export function CategoryRow({
             size="icon"
             data-testid="category-rename-btn"
             onClick={() => setIsEditing(true)}
+            disabled={readOnly}
             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent transition-colors"
             aria-label={t('settings.categories.rename')}
           >
@@ -199,6 +203,7 @@ export function CategoryRow({
             <AlertDialogTrigger asChild>
               <Button
                 data-testid="category-delete-btn"
+                disabled={readOnly}
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
