@@ -4,21 +4,42 @@
 // (vi.resetModules() + a dynamic import of this file) gives a simulated device
 // its own localDb / vault / meta:sync instances.
 
+import { readFamilyMeta, updateFamilyMeta } from './familyMeta'
 import { clearSyncFields, readSyncMeta, updateSyncMeta } from './syncMeta'
-import type { DeviceIdPort, SyncPorts } from './types'
+import type { DeviceIdPort, FamilyPorts, SyncPorts } from './types'
 import {
   defaultDeviceLabel,
   getDeviceId,
   resetDeviceId,
 } from '@/lib/cloud/deviceId'
 import {
+  adoptSpaceKey,
   applyIncomingRecords,
   compactTombstones,
+  createLocalSpace,
   dedupeOccurrences,
+  ensureIdentityKeyPair,
+  ensureSpaceIndexKey,
+  forgetLocalSpace,
   getLocalDbKey,
+  getMemberProfiles,
+  getSpaceInfo,
+  getSpaceKeyEntry,
   listChangedRecords,
+  listSpaceKeyEntries,
   onLocalChange,
+  onSpaceLocalChange,
+  spaceDb,
+  updateSpaceEntry,
+  updateSpaceInfo,
+  upsertMemberProfile,
 } from '@/lib/localDb'
+import {
+  clearPendingInvite,
+  clearPendingJoin,
+  readPendingJoin,
+  savePendingJoin,
+} from '@/lib/spaces/pendingInvite'
 import {
   adoptCloudVault,
   adoptHeaderIfSameDek,
@@ -68,5 +89,56 @@ export function createDeviceIdPort(): DeviceIdPort {
     get: () => getDeviceId(),
     reset: () => resetDeviceId(),
     defaultLabel: () => defaultDeviceLabel(),
+  }
+}
+
+// The Family stream's and actions' ports: localDb's Family functions, the
+// Family meta and the pending invite / join markers.
+export function createFamilyPorts(): FamilyPorts {
+  return {
+    local: {
+      isUnlocked: () => getLocalDbKey() !== null,
+      listSpaceKeyEntries: () => listSpaceKeyEntries(),
+      getSpaceKeyEntry: (spaceId) => getSpaceKeyEntry(spaceId),
+      createLocalSpace: (input) => createLocalSpace(input),
+      forgetLocalSpace: (spaceId) => forgetLocalSpace(spaceId),
+      adoptSpaceKey: (input) => adoptSpaceKey(input),
+      updateSpaceEntry: (spaceId, patch) => updateSpaceEntry(spaceId, patch),
+      ensureSpaceIndexKey: (spaceId) => ensureSpaceIndexKey(spaceId),
+      ensureIdentityKeyPair: () => ensureIdentityKeyPair(),
+      listChangedRecords: (spaceId, sinceRev) => listChangedRecords(spaceId, sinceRev),
+      applyIncomingRecords: (spaceId, records, options) =>
+        applyIncomingRecords(spaceId, records, options),
+      dedupeOccurrences: (spaceId, recurringIds) =>
+        spaceDb(spaceId).dedupeOccurrences(recurringIds),
+      compactTombstones: (spaceId, olderThan, options) =>
+        spaceDb(spaceId).compactTombstones(olderThan, options),
+      getSpaceInfo: (spaceId) => getSpaceInfo(spaceId),
+      updateSpaceInfo: (spaceId, input) => updateSpaceInfo(spaceId, input),
+      getMemberProfiles: (spaceId) => getMemberProfiles(spaceId),
+      upsertMemberProfile: (spaceId, input) => upsertMemberProfile(spaceId, input),
+      countEntries: async (spaceId) => {
+        const db = spaceDb(spaceId)
+        const [expenses, income] = await Promise.all([db.getAllExpenses(), db.getAllIncome()])
+        return expenses.length + income.length
+      },
+      onSpaceLocalChange: (listener) => onSpaceLocalChange(listener),
+    },
+    meta: {
+      read: (spaceId) => readFamilyMeta(spaceId),
+      update: (spaceId, patch) => updateFamilyMeta(spaceId, patch),
+    },
+    pending: {
+      readJoin: () => readPendingJoin(),
+      saveJoin: (join) => {
+        savePendingJoin(join)
+      },
+      clearJoin: () => {
+        clearPendingJoin()
+      },
+      clearInvite: () => {
+        clearPendingInvite()
+      },
+    },
   }
 }
