@@ -17,6 +17,8 @@ import { formatAmount } from '@/i18n/format'
 import { currencyForCategory } from '@/lib/categoryCurrency'
 import { CURRENCIES, DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
 import { recurringInputSchemaFor } from '@/lib/schemas'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
+import { PaidBySelect } from '@/components/members/PaidBySelect'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -150,6 +152,12 @@ export default function RecurringForm({
   const [errors, setErrors] = useState<Partial<Record<ErrorField, string>>>(
     {},
   )
+  // Family only: who pays (default the stored payer, else me). Personal adds
+  // no paidBy key.
+  const { isFamily, directory, memberId } = useSpaceSwitch()
+  const showPaidBy = isFamily && directory !== null
+  const [paidBy, setPaidBy] = useState<string | null>(initial?.paidBy ?? null)
+  const payer = paidBy ?? memberId ?? ''
 
   const categories = kind === 'income' ? incomeCategories : expenseCategories
   const categoryKnown = categories.some((c) => c.id === categoryId)
@@ -187,6 +195,7 @@ export default function RecurringForm({
       startDate,
       end,
       mode,
+      ...(showPaidBy && payer !== '' ? { paidBy: payer } : {}),
     }
   }
 
@@ -453,6 +462,17 @@ export default function RecurringForm({
               ))}
             </select>
           </div>
+
+          {showPaidBy && (
+            <PaidBySelect
+              value={payer}
+              onChange={setPaidBy}
+              label={t('members.paidBy')}
+              directory={directory}
+              memberId={memberId}
+              disabled={isPending}
+            />
+          )}
 
           {showBackfill && (
             <label className="flex items-center gap-2 text-sm">
