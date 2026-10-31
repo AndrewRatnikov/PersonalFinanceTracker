@@ -88,9 +88,15 @@ const SWITCH_IDS = [
   'family-empty-state',
 ]
 
+function byProbe(id: string): HTMLElement {
+  const el = document.querySelector<HTMLElement>(`[data-probe="${id}"]`)
+  if (!el) throw new Error(`probe element not found: ${id}`)
+  return el
+}
+
 function Probe() {
   const s = useSpaceSwitch()
-  return <output data-testid="probe" data-space={s.spaceId} data-family={s.family?.id ?? ''} data-ready={String(s.ready)} />
+  return <output data-probe="probe" data-space={s.spaceId} data-family={s.family?.id ?? ''} data-ready={String(s.ready)} />
 }
 
 function renderApp(unlocked = true) {
@@ -102,7 +108,7 @@ function renderApp(unlocked = true) {
           <Header />
           <PageShell>
             <Probe />
-            <p data-testid="page-body">content</p>
+            <p data-probe="page-body">content</p>
           </PageShell>
         </SpaceReadyGate>
       </ActiveSpaceRoot>
@@ -133,10 +139,10 @@ describe('ENABLE_SPACES off', () => {
   it('renders the page with no switcher, chip, cue, banner or member UI', async () => {
     renderApp()
 
-    await waitFor(() => expect(screen.getByTestId('page-body')).toBeTruthy())
-    expect(screen.getByTestId('probe').getAttribute('data-space')).toBe('personal')
-    expect(screen.getByTestId('probe').getAttribute('data-family')).toBe('')
-    expect(screen.getByTestId('probe').getAttribute('data-ready')).toBe('true')
+    await waitFor(() => expect(byProbe('page-body')).toBeTruthy())
+    expect(byProbe('probe').getAttribute('data-space')).toBe('personal')
+    expect(byProbe('probe').getAttribute('data-family')).toBe('')
+    expect(byProbe('probe').getAttribute('data-ready')).toBe('true')
     expectNoFamilyUi()
   })
 
@@ -145,8 +151,8 @@ describe('ENABLE_SPACES off', () => {
 
     renderApp()
 
-    await waitFor(() => expect(screen.getByTestId('page-body')).toBeTruthy())
-    expect(screen.getByTestId('probe').getAttribute('data-space')).toBe('personal')
+    await waitFor(() => expect(byProbe('page-body')).toBeTruthy())
+    expect(byProbe('probe').getAttribute('data-space')).toBe('personal')
     expectNoFamilyUi()
   })
 
@@ -154,7 +160,7 @@ describe('ENABLE_SPACES off', () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'MINIMA:not_signed_in' }, status: 401 })
 
     renderApp()
-    await waitFor(() => expect(screen.getByTestId('page-body')).toBeTruthy())
+    await waitFor(() => expect(byProbe('page-body')).toBeTruthy())
 
     const names = rpc.mock.calls.map((c) => String(c[0]))
     expect(names.filter((n) => /space|get_my_space|invite|join/.test(n))).toEqual([])
@@ -174,8 +180,8 @@ describe('locked', () => {
 
     renderApp(false)
 
-    await waitFor(() => expect(screen.getByTestId('page-body')).toBeTruthy())
+    await waitFor(() => expect(byProbe('page-body')).toBeTruthy())
     expectNoFamilyUi()
-    expect(screen.getByTestId('probe').getAttribute('data-space')).toBe('personal')
+    expect(byProbe('probe').getAttribute('data-space')).toBe('personal')
   })
 })

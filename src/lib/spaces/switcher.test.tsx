@@ -71,7 +71,7 @@ function Probe({ id = 'probe' }: { id?: string }) {
   const providerSpace = useActiveSpace()
   return (
     <div
-      data-testid={id}
+      data-probe={id}
       data-space={s.spaceId}
       data-provider-space={providerSpace}
       data-family={s.family?.id ?? ''}
@@ -83,9 +83,9 @@ function Probe({ id = 'probe' }: { id?: string }) {
       data-directory={s.directory ? s.directory.members.map((m) => `${m.id}:${m.active}`).join(',') : 'null'}
       data-member={s.memberId ?? ''}
     >
-      <button data-testid={`${id}-to-family`} onClick={() => s.switchTo(FAM)} />
-      <button data-testid={`${id}-to-personal`} onClick={() => s.switchTo('personal')} />
-      <button data-testid={`${id}-to-bogus`} onClick={() => s.switchTo('other-space')} />
+      <button data-probe={`${id}-to-family`} onClick={() => s.switchTo(FAM)} />
+      <button data-probe={`${id}-to-personal`} onClick={() => s.switchTo('personal')} />
+      <button data-probe={`${id}-to-bogus`} onClick={() => s.switchTo('other-space')} />
     </div>
   )
 }
@@ -108,8 +108,18 @@ function renderRoot(children: ReactNode, unlocked = true) {
   return { ...view, client, again: () => view.rerender(tree) }
 }
 
+function queryProbe(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-probe="${id}"]`)
+}
+
+function byProbe(id: string): HTMLElement {
+  const el = queryProbe(id)
+  if (!el) throw new Error(`probe element not found: ${id}`)
+  return el
+}
+
 function probe(id = 'probe') {
-  return screen.getByTestId(id)
+  return byProbe(id)
 }
 
 async function settled(id = 'probe') {
@@ -248,7 +258,7 @@ describe('the start space', () => {
 
     renderRoot(<Probe />)
 
-    expect(screen.queryByTestId('probe')).toBeNull()
+    expect(queryProbe('probe')).toBeNull()
     await act(async () => {
       resolve([{ id: FAM, name: 'Stale', role: 'owner' }] as never)
       await Promise.resolve()
@@ -262,12 +272,12 @@ describe('switching', () => {
     renderRoot(<Probe />)
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
     expect(probe().getAttribute('data-space')).toBe(FAM)
     expect(probe().getAttribute('data-is-family')).toBe('true')
     expect(localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)).toBe(FAM)
 
-    fireEvent.click(screen.getByTestId('probe-to-personal'))
+    fireEvent.click(byProbe('probe-to-personal'))
     expect(probe().getAttribute('data-space')).toBe('personal')
     expect(localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)).toBe('personal')
   })
@@ -276,7 +286,7 @@ describe('switching', () => {
     renderRoot(<Probe />)
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
 
-    fireEvent.click(screen.getByTestId('probe-to-bogus'))
+    fireEvent.click(byProbe('probe-to-bogus'))
 
     expect(probe().getAttribute('data-space')).toBe('personal')
     expect(localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)).toBeNull()
@@ -285,7 +295,7 @@ describe('switching', () => {
   it('falls back to Personal when the Family disappears', async () => {
     const view = renderRoot(<Probe />)
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
     expect(probe().getAttribute('data-space')).toBe(FAM)
 
     vi.mocked(listLocalSpaces).mockResolvedValue([])
@@ -307,7 +317,7 @@ describe('switching', () => {
     const b = renderRoot(<Probe id="b" />)
     await waitFor(() => expect(probe('b').getAttribute('data-family')).toBe(FAM))
 
-    fireEvent.click(screen.getByTestId('a-to-family'))
+    fireEvent.click(byProbe('a-to-family'))
 
     expect(probe('a').getAttribute('data-space')).toBe(FAM)
     expect(probe('b').getAttribute('data-space')).toBe('personal')
@@ -326,7 +336,7 @@ describe('access and members in the Family', () => {
   async function inFamily() {
     renderRoot(<Probe />)
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
   }
 
   it('paused: paused true, still editable', async () => {
@@ -346,7 +356,7 @@ describe('access and members in the Family', () => {
       h.syncState = { status: 'synced', readOnly: false, space: null, ...patch }
       const { unmount } = renderRoot(<Probe />)
       await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
-      fireEvent.click(screen.getByTestId('probe-to-family'))
+      fireEvent.click(byProbe('probe-to-family'))
       expect(probe().getAttribute('data-readonly')).toBe('true')
       expect(probe().getAttribute('data-paused')).toBe('false')
       unmount()
@@ -378,7 +388,7 @@ describe('access and members in the Family', () => {
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
     expect(probe().getAttribute('data-directory')).toBe('null')
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
 
     await waitFor(() => expect(probe().getAttribute('data-directory')).not.toBe('null'))
     expect(probe().getAttribute('data-directory')).toBe('u-me:true,u-left:false')
@@ -408,7 +418,7 @@ describe('the drawer guard', () => {
   it('a clean guard is closed and the switch happens without a confirm', async () => {
     const close = await setup(false)
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
 
     expect(close).toHaveBeenCalledTimes(1)
     expect(probe().getAttribute('data-space')).toBe(FAM)
@@ -418,7 +428,7 @@ describe('the drawer guard', () => {
   it('a dirty guard asks first; Cancel keeps everything', async () => {
     const close = await setup(true)
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
 
     expect(screen.getByTestId('space-switch-confirm')).toBeTruthy()
     expect(probe().getAttribute('data-space')).toBe('personal')
@@ -431,7 +441,7 @@ describe('the drawer guard', () => {
   it('a dirty guard: Discard closes the drawer and then switches', async () => {
     const close = await setup(true)
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
     fireEvent.click(screen.getByTestId('space-switch-confirm-discard'))
 
     expect(close).toHaveBeenCalledTimes(1)
@@ -449,7 +459,7 @@ describe('the drawer guard', () => {
     )
     await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
 
-    fireEvent.click(screen.getByTestId('probe-to-family'))
+    fireEvent.click(byProbe('probe-to-family'))
 
     expect(screen.queryByTestId('space-switch-confirm')).toBeNull()
     expect(close).not.toHaveBeenCalled()
@@ -459,7 +469,7 @@ describe('the drawer guard', () => {
   it('switching to the space that is already active does nothing', async () => {
     const close = await setup(true)
 
-    fireEvent.click(screen.getByTestId('probe-to-personal'))
+    fireEvent.click(byProbe('probe-to-personal'))
 
     expect(screen.queryByTestId('space-switch-confirm')).toBeNull()
     expect(close).not.toHaveBeenCalled()

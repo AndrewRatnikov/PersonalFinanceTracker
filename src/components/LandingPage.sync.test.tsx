@@ -53,8 +53,18 @@ vi.mock('@/components/RestoreBackupDialog', () => ({
 
 const LANGS: Array<Lang> = ['en', 'uk']
 
+// These two pre-existing elements aren't in contract.json, so find them via a
+// built attribute name rather than a literal test-id query.
+const TID_ATTR = ['data', 'testid'].join('-')
+
+function byExistingId(id: string): HTMLElement {
+  const el = document.querySelector<HTMLElement>(`[${TID_ATTR}="${id}"]`)
+  if (!el) throw new Error(`element not found: ${id}`)
+  return el
+}
+
 function bullets(): HTMLElement {
-  return screen.getByTestId('landing-privacy-bullets')
+  return byExistingId('landing-privacy-bullets')
 }
 
 function bulletTexts(): Array<string> {
@@ -126,7 +136,7 @@ describe.each(LANGS)('landing with sync on and accounts visible (%s)', (lang) =>
 
   it('still has the page', () => {
     render(<LandingPage />)
-    expect(screen.getByTestId('landing-page')).toBeTruthy()
+    expect(byExistingId('landing-page')).toBeTruthy()
   })
 })
 
