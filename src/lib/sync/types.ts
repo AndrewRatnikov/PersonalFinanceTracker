@@ -375,6 +375,11 @@ export type FamilyStreamEvent =
   | { type: 'joined'; spaceId: string; name: string }
   | { type: 'join-request'; spaceId: string; userId: string; email: string | null }
   | { type: 'data-problem'; error: unknown }
+  /**
+   * Live expense / income records created by other members that this pull
+   * brought in; at most once per run(), never for a pull from cursor 0.
+   */
+  | { type: 'new-entries'; spaceId: string; count: number }
 
 export interface FamilyLocalPort {
   isUnlocked: () => boolean
