@@ -30,12 +30,6 @@ function lookup(tree: object, key: string): Node | undefined {
   return node as Node | undefined
 }
 
-function texts(node: Node | undefined): Array<string> {
-  if (typeof node === 'string') return [node]
-  if (node && typeof node === 'object') return Object.values(node).filter((v): v is string => typeof v === 'string')
-  return []
-}
-
 function placeholders(text: string): Array<string> {
   return Array.from(new Set(text.match(/\{[A-Za-z0-9_]+\}/g) ?? [])).sort()
 }

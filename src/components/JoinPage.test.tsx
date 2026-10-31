@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 
 import type { Lang } from '@/i18n/lang'
 import type { FamilySyncState } from '@/lib/sync/types'
-import { setLang, translate } from '@/i18n/core'
+import { setLang, translate, translatePlural } from '@/i18n/core'
 import { useAccountSession } from '@/lib/accountSession'
 import { buildInviteUrl, createInviteSecret } from '@/lib/spaces/invite'
 import { PENDING_INVITE_KEY, readPendingInvite, savePendingInvite } from '@/lib/spaces/pendingInvite'
@@ -55,8 +55,18 @@ vi.mock('@/lib/sync/react', () => ({
 }))
 vi.mock('@/lib/sync/runtime', () => ({ getSyncRuntime: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, search, children }: { to: string; search?: Record<string, string>; children?: ReactNode }) => (
-    <a href={to} data-search={JSON.stringify(search ?? {})}>
+  Link: ({
+    to,
+    search,
+    children,
+    ...rest
+  }: {
+    to: string
+    search?: Record<string, string>
+    children?: ReactNode
+    'data-testid'?: string
+  }) => (
+    <a href={to} data-search={JSON.stringify(search ?? {})} {...rest}>
       {children}
     </a>
   ),
@@ -310,7 +320,7 @@ describe.each<Lang>(['en', 'uk'])('the invite (%s)', (lang) => {
 
     const text = screen.getByTestId('join-invite-info').textContent
     expect(text).toContain('owner@example.com')
-    expect(text).toContain(translate(lang, 'join.members', { count: 2 } as never))
+    expect(text).toContain(translatePlural(lang, 'join.members', 2))
   })
 
   it('Ask to join requests with the previewed owner email and shows the safety code', async () => {

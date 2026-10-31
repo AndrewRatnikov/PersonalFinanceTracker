@@ -32,6 +32,7 @@ const ME = 'user-me'
 const BOB = 'user-bob'
 const NOW = '2026-10-30T12:00:00.000Z'
 const ORIGIN = 'https://minima.example'
+const INVITE_ID = '5f0f6c1e-0000-4000-8000-00000000abcd'
 
 let myPair: IdentityKeyPair
 let bobPair: IdentityKeyPair
@@ -155,8 +156,8 @@ function rig(options: { entry?: Partial<SpaceKeyEntry> | null; my?: MySpace | nu
       r.order.push('createSpace')
       return Promise.resolve({ space_id: spaceId, key_version: 1 })
     }),
-    createInvite: vi.fn(() => Promise.resolve({ invite_id: 'invite-1', expires_at: '2026-11-01T12:00:00.000Z' })),
-    revokeInvite: vi.fn(() => Promise.resolve({ invite_id: 'invite-1', revoked_at: NOW })),
+    createInvite: vi.fn(() => Promise.resolve({ invite_id: INVITE_ID, expires_at: '2026-11-01T12:00:00.000Z' })),
+    revokeInvite: vi.fn(() => Promise.resolve({ invite_id: INVITE_ID, revoked_at: NOW })),
     getInvite: vi.fn(() => Promise.resolve({ space_id: SPACE, owner_email: 'owner@example.com', members_count: 2, expires_at: NOW })),
     requestJoin: vi.fn(() => Promise.resolve({ space_id: SPACE, status: 'pending' as const })),
     approveMember: vi.fn((_s: string, userId: string, keyVersion: number) =>
@@ -263,11 +264,11 @@ function rig(options: { entry?: Partial<SpaceKeyEntry> | null; my?: MySpace | nu
   }
 
   r.actions = createFamilyActions({
-    api: r.api,
+    api: r.api as unknown as { getSyncStatus: () => Promise<SyncStatus> },
     spaces: r.spaces as unknown as SpacesApi,
     engine: r.engine as never,
     family: r.family as unknown as FamilyStream,
-    ports: { local: r.local as unknown as FamilyPorts['local'], meta: r.meta, pending: r.pending as unknown as FamilyPorts['pending'] },
+    ports: { local: r.local as unknown as FamilyPorts['local'], meta: r.meta as unknown as FamilyPorts['meta'], pending: r.pending as unknown as FamilyPorts['pending'] },
     personalMeta,
     getUserId: () => (r.signedIn ? ME : null),
     origin: () => ORIGIN,
@@ -433,10 +434,10 @@ describe('createInvite', () => {
 
     const created = await r.actions.createInvite()
 
-    expect(created).toMatchObject({ inviteId: 'invite-1', expiresAt: '2026-11-01T12:00:00.000Z' })
+    expect(created).toMatchObject({ inviteId: INVITE_ID, expiresAt: '2026-11-01T12:00:00.000Z' })
     expect(created.url.startsWith(`${ORIGIN}/join#`)).toBe(true)
     const parsed = parseInviteFragment(new URL(created.url).hash)
-    expect(parsed?.inviteId).toBe('invite-1')
+    expect(parsed?.inviteId).toBe(INVITE_ID)
     const secret = bytesToBase64(parsed?.secret ?? new Uint8Array())
     const token = await inviteToken(parsed?.secret ?? new Uint8Array())
     const [spaceId, hash] = r.spaces.createInvite.mock.calls[0] as [string, string]

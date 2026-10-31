@@ -241,13 +241,22 @@ describe('an active or local-only space is writable', () => {
   })
 
   it('another space is unaffected by a read-only neighbour', async () => {
+    // Only one live Family space may exist, so the neighbour is the personal space.
     const gone = await newSpace()
-    const fine = await newSpace()
     await markStatus(gone, 'removed')
 
     expect(isSpaceReadOnly(gone)).toBe(true)
-    expect(isSpaceReadOnly(fine)).toBe(false)
-    expect((await addFamilyExpense(fine, 20)).amount).toBe(20)
+    expect(isSpaceReadOnly('a1b2c3d4-0000-4000-8000-0000000000c3')).toBe(false)
+    const category = await addCategory({ name: 'Food' })
+    const expense = await addExpense({
+      amount: 20,
+      currency: 'UAH',
+      categoryId: category.id,
+      description: 'neighbour',
+      createdAt: MAY,
+    })
+    expect(expense.amount).toBe(20)
+    expect(isSpaceReadOnly(gone)).toBe(true)
   })
 
   it('going back from removed to active lets writes through again', async () => {

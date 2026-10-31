@@ -129,21 +129,26 @@ describe('createLocalSpace and the index key', () => {
   })
 
   it('gives every space its own indexKey', async () => {
+    // One live Family space at a time: forget the first before creating the next.
     const a = await createLocalSpace({ name: 'A', lang: 'en' })
+    const keyA = (await entryOf(a.id)).indexKey
+    await forgetLocalSpace(a.id)
     const b = await createLocalSpace({ name: 'B', lang: 'en' })
+    const keyB = (await entryOf(b.id)).indexKey
 
-    expect((await entryOf(a.id)).indexKey).not.toBe((await entryOf(b.id)).indexKey)
+    expect(keyA).toBeDefined()
+    expect(keyB).toBeDefined()
+    expect(keyA).not.toBe(keyB)
   })
 })
 
 describe('listSpaceKeyEntries / getSpaceKeyEntry', () => {
   it('returns live entries with key material and without rev', async () => {
     const a = await createLocalSpace({ name: 'A', lang: 'en' })
-    const b = await createLocalSpace({ name: 'B', lang: 'en' })
 
     const list = await listSpaceKeyEntries()
 
-    expect(list.map((e) => e.id).sort()).toEqual([a.id, b.id].sort())
+    expect(list.map((e) => e.id)).toEqual([a.id])
     for (const e of list) {
       expect(e.key.length).toBeGreaterThan(0)
       expect(e.indexKey?.length).toBeGreaterThan(0)
@@ -153,8 +158,8 @@ describe('listSpaceKeyEntries / getSpaceKeyEntry', () => {
 
   it('skips forgotten (tombstoned) spaces', async () => {
     const a = await createLocalSpace({ name: 'A', lang: 'en' })
-    const b = await createLocalSpace({ name: 'B', lang: 'en' })
     await forgetLocalSpace(a.id)
+    const b = await createLocalSpace({ name: 'B', lang: 'en' })
 
     expect((await listSpaceKeyEntries()).map((e) => e.id)).toEqual([b.id])
     expect(await getSpaceKeyEntry(a.id)).toBeNull()
