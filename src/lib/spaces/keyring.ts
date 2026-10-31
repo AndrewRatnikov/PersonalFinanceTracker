@@ -13,6 +13,8 @@ export interface HeldSpace {
   keyVersion: number
   /** Newest version first. */
   keys: Array<{ keyVersion: number; key: CryptoKey }>
+  /** True for a removed / left / deleted Family: readable, never written. */
+  readOnly?: boolean
 }
 
 let held = new Map<string, HeldSpace>()
@@ -65,6 +67,11 @@ export function getHeldSpace(spaceId: string): HeldSpace | undefined {
 
 export function isSpaceHeld(spaceId: string): boolean {
   return held.has(spaceId)
+}
+
+// True when the held space is a read-only copy (spec §22, decision D5).
+export function isSpaceReadOnly(spaceId: string): boolean {
+  return held.get(spaceId)?.readOnly === true
 }
 
 export function setKeyringLoader(next: (() => Promise<void>) | null): void {
