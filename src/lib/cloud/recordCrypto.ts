@@ -3,8 +3,13 @@
 // No storage, no network, no React, and no import of vault.ts (vault.ts
 // imports this module).
 
-import { SYNC_DATA_INFO, SYNC_ENC_V, SYNC_INDEX_INFO } from './types'
-import type { EncryptedSyncRecord, SyncKeys } from './types'
+import {
+  SPACE_INDEX_INFO,
+  SYNC_DATA_INFO,
+  SYNC_ENC_V,
+  SYNC_INDEX_INFO,
+} from './types'
+import type { EncryptedSpaceRow, EncryptedSyncRecord, SyncKeys } from './types'
 import type { SyncRecord, SyncRecordType } from '@/lib/syncRecords'
 import { base64ToBytes, bytesToBase64 } from '@/lib/crypto'
 
@@ -185,6 +190,153 @@ export async function decryptSyncRecord(
         name: 'AES-GCM',
         iv: base64ToBytes(row.iv),
         additionalData: utf8.encode(row.record_key),
+      },
+      keys.data,
+      base64ToBytes(row.ciphertext),
+    )
+    plaintext = new TextDecoder('utf-8', { fatal: true }).decode(opened)
+  } catch {
+    throw new SyncRecordError(
+      'decrypt-failed',
+      'The record could not be decrypted',
+    )
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(plaintext)
+  } catch {
+    throw new SyncRecordError('invalid-record', 'The record is not valid JSON')
+  }
+  if (!isSyncRecord(parsed)) {
+    throw new SyncRecordError(
+      'invalid-record',
+      'The record has an invalid shape',
+    )
+  }
+
+  if ((await recordKeyFor(keys, parsed.type, parsed.id)) !== row.record_key) {
+    throw new SyncRecordError(
+      'decrypt-failed',
+      'The record does not match its key',
+    )
+  }
+  return parsed
+}
+
+// ── Family records (spec §22, decision D1) ──────────────────────────────────
+// The index key comes from the space's fixed indexKey, the data key from the
+// sk of one key version; the AAD binds the key version to the record key.
+
+async function hkdfMaterial(raw: Uint8Array, what: string): Promise<CryptoKey> {
+  if (raw.byteLength !== 32) {
+    throw new TypeError(`${what} must be 32 bytes, got ${raw.byteLength}`)
+  }
+  const material = new Uint8Array(raw)
+  try {
+    return await crypto.subtle.importKey('raw', material, 'HKDF', false, [
+      'deriveKey',
+    ])
+  } finally {
+    material.fill(0)
+  }
+}
+
+// HKDF-SHA256(indexKey, empty salt, info SPACE_INDEX_INFO) → HMAC-SHA-256.
+export async function deriveSpaceIndexKey(
+  indexKey: Uint8Array,
+): Promise<CryptoKey> {
+  const base = await hkdfMaterial(indexKey, 'A space index key')
+  return crypto.subtle.deriveKey(
+    hkdfParams(SPACE_INDEX_INFO),
+    base,
+    { name: 'HMAC', hash: 'SHA-256', length: 256 },
+    false,
+    ['sign'],
+  )
+}
+
+// HKDF-SHA256(sk, empty salt, info SYNC_DATA_INFO) → AES-GCM-256.
+export async function deriveSpaceDataKey(sk: Uint8Array): Promise<CryptoKey> {
+  const base = await hkdfMaterial(sk, 'A space key')
+  return crypto.subtle.deriveKey(
+    hkdfParams(SYNC_DATA_INFO),
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+export async function deriveSpaceSyncKeys(
+  indexKey: Uint8Array,
+  sk: Uint8Array,
+): Promise<SyncKeys> {
+  const [index, data] = await Promise.all([
+    deriveSpaceIndexKey(indexKey),
+    deriveSpaceDataKey(sk),
+  ])
+  return { index, data }
+}
+
+export function spaceRecordAad(recordKey: string, keyVersion: number): string {
+  return `${recordKey}:${keyVersion}`
+}
+
+export async function encryptSpaceRecord(
+  keys: SyncKeys,
+  record: SyncRecord,
+  keyVersion: number,
+): Promise<EncryptedSyncRecord> {
+  const updatedAtMs = Date.parse(record.updatedAt)
+  if (!Number.isFinite(updatedAtMs)) {
+    throw new SyncRecordError(
+      'invalid-record',
+      'The record has no valid updatedAt',
+    )
+  }
+  const recordKey = await recordKeyFor(keys, record.type, record.id)
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv,
+      additionalData: utf8.encode(spaceRecordAad(recordKey, keyVersion)),
+    },
+    keys.data,
+    utf8.encode(JSON.stringify(record)),
+  )
+  return {
+    record_key: recordKey,
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    iv: bytesToBase64(iv),
+    enc_v: SYNC_ENC_V,
+    updated_at_ms: updatedAtMs,
+  }
+}
+
+// Opens a Family row: enc_v, the tag (AAD with row.key_version), the shape,
+// and that the record belongs to its record_key.
+export async function decryptSpaceRecord(
+  keys: SyncKeys,
+  row: EncryptedSpaceRow,
+): Promise<SyncRecord> {
+  if (row.enc_v !== SYNC_ENC_V) {
+    throw new SyncRecordError(
+      'unsupported-version',
+      `Unsupported enc_v ${row.enc_v}`,
+    )
+  }
+
+  let plaintext: string
+  try {
+    const opened = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: base64ToBytes(row.iv),
+        additionalData: utf8.encode(
+          spaceRecordAad(row.record_key, row.key_version),
+        ),
       },
       keys.data,
       base64ToBytes(row.ciphertext),

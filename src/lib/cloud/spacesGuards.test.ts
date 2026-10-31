@@ -1,10 +1,12 @@
 // @vitest-environment node
 // No CONTRACT_GAPs. Source-scanning guards for the Family space server run
-// (criteria 13, 14 and 16), in the style of guards.test.ts: nothing calls the
-// new client yet, the new RPC names live in spacesApi.ts only, invite.ts is
-// pure, and wrapSpaceKeyWithSecret stays reserved. The scanner patterns are
-// proven with positive controls so a guard cannot pass because a regex matches
-// nothing.
+// (criteria 13, 14 and 16), in the style of guards.test.ts: the new RPC names
+// live in spacesApi.ts only, invite.ts is pure, and wrapSpaceKeyWithSecret
+// stays reserved. Family sharing run: the Family client is now used by exactly
+// sync/types.ts (type import), familyStream.ts, familyActions.ts (types only)
+// and runtime.ts (the only place that builds it, behind ENABLE_SPACES). The
+// scanner patterns are proven with positive controls so a guard cannot pass
+// because a regex matches nothing.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -55,6 +57,15 @@ const SPACE_RPC_NAMES =
   /['"`](?:is_active_space_member|get_my_space|create_space|create_invite|revoke_invite|get_invite|request_join|approve_member|reject_member|remove_member|rotate_space_key|leave_space|transfer_ownership|delete_space|push_space_records|pull_space_records)['"`]/
 const IMPORT_FROM = /(?<![.\w])(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g
 
+// The only files that may name the Family client (Family sharing run).
+const SPACES_API_USERS = [
+  'lib/cloud/spacesApi.ts',
+  'lib/sync/types.ts',
+  'lib/sync/familyStream.ts',
+  'lib/sync/familyActions.ts',
+  'lib/sync/runtime.ts',
+]
+
 function importsOf(text: string): Array<string> {
   return Array.from(code(text).matchAll(IMPORT_FROM), (m) => m[1])
 }
@@ -91,17 +102,53 @@ describe('scanner self-check', () => {
     expect(files).toContain('lib/spaces/invite.ts')
     expect(files).toContain('lib/spaces/spaceCrypto.ts')
     expect(files).toContain('lib/cloud/api.ts')
+    expect(files).toContain('lib/sync/runtime.ts')
+    expect(files).toContain('lib/sync/familyStream.ts')
+    expect(files).toContain('lib/spaces/pendingInvite.ts')
     expect(files.some((p) => p.endsWith('.test.ts'))).toBe(false)
   })
 })
 
-describe('nothing in the app uses the Family client yet (criterion 13)', () => {
-  it('only spacesApi.ts names spacesApi or createSpacesApi', () => {
+describe('only the sync runtime builds the Family client (criterion 13)', () => {
+  it('only the listed files name spacesApi or createSpacesApi', () => {
     const offenders = appSources()
-      .filter((f) => f.path !== 'lib/cloud/spacesApi.ts')
+      .filter((f) => !SPACES_API_USERS.includes(f.path))
       .filter((f) => SPACES_API_NAME.test(code(f.text)))
       .map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  it('every listed file really uses the client', () => {
+    for (const path of SPACES_API_USERS) {
+      expect(SPACES_API_NAME.test(source(path)), path).toBe(true)
+    }
+  })
+
+  it('createSpacesApi is called by runtime.ts only', () => {
+    const callers = appSources()
+      .filter((f) => f.path !== 'lib/cloud/spacesApi.ts')
+      .filter((f) => /\bcreateSpacesApi\s*\(/.test(code(f.text)))
+      .map((f) => f.path)
+    expect(callers).toEqual(['lib/sync/runtime.ts'])
+  })
+
+  it('runtime.ts builds the client behind ENABLE_SPACES', () => {
+    const text = source('lib/sync/runtime.ts')
+    expect(text).toMatch(/ENABLE_SPACES/)
+    expect(text).toMatch(/createSpacesApi\s*\(/)
+    expect(text.indexOf('ENABLE_SPACES')).toBeLessThan(text.indexOf('createSpacesApi('))
+  })
+
+  it('the Family files import the client as a type only', () => {
+    for (const path of ['lib/sync/types.ts', 'lib/sync/familyStream.ts', 'lib/sync/familyActions.ts']) {
+      const statements =
+        source(path).match(/^import\b[^;'"]*?\bfrom\s+['"][^'"]*cloud\/spacesApi['"]/gm) ?? []
+      for (const statement of statements) expect(statement, path).toMatch(/^import type\b/)
+    }
+  })
+
+  it('SyncRunner does not read ENABLE_SPACES', () => {
+    expect(source('components/SyncRunner.tsx')).not.toMatch(/ENABLE_SPACES/)
   })
 
   it('spacesApi.ts exports createSpacesApi and currentKeyVersionOf', () => {
@@ -167,6 +214,17 @@ describe('nothing in the app uses the Family client yet (criterion 13)', () => {
       .filter((f) => importsOf(f.text).some((s) => /(?:^|\/)api$/.test(s)))
       .map((f) => f.path)
     expect(importers).toEqual(['lib/cloud/entitlements.ts'])
+  })
+})
+
+describe('sessionStorage lives in pendingInvite.ts only (criterion 13)', () => {
+  it('no other app file touches sessionStorage', () => {
+    const offenders = appSources()
+      .filter((f) => f.path !== 'lib/spaces/pendingInvite.ts')
+      .filter((f) => /\bsessionStorage\b/.test(code(f.text)))
+      .map((f) => f.path)
+    expect(offenders).toEqual([])
+    expect(source('lib/spaces/pendingInvite.ts')).toMatch(/\bsessionStorage\b/)
   })
 })
 

@@ -5,6 +5,8 @@
 // content. Run 3: the featureFlags mock gains ENABLE_SYNC: false (the route now
 // imports it) and SyncTab is replaced by fake-sync-tab; with the flag off the
 // tab list is unchanged. The flag-on cases are in settings.sync.test.tsx.
+// Family run: the featureFlags mock gains ENABLE_SPACES: false (the route now
+// reads it); with the flag off the tab list is unchanged.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
@@ -22,7 +24,11 @@ vi.mock('@/lib/accountSession', () => ({
   useAccountsVisible: vi.fn(),
   useAccountSession: vi.fn(),
 }))
-vi.mock('@/lib/featureFlags', () => ({ ENABLE_ACCOUNTS: false, ENABLE_SYNC: false }))
+vi.mock('@/lib/featureFlags', () => ({
+  ENABLE_ACCOUNTS: false,
+  ENABLE_SYNC: false,
+  ENABLE_SPACES: false,
+}))
 vi.mock('@/components/settings/GeneralTab', () => ({
   GeneralTab: () => <div data-testid="fake-general-tab" />,
 }))
@@ -138,6 +144,13 @@ describe('Settings tabs without accounts', () => {
     expect(screen.queryByTestId('settings-tab-sync')).toBeNull()
     expect(tabLabels()).not.toContain('Sync')
   })
+
+  it('has no Family trigger with the flags off', () => {
+    renderSettings()
+
+    expect(screen.queryByTestId('settings-tab-family')).toBeNull()
+    expect(tabLabels()).not.toContain('Family')
+  })
 })
 
 describe('Settings tabs with accounts visible', () => {
@@ -216,7 +229,7 @@ describe('Settings validateSearch', () => {
     search: Record<string, unknown>,
   ) => { tab?: string }
 
-  it.each(['general', 'categories', 'budget', 'security', 'data', 'account', 'sync'])(
+  it.each(['general', 'categories', 'budget', 'security', 'data', 'account', 'sync', 'family'])(
     'accepts tab=%s',
     (tab) => {
       expect(validate({ tab })).toEqual({ tab })

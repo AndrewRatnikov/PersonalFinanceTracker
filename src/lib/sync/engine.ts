@@ -23,9 +23,18 @@
 //   7. compact tombstones that are pushed and older than 90 days; lastSyncAt.
 // Locking the vault or stop() ends a cycle at its next checkpoint (after the
 // current request). Never logs records, keys, headers or ciphertext.
+//
+// With a Family stream (deps.family, spec §22) the same cycle then runs the
+// Family part with the fresh status of the gate, under the same lock. Without
+// it the engine behaves exactly as before.
 
 import { isSyncOn } from './syncMeta'
-import type { CloudErrorCode, EncryptedSyncRecord, SyncKeys } from '@/lib/cloud/types'
+import type {
+  CloudErrorCode,
+  EncryptedSyncRecord,
+  SyncKeys,
+  SyncStatus,
+} from '@/lib/cloud/types'
 import type { ApplyIncomingOptions } from '@/lib/localDb'
 import type { SyncRecord } from '@/lib/syncRecords'
 import type {
@@ -382,7 +391,51 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
   }
 
+  // What the personal part tells the Family part (set as it goes).
+  interface PersonalOutcome {
+    status: SyncStatus | null
+    userId: string | null
+    deviceId: string | null
+    offline: boolean
+    blocked: boolean
+  }
+
   async function cycle(): Promise<SyncCycleResult> {
+    const family = deps.family
+    if (!family) return personalCycle(null)
+    const gen = generation
+    const outcome: PersonalOutcome = {
+      status: null,
+      userId: null,
+      deviceId: null,
+      offline: false,
+      blocked: false,
+    }
+    const result = await personalCycle(outcome)
+    if (outcome.offline) family.markOffline()
+    if (
+      outcome.status === null ||
+      outcome.blocked ||
+      outcome.userId === null ||
+      outcome.deviceId === null ||
+      gen !== generation ||
+      !ports.local.isUnlocked()
+    ) {
+      return result
+    }
+    const familyResult = await family.run({
+      userId: outcome.userId,
+      deviceId: outcome.deviceId,
+      status: outcome.status,
+      checkpoint: () => {
+        if (gen !== generation || !ports.local.isUnlocked()) throw new CycleHalted()
+      },
+    })
+    if (familyResult.retry && started && retryTimer === null) scheduleRetry()
+    return { ...result, family: familyResult }
+  }
+
+  async function personalCycle(outcome: PersonalOutcome | null): Promise<SyncCycleResult> {
     const gen = generation
     const result = emptyResult(state.status, true)
     let meta: SyncMeta = { localRev: 0 }
@@ -459,6 +512,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         return { ...result, status: 'other-account' }
       }
       if (!isOnline()) {
+        if (outcome) outcome.offline = true
         setStatus('offline', meta)
         return { ...result, status: 'offline' }
       }
@@ -468,6 +522,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
       // 2. The gate, fresh every cycle.
       const status = await api.getSyncStatus()
+      if (outcome) {
+        outcome.status = status
+        outcome.userId = userId
+        outcome.deviceId = deviceId
+      }
       if (!hasFeature(status, 'sync')) {
         setStatus('paused', meta)
         return { ...result, status: 'paused' }
@@ -606,6 +665,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       return { ...result, status: 'synced' }
     } catch (err) {
       if (err instanceof CycleHalted) {
+        if (outcome) outcome.blocked = true
         // Back to the baseline: nothing more is sent.
         const baseline: SyncStatusCode =
           before !== 'syncing' && before !== 'off'
@@ -634,6 +694,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         }
         return { ...result, status }
       }
+      if (outcome) outcome.blocked = true
       if (isDecryptError(err)) {
         emit({ type: 'data-problem', error: err })
         setStatus('error', meta, { errorCode: 'decrypt' })
@@ -664,8 +725,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   ): Promise<SyncCycleResult> {
     const reason = options.reason
     if (running) {
-      // A turn-on or restore must run its own cycle: wait for this one.
-      if (reason === 'turn-on' || reason === 'restore') {
+      // A turn-on, restore or Family action must run its own cycle: wait for this one.
+      if (reason === 'turn-on' || reason === 'restore' || reason === 'family') {
         await running.catch(() => undefined)
         return runCycle(options)
       }
@@ -737,14 +798,17 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       if (started) return
       started = true
       generation++
+      const family = deps.family
       removers = [
         ports.local.onLocalChange(() => requestCycle('local-change')),
+        ...(family ? [family.onLocalChange(() => requestCycle('local-change'))] : []),
         env.listen('window', 'online', () => requestCycle('online')),
         env.listen('document', 'visibilitychange', () => {
           if (env.isVisible()) requestCycle('visible')
         }),
       ]
       scheduleInterval()
+      if (family) void family.refreshFromLocal()
       requestCycle('unlock')
     },
     stop() {

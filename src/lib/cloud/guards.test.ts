@@ -1,10 +1,11 @@
 // @vitest-environment node
 // No CONTRACT_GAPs. Source-scanning guards (criteria 23 and 24, decisions D2
 // and D4), updated for run 3 (plan section 12): the sync engine and the sync
-// actions may call the api, and only they. This is the one place that reads
-// repo source files; every other test avoids the filesystem. The scanner
-// patterns are proven with positive controls so a guard can't pass just because
-// its regex matches nothing.
+// actions may call the api, and only they. Family run: familyActions.ts may
+// call getSyncStatus (the fresh shared_spaces gate of createFamily), nothing
+// else changes. This is the one place that reads repo source files; every other
+// test avoids the filesystem. The scanner patterns are proven with positive
+// controls so a guard can't pass just because its regex matches nothing.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -66,6 +67,8 @@ const SYNC_API_USERS = [
   'lib/sync/types.ts',
 ]
 const SYNC_CALLERS = ['lib/sync/actions.ts', 'lib/sync/engine.ts']
+// Family run: also allowed to ask for a fresh status (never imports the api).
+const FAMILY_STATUS_CALLER = 'lib/sync/familyActions.ts'
 
 describe('scanner self-check', () => {
   it('the plan_id pattern catches comparisons and ignores plain use', () => {
@@ -115,6 +118,8 @@ describe('scanner self-check', () => {
     expect(files).toContain('lib/cloud/api.ts')
     expect(files).toContain('lib/sync/engine.ts')
     expect(files).toContain('lib/sync/actions.ts')
+    expect(files).toContain('lib/sync/familyActions.ts')
+    expect(files).toContain('lib/sync/familyStream.ts')
     expect(files.some((p) => p.endsWith('.test.ts'))).toBe(false)
     expect(files.length).toBeGreaterThan(50)
   })
@@ -140,6 +145,12 @@ describe('no cloud calls outside the gate (criterion 24)', () => {
       .filter((f) => API_IMPORT.test(code(f.text)))
       .map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  it('the Family files never import the cloud api (CloudError comes from rpc)', () => {
+    for (const path of ['lib/sync/familyActions.ts', 'lib/sync/familyStream.ts', 'lib/sync/familyMeta.ts']) {
+      expect(API_IMPORT.test(source(path)), path).toBe(false)
+    }
   })
 
   it('inside src/lib/cloud only entitlements.ts imports the api', () => {
@@ -171,13 +182,13 @@ describe('no cloud calls outside the gate (criterion 24)', () => {
     expect(offenders).toEqual(SYNC_CALLERS)
   })
 
-  it('getSyncStatus is called only by entitlements.ts, the engine and the actions', () => {
+  it('getSyncStatus is called only by entitlements.ts, the engine, the actions and familyActions', () => {
     const callers = appSources()
       .filter((f) => f.path !== 'lib/cloud/api.ts')
       .filter((f) => /\.getSyncStatus\s*\(/.test(code(f.text)))
       .map((f) => f.path)
       .sort()
-    expect(callers).toEqual(['lib/cloud/entitlements.ts', ...SYNC_CALLERS])
+    expect(callers).toEqual(['lib/cloud/entitlements.ts', ...SYNC_CALLERS, FAMILY_STATUS_CALLER])
   })
 
   it('no file outside api.ts names a sync RPC function', () => {
@@ -200,6 +211,13 @@ describe('the engine and the actions go through the permission gate', () => {
     expect(source(path)).toMatch(/\.getSyncStatus\s*\(/)
   })
 
+  it('familyActions.ts gates Create on shared_spaces through hasFeature', () => {
+    const text = source(FAMILY_STATUS_CALLER)
+    expect(text).toMatch(HAS_FEATURE_IMPORT)
+    expect(text).toMatch(/\bhasFeature\s*\([^)]*['"]shared_spaces['"]/)
+    expect(text).toMatch(/\.getSyncStatus\s*\(/)
+  })
+
   it('every sync file that moves data lives in the two gated files', () => {
     const movers = appSources()
       .filter((f) => /\.(?:pushRecords|pullRecords|createVault|registerDevice|updateVaultHeader)\s*\(/.test(code(f.text)))
@@ -216,6 +234,12 @@ describe('sync code never logs plaintext (criterion 26)', () => {
     expect(files.length).toBeGreaterThan(5)
     const offenders = files.filter((f) => CONSOLE_NOISE.test(code(f.text))).map((f) => f.path)
     expect(offenders).toEqual([])
+  })
+
+  it('the Family stream and actions never log at all', () => {
+    for (const path of ['lib/sync/familyStream.ts', 'lib/sync/familyActions.ts', 'lib/spaces/pendingInvite.ts']) {
+      expect(source(path), path).not.toMatch(/\bconsole\.(?:log|info|debug|warn)\s*\(/)
+    }
   })
 })
 
@@ -287,6 +311,15 @@ describe('key handling (decisions D1 and D2)', () => {
       const text = source(file)
       expect(text, file).not.toMatch(/HKDF|getSyncKeys|lib\/cloud/)
     }
+  })
+
+  it('the space record keys are derived in recordCrypto.ts only', () => {
+    expect(source('lib/cloud/recordCrypto.ts')).toMatch(/deriveSpaceIndexKey/)
+    const offenders = appSources()
+      .filter((f) => f.path !== 'lib/cloud/recordCrypto.ts' && f.path !== 'lib/cloud/types.ts')
+      .filter((f) => /minima-space-index-v1/.test(code(f.text)))
+      .map((f) => f.path)
+    expect(offenders).toEqual([])
   })
 })
 

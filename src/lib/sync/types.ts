@@ -3,17 +3,31 @@
 // importing this file never loads them.
 
 import type { CloudApi } from '@/lib/cloud/api'
+import type { InviteInfo, MySpace, SpacesApi } from '@/lib/cloud/spacesApi'
 import type {
   CloudDevice,
   CloudVault,
+  EncryptedSpaceRow,
   EncryptedSyncRecord,
   SyncKeys,
+  SyncStatus,
 } from '@/lib/cloud/types'
 import type {
+  AdoptSpaceKeyInput,
   ApplyIncomingOptions,
   ApplyIncomingResult,
   ChangedRecords,
+  SpaceEntryPatch,
 } from '@/lib/localDb'
+import type { PendingInvite, PendingJoin } from '@/lib/spaces/pendingInvite'
+import type { IdentityKeyPair } from '@/lib/spaces/spaceCrypto'
+import type {
+  LocalSpace,
+  MemberProfile,
+  SpaceInfoRecord,
+  SpaceKeyEntry,
+  SpaceRole,
+} from '@/lib/spaces/types'
 import type { SyncRecord } from '@/lib/syncRecords'
 import type {
   CloudVaultSecret,
@@ -99,6 +113,7 @@ export type SyncTrigger =
   | 'turn-on'
   | 'restore'
   | 'header'
+  | 'family'
 
 export interface SyncCycleResult {
   /** false: skipped (lock held by another tab, or a cycle already running here). */
@@ -116,6 +131,8 @@ export interface SyncCycleResult {
   skipped: number
   deduped: number
   compacted: number
+  /** The Family stream's part of the cycle (only with a Family stream). */
+  family?: FamilyCycleResult
 }
 
 export type SyncEngineEvent =
@@ -219,6 +236,8 @@ export interface SyncEngineDeps {
   locks?: SyncLockManager
   /** Default: the real window / document; a no-op on the server. */
   env?: SyncEnv
+  /** The Family stream, run after the personal part of every cycle. */
+  family?: FamilyStream
 }
 
 export interface SyncEngine {
@@ -280,4 +299,234 @@ export interface SyncActions {
   renameDevice: (deviceId: string, label: string) => Promise<CloudDevice>
   removeDevice: (deviceId: string) => Promise<CloudDevice>
   handleLocalHeaderChange: () => Promise<void>
+}
+
+// ── Family stream (spec §22) ──────────────────────────────────────────────────
+
+export type FamilySyncStatus =
+  | 'none'
+  | 'syncing'
+  | 'synced'
+  | 'offline'
+  | 'paused'
+  | 'pending-approval'
+  | 'removed'
+  | 'space-gone'
+  | 'rotation-pending'
+  | 'error'
+
+export interface FamilyProgress {
+  phase: 'pull' | 'push' | 'reencrypt'
+  done: number
+  total: number | null
+}
+
+export interface FamilySyncState {
+  status: FamilySyncStatus
+  spaceId: string | null
+  role: SpaceRole | null
+  name: string | null
+  readOnly: boolean
+  space: MySpace | null
+  lastSyncAt: string | null
+  progress: FamilyProgress | null
+  errorCode: string | null
+  lastError: SyncLastError | null
+  pendingOwnerEmail: string | null
+}
+
+// The plaintext `space:<id>:meta:sync` record.
+export interface FamilySyncMeta {
+  localRev: number
+  /** Missing = 0 (decision D6); -1 = the full snapshot is still to be pushed. */
+  pushedRev?: number
+  pullCursor?: number
+  /** The key version this device last pushed with. */
+  keyVersion?: number
+  state?: FamilySyncStatus
+  lastSyncAt?: string | null
+  lastError?: SyncLastError | null
+  /** A rotation must exceed this server key_version. */
+  rotationPendingFrom?: number
+  /** This device rotated: the full snapshot is still to be re-encrypted. */
+  reencryptPending?: boolean
+  /** Join requests already announced on this device. */
+  notifiedRequests?: Array<string>
+}
+
+export type FamilySyncFields = Omit<FamilySyncMeta, 'localRev'>
+
+export interface FamilyCycleResult {
+  ran: boolean
+  status: FamilySyncStatus
+  pulled: number
+  applied: number
+  pushed: number
+  stale: number
+  skipped: number
+  missingKey: number
+  rotated: boolean
+  reencrypted: number
+  retry: boolean
+}
+
+export type FamilyStreamEvent =
+  | { type: 'state'; state: FamilySyncState }
+  | { type: 'joined'; spaceId: string; name: string }
+  | { type: 'join-request'; spaceId: string; userId: string; email: string | null }
+  | { type: 'data-problem'; error: unknown }
+
+export interface FamilyLocalPort {
+  isUnlocked: () => boolean
+  listSpaceKeyEntries: () => Promise<Array<SpaceKeyEntry>>
+  getSpaceKeyEntry: (spaceId: string) => Promise<SpaceKeyEntry | null>
+  createLocalSpace: (input: { name: string }) => Promise<LocalSpace>
+  forgetLocalSpace: (spaceId: string) => Promise<void>
+  adoptSpaceKey: (input: AdoptSpaceKeyInput) => Promise<SpaceKeyEntry>
+  updateSpaceEntry: (spaceId: string, patch: SpaceEntryPatch) => Promise<SpaceKeyEntry | null>
+  ensureSpaceIndexKey: (spaceId: string) => Promise<SpaceKeyEntry>
+  ensureIdentityKeyPair: () => Promise<IdentityKeyPair>
+  listChangedRecords: (spaceId: string, sinceRev: number) => Promise<ChangedRecords>
+  applyIncomingRecords: (
+    spaceId: string,
+    records: Array<SyncRecord>,
+    options?: ApplyIncomingOptions,
+  ) => Promise<ApplyIncomingResult>
+  dedupeOccurrences: (spaceId: string, recurringIds: Array<string>) => Promise<number>
+  compactTombstones: (
+    spaceId: string,
+    olderThan: string,
+    options?: { maxRev?: number },
+  ) => Promise<number>
+  getSpaceInfo: (spaceId: string) => Promise<SpaceInfoRecord | null>
+  updateSpaceInfo: (spaceId: string, input: { name: string }) => Promise<SpaceInfoRecord>
+  getMemberProfiles: (spaceId: string) => Promise<Array<MemberProfile>>
+  upsertMemberProfile: (
+    spaceId: string,
+    input: { id: string; displayName: string; color: string },
+  ) => Promise<MemberProfile>
+  countEntries: (spaceId: string) => Promise<number>
+  onSpaceLocalChange: (listener: (spaceId: string) => void) => () => void
+}
+
+export interface FamilyMetaPort {
+  read: (spaceId: string) => Promise<FamilySyncMeta>
+  update: (spaceId: string, patch: Partial<FamilySyncFields>) => Promise<FamilySyncMeta>
+}
+
+export interface FamilyPendingPort {
+  readJoin: () => PendingJoin | null
+  saveJoin: (join: PendingJoin) => void
+  clearJoin: () => void
+  clearInvite: () => void
+}
+
+export interface FamilyPorts {
+  local: FamilyLocalPort
+  meta: FamilyMetaPort
+  pending: FamilyPendingPort
+}
+
+export interface FamilyCryptoPort {
+  deriveKeys: (indexKey: Uint8Array, sk: Uint8Array) => Promise<SyncKeys>
+  encrypt: (keys: SyncKeys, record: SyncRecord, keyVersion: number) => Promise<EncryptedSyncRecord>
+  decrypt: (keys: SyncKeys, row: EncryptedSpaceRow) => Promise<SyncRecord>
+}
+
+export interface FamilyRunContext {
+  userId: string
+  deviceId: string
+  /** The fresh get_sync_status of this cycle. */
+  status: SyncStatus
+  /** Throws to end the cycle (vault locked, engine stopped). */
+  checkpoint: () => void
+}
+
+export interface FamilyStreamDeps {
+  spaces: SpacesApi
+  ports: FamilyPorts
+  getUserId: () => string | null
+  /** Default: deriveSpaceSyncKeys / encryptSpaceRecord / decryptSpaceRecord. */
+  crypto?: FamilyCryptoPort
+  clock?: SyncClock
+  /** The name a joiner's entry starts with. Default 'Family'. */
+  defaultName?: () => string
+}
+
+export interface FamilyStream {
+  getState: () => FamilySyncState
+  /** useSyncExternalStore-compatible. */
+  subscribe: (listener: () => void) => () => void
+  onEvent: (listener: (event: FamilyStreamEvent) => void) => () => void
+  /** Fires after a committed Family user write. */
+  onLocalChange: (listener: () => void) => () => void
+  /** One Family cycle; never rejects. */
+  run: (ctx: FamilyRunContext) => Promise<FamilyCycleResult>
+  markOffline: () => void
+  /** The state from the entries and meta, no network. */
+  refreshFromLocal: () => Promise<FamilySyncState>
+  /** Stores a fresh get_my_space snapshot. */
+  setSpace: (space: MySpace | null) => void
+}
+
+export type CreateFamilyResult =
+  | { kind: 'created'; spaceId: string }
+  | { kind: 'already-in-space'; space: MySpace | null }
+
+export interface CreatedFamilyInvite {
+  url: string
+  inviteId: string
+  expiresAt: string
+}
+
+export interface FamilyOverview {
+  info: SpaceInfoRecord | null
+  profiles: Array<MemberProfile>
+  entryCount: number
+}
+
+export interface JoinRequestResult {
+  spaceId: string
+  safetyCode: string
+}
+
+export type FamilyActionErrorCode =
+  | 'not_signed_in'
+  | 'sync_off'
+  | 'not_in_plan'
+  | 'no_family'
+  | 'not_owner'
+  | 'name_mismatch'
+  | 'invalid_name'
+
+export interface FamilyActions {
+  createFamily: (input: { name: string }) => Promise<CreateFamilyResult>
+  createInvite: () => Promise<CreatedFamilyInvite>
+  revokeInvite: (inviteId: string) => Promise<void>
+  previewInvite: (invite: PendingInvite) => Promise<InviteInfo>
+  requestJoin: (invite: PendingInvite, ownerEmail: string | null) => Promise<JoinRequestResult>
+  approveMember: (userId: string) => Promise<void>
+  rejectMember: (userId: string) => Promise<void>
+  removeMember: (userId: string) => Promise<void>
+  leaveFamily: () => Promise<void>
+  transferOwnership: (userId: string) => Promise<void>
+  deleteFamily: (confirmName: string) => Promise<void>
+  forgetFamily: (spaceId: string) => Promise<void>
+  renameFamily: (name: string) => Promise<void>
+  setMyDisplayName: (displayName: string) => Promise<void>
+  refresh: () => Promise<MySpace | null>
+  mySafetyCode: () => Promise<string>
+  getOverview: (spaceId: string) => Promise<FamilyOverview>
+}
+
+export interface FamilyActionsDeps {
+  api: { getSyncStatus: () => Promise<SyncStatus> }
+  spaces: SpacesApi
+  engine: Pick<SyncEngine, 'runCycle'>
+  family: FamilyStream
+  ports: FamilyPorts
+  personalMeta: SyncMetaPort
+  getUserId: () => string | null
+  /** Default: window.location.origin. */
+  origin?: () => string
 }

@@ -46,6 +46,28 @@ export function parseSpaceStorageKey(
 
 export type SpaceRole = 'owner' | 'member'
 
+// The share status of a space on this user's devices (spec §22). Absent on
+// an entry means a local-only space that was never shared.
+export type SpaceShareStatus = 'active' | 'removed' | 'left' | 'space-gone'
+
+// Statuses that keep a read-only local copy: readable, backed up, exported,
+// never written by the user.
+export const READ_ONLY_SPACE_STATUSES: ReadonlyArray<SpaceShareStatus> = [
+  'removed',
+  'left',
+  'space-gone',
+]
+
+export function isReadOnlyShareStatus(status: SpaceShareStatus | undefined): boolean {
+  return status !== undefined && READ_ONLY_SPACE_STATUSES.includes(status)
+}
+
+// The owner's bookkeeping of who holds a wrap of keyVersion (decision D3).
+export interface SpaceKeyWrapSet {
+  keyVersion: number
+  userIds: Array<string>
+}
+
 // One entry of the personal `spaceKeys` record per space (id = spaceId). The
 // newest key writes; older versions in previousKeys are only read.
 export interface SpaceKeyEntry {
@@ -60,6 +82,12 @@ export interface SpaceKeyEntry {
   updatedAt: string
   deletedAt?: string
   rev?: number
+  /** base64 of 32 bytes: the Family record index key; never rotated. */
+  indexKey?: string
+  /** The share status; absent for a local-only space. */
+  status?: SpaceShareStatus
+  /** Owner only: who holds a wrap of `wrappedFor.keyVersion`. */
+  wrappedFor?: SpaceKeyWrapSet
 }
 
 export interface IdentityRecord {
@@ -116,6 +144,27 @@ export function isSpaceLockedError(err: unknown): err is SpaceLockedError {
   return (
     err instanceof Error &&
     err.name === 'SpaceLockedError' &&
+    typeof (err as { spaceId?: unknown }).spaceId === 'string'
+  )
+}
+
+// A user write into a Family space this user no longer belongs to (removed,
+// left, or the space was deleted). Nothing is written.
+export class SpaceReadOnlyError extends Error {
+  readonly code = 'space-read-only' as const
+  readonly spaceId: string
+  constructor(spaceId: string) {
+    super(`Space ${spaceId} is read-only`)
+    this.name = 'SpaceReadOnlyError'
+    this.spaceId = spaceId
+  }
+}
+
+export function isSpaceReadOnlyError(err: unknown): err is SpaceReadOnlyError {
+  if (err instanceof SpaceReadOnlyError) return true
+  return (
+    err instanceof Error &&
+    err.name === 'SpaceReadOnlyError' &&
     typeof (err as { spaceId?: unknown }).spaceId === 'string'
   )
 }

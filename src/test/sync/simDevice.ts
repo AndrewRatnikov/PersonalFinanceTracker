@@ -13,6 +13,12 @@
 // The api is built from the device's own `@/lib/cloud/api` module over the
 // PGlite `rpc` of the test (real run 2 SQL functions and permission checks), so
 // every CloudError the engine sees is an instance of the class it checks for.
+//
+// Family sharing run: with `family: true` the device also builds its own
+// `createSpacesApi(rpc)`, `createFamilyStream(...)` (passed to the engine) and
+// `createFamilyActions(...)`, and exposes them as `spaces`, `family` and
+// `familyActions` (null without the option). Every other option and every
+// existing field behaves as before.
 
 import { vi } from 'vitest'
 import type { UseStore } from 'idb-keyval'
@@ -22,9 +28,13 @@ import type * as LocalDbModule from '@/lib/localDb'
 import type * as VaultModule from '@/lib/vault'
 import type * as SyncMetaModule from '@/lib/sync/syncMeta'
 import type { CloudApi, RpcFn, RpcResponse } from '@/lib/cloud/api'
+import type { SpacesApi } from '@/lib/cloud/spacesApi'
 import type { CloudVault } from '@/lib/cloud/types'
 import type {
   DeviceIdPort,
+  FamilyActions,
+  FamilyStream,
+  FamilyStreamEvent,
   SyncActions,
   SyncClock,
   SyncEngine,
@@ -65,6 +75,8 @@ export interface SimDeviceOptions {
   userId: string | null
   deviceId?: string
   label?: string
+  /** Build the Family client, stream and actions and run the stream in the engine. */
+  family?: boolean
 }
 
 export interface DeviceSnapshot {
@@ -85,14 +97,22 @@ export interface SimDevice {
   backup: typeof BackupModule
   conversion: typeof ConversionModule
   api: CloudApi
+  /** The Family server client; null unless `family: true`. */
+  spaces: SpacesApi | null
   ports: SyncPorts
   engine: SyncEngine
+  /** The Family stream the engine runs; null unless `family: true`. */
+  family: FamilyStream | null
+  /** The Family flows; null unless `family: true`. */
+  familyActions: FamilyActions | null
   actions: SyncActions
   deviceIds: DeviceIdPort & { id: () => string; resets: () => number }
   clock: SimClock
   locks: SimLocks
   env: SimEnv
   events: Array<SyncEngineEvent>
+  /** Events of the Family stream (empty without `family: true`). */
+  familyEvents: Array<FamilyStreamEvent>
   calls: Array<RpcCall>
   /** Called before every rpc; return a response to short-circuit the call. */
   intercept: ((call: RpcCall) => RpcResponse | undefined | Promise<RpcResponse | undefined>) | null
@@ -324,7 +344,7 @@ export async function createSimDevice(
   const conversion = await import('@/lib/conversion')
   const cloudApi = await import('@/lib/cloud/api')
   const channel = await import('@/lib/syncChannel')
-  const { createSyncPorts } = await import('@/lib/sync/ports')
+  const { createSyncPorts, createFamilyPorts } = await import('@/lib/sync/ports')
   const { createSyncEngine } = await import('@/lib/sync/engine')
   const { createSyncActions, connectHeaderChanges } = await import(
     '@/lib/sync/actions'
@@ -366,6 +386,21 @@ export async function createSimDevice(
   const locks = createLocks()
   const env = createEnv()
   const getUserId = () => state.userId
+
+  let spaces: SpacesApi | null = null
+  let family: FamilyStream | null = null
+  if (options.family) {
+    const { createSpacesApi } = await import('@/lib/cloud/spacesApi')
+    const { createFamilyStream } = await import('@/lib/sync/familyStream')
+    spaces = createSpacesApi(rpc)
+    family = createFamilyStream({
+      spaces,
+      ports: createFamilyPorts(),
+      getUserId,
+      clock,
+    })
+  }
+
   const engine = createSyncEngine({
     api,
     ports,
@@ -374,12 +409,30 @@ export async function createSimDevice(
     locks,
     clock,
     env,
+    ...(family ? { family } : {}),
   })
   const actions = createSyncActions({ api, engine, ports, deviceIds, getUserId })
   const disconnect = connectHeaderChanges(ports, actions)
 
+  let familyActions: FamilyActions | null = null
+  if (options.family && spaces && family) {
+    const { createFamilyActions } = await import('@/lib/sync/familyActions')
+    familyActions = createFamilyActions({
+      api,
+      spaces,
+      engine,
+      family,
+      ports: createFamilyPorts(),
+      personalMeta: ports.meta,
+      getUserId,
+      origin: () => 'https://minima.test',
+    })
+  }
+
   const events: Array<SyncEngineEvent> = []
   const offEvents = engine.onEvent((e) => events.push(e))
+  const familyEvents: Array<FamilyStreamEvent> = []
+  const offFamilyEvents = family ? family.onEvent((e) => familyEvents.push(e)) : () => undefined
 
   const result: SimDevice = {
     name: options.name,
@@ -389,14 +442,18 @@ export async function createSimDevice(
     backup,
     conversion,
     api,
+    spaces,
     ports,
     engine,
+    family,
+    familyActions,
     actions,
     deviceIds,
     clock,
     locks,
     env,
     events,
+    familyEvents,
     calls,
     get intercept() {
       return device.intercept
@@ -426,6 +483,7 @@ export async function createSimDevice(
     dispose() {
       engine.stop()
       offEvents()
+      offFamilyEvents()
       disconnect()
     },
   }
