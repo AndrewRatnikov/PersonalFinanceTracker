@@ -165,6 +165,7 @@ describe('moving entries between Personal and Family', () => {
   })
 
   it('entries moved out of the Family disappear for the other member', async () => {
+    vi.setSystemTime(new Date('2026-10-30T09:01:00.000Z'))
     const result = await act(o1, () =>
       o1.localDb.moveRecords({ from: spaceId, to: 'personal', type: 'expense', ids: movedIds }),
     )
@@ -192,6 +193,7 @@ describe('shared budgets', () => {
     const seenByB = await act(b1, () => b1.localDb.spaceDb(spaceId).getAllBudgets())
     expect(seenByB.find((b) => b.categoryId === categoryId)?.monthlyLimit).toBe(5000)
 
+    vi.setSystemTime(new Date('2026-10-30T09:02:00.000Z'))
     await act(b1, () =>
       b1.localDb.spaceDb(spaceId).upsertBudget({ categoryId, monthlyLimit: 7000, currency: 'UAH' }),
     )
