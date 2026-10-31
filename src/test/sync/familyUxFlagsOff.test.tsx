@@ -47,7 +47,10 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }))
-vi.mock('@/lib/vault', () => ({ lockVault: vi.fn() }))
+vi.mock('@/lib/vault', () => ({
+  lockVault: vi.fn(),
+  subscribeHeaderChanges: vi.fn(() => () => undefined),
+}))
 vi.mock('@/lib/localWipe', () => ({ reloadToHome: vi.fn() }))
 vi.mock('idb-keyval', () => ({
   createStore: () => 'mock-store',

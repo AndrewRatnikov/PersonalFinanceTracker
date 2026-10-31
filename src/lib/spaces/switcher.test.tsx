@@ -353,7 +353,7 @@ describe('access and members in the Family', () => {
       { status: 'space-gone' },
       { status: 'synced', readOnly: true },
     ]) {
-      h.syncState = { status: 'synced', readOnly: false, space: null, ...patch }
+      h.syncState = { readOnly: false, space: null, ...patch }
       const { unmount } = renderRoot(<Probe />)
       await waitFor(() => expect(probe().getAttribute('data-family')).toBe(FAM))
       fireEvent.click(byProbe('probe-to-family'))

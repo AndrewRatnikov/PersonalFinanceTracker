@@ -34,7 +34,7 @@ import {
 import { getConversionStatus } from '@/lib/conversion'
 import { exportAllLocalData } from '@/lib/localExport'
 import { buildMemberDirectory } from '@/lib/memberStats'
-import { copyCategoriesFromSpace } from '@/lib/localDb'
+import { copyCategoriesFromSpace, getAllBudgets } from '@/lib/localDb'
 import { SpaceSwitchProvider } from '@/lib/spaces/switcher'
 import { BudgetTab } from '@/components/settings/BudgetTab'
 import { CategoriesTab } from '@/components/settings/CategoriesTab'
@@ -166,6 +166,7 @@ beforeEach(() => {
     pendingEntries: 0,
     pendingBudgets: 0,
   })
+  vi.mocked(getAllBudgets).mockResolvedValue([])
   fam.getAllCategories.mockResolvedValue([FOOD])
   fam.getAllIncomeCategories.mockResolvedValue([])
   fam.getAllBudgets.mockResolvedValue([
@@ -351,6 +352,9 @@ describe('Categories: Copy categories from Personal', () => {
     renderTab(<CategoriesTab />, familyValue())
 
     const add = await screen.findByTestId<HTMLButtonElement>('category-add-btn')
+    fireEvent.change(screen.getByPlaceholderText(translate('en', 'settings.categories.expenseNamePlaceholder')), {
+      target: { value: 'Pets' },
+    })
     expect(add.disabled).toBe(false)
     expect(add.id).toBe('add-category-btn')
   })

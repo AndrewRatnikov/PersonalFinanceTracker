@@ -353,14 +353,14 @@ describe('read-only and paused', () => {
 
     await screen.findByTestId('space-readonly-banner')
     expect(screen.getByTestId('space-readonly-settings-link')).toBeTruthy()
-    expect(screen.getByTestId<HTMLButtonElement>('speed-entry-submit').disabled).toBe(true)
+    expect((await screen.findByTestId<HTMLButtonElement>('speed-entry-submit')).disabled).toBe(true)
   })
 
   it('paused: small banner and editing still works', async () => {
     renderPage(familyValue({ paused: true }))
 
     await screen.findByTestId('space-paused-banner')
-    expect(screen.getByTestId<HTMLButtonElement>('speed-entry-submit').disabled).toBe(false)
+    expect((await screen.findByTestId<HTMLButtonElement>('speed-entry-submit')).disabled).toBe(false)
   })
 })
 
