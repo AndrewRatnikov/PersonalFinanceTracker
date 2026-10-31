@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { BudgetEntry, Category, Currency } from '@/lib/domain'
+import type { BudgetEntry, Category, Currency, Expense } from '@/lib/domain'
+import type { MemberDirectory } from '@/lib/memberStats'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/i18n/errors'
-import { currencyLabel } from '@/i18n/format'
+import { currencyLabel, formatMoney } from '@/i18n/format'
 import { DEFAULT_MAIN_CURRENCY } from '@/lib/domain'
+import { memberLabel, memberTotals } from '@/lib/memberStats'
 import { spaceQueryKey, useActiveSpace, useSpaceDb } from '@/lib/spaces/react'
+import { useSpaceSwitch } from '@/lib/spaces/switcher'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 
 import { Button } from '@/components/ui/button'
@@ -26,6 +30,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { QueryErrorState } from '@/components/QueryErrorState'
+import { SpaceSettingsHeader } from '@/components/space/SpaceSettingsHeader'
 
 interface BudgetRowProps {
   category: Category
@@ -35,6 +40,46 @@ interface BudgetRowProps {
   // Budgets are always saved in the main currency.
   mainCurrency: Currency
   settingsReady: boolean
+  /** A read-only Family copy: the limit can't be changed. */
+  readOnly: boolean
+  /** Family only: this month's expenses of this category, for the breakdown. */
+  members?: { directory: MemberDirectory; expenses: ReadonlyArray<Expense> }
+}
+
+// "By member": what each payer spent this month in the category (Family).
+function BudgetMemberBreakdown({
+  categoryId,
+  directory,
+  expenses,
+  mainCurrency,
+}: {
+  categoryId: string
+  directory: MemberDirectory
+  expenses: ReadonlyArray<Expense>
+  mainCurrency: Currency
+}) {
+  const { t } = useT()
+  const { rows } = memberTotals(expenses, mainCurrency)
+  if (rows.length === 0) return null
+  return (
+    <details
+      data-testid={`budget-row-members-${categoryId}`}
+      className="px-3 pb-2.5 text-xs text-muted-foreground"
+    >
+      <summary className="cursor-pointer select-none py-1">{t('members.byMember')}</summary>
+      <ul className="flex flex-col gap-1 pt-1">
+        {rows.map((row) => (
+          <li
+            key={row.memberId}
+            data-testid={`budget-member-${categoryId}-${row.memberId}`}
+            className="flex justify-between gap-3"
+          >
+            {`${memberLabel(directory, row.memberId)} ${formatMoney(row.total, mainCurrency)}`}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
 }
 
 function BudgetRow({
@@ -42,6 +87,8 @@ function BudgetRow({
   existingBudget,
   mainCurrency,
   settingsReady,
+  readOnly,
+  members,
 }: BudgetRowProps) {
   const queryClient = useQueryClient()
   const db = useSpaceDb()
@@ -80,7 +127,7 @@ function BudgetRow({
 
   const isPending = saveMutation.isPending || deleteMutation.isPending
   const canSave =
-    settingsReady && limit.trim() !== '' && Number(limit) > 0 && !isPending
+    settingsReady && limit.trim() !== '' && Number(limit) > 0 && !isPending && !readOnly
   // A budget saved in another currency waits for the one-time conversion.
   const storedElsewhere =
     existingBudget !== undefined && existingBudget.currency !== mainCurrency
@@ -115,7 +162,7 @@ function BudgetRow({
             placeholder={t('settings.budget.limit')}
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
-            disabled={isPending}
+            disabled={isPending || readOnly}
             className="w-28 h-8 text-sm"
           />
           <span
@@ -140,7 +187,7 @@ function BudgetRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  disabled={isPending}
+                  disabled={isPending || readOnly}
                   className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent transition-colors"
                   aria-label={t('settings.budget.remove')}
                 >
@@ -168,6 +215,14 @@ function BudgetRow({
           )}
         </div>
       </CardContent>
+      {members && (
+        <BudgetMemberBreakdown
+          categoryId={category.id}
+          directory={members.directory}
+          expenses={members.expenses}
+          mainCurrency={mainCurrency}
+        />
+      )}
     </Card>
   )
 }
@@ -188,6 +243,32 @@ export function BudgetTab({ categories }: BudgetTabProps) {
   const settingsQuery = useCurrencySettings()
   const mainCurrency = settingsQuery.data?.mainCurrency ?? DEFAULT_MAIN_CURRENCY
   const settingsReady = settingsQuery.data !== undefined
+  const { isFamily, readOnly, directory } = useSpaceSwitch()
+
+  // Family: this month's expenses, for the per-member breakdown of each row.
+  const showMembers = isFamily && directory !== null
+  const monthKey = dayjs().format('YYYY-MM')
+  const { monthStart, monthEnd } = useMemo(
+    () => ({
+      monthStart: dayjs(`${monthKey}-01`).startOf('month').toISOString(),
+      monthEnd: dayjs(`${monthKey}-01`).endOf('month').toISOString(),
+    }),
+    [monthKey],
+  )
+  const monthExpensesQuery = useQuery({
+    queryKey: spaceQueryKey(spaceId, 'expenses', monthStart, monthEnd),
+    queryFn: () => db.getExpensesForRange(monthStart, monthEnd),
+    enabled: showMembers,
+  })
+  const expensesByCategory = useMemo(() => {
+    const map = new Map<string, Array<Expense>>()
+    for (const e of monthExpensesQuery.data ?? []) {
+      const list = map.get(e.categoryId)
+      if (list) list.push(e)
+      else map.set(e.categoryId, [e])
+    }
+    return map
+  }, [monthExpensesQuery.data])
 
   const budgetMap = new Map(budgets.map((b) => [b.categoryId, b]))
 
@@ -217,6 +298,7 @@ export function BudgetTab({ categories }: BudgetTabProps) {
 
   return (
     <div data-testid="budget-tab" className="flex flex-col gap-3">
+      <SpaceSettingsHeader />
       {categories.map((cat) => (
         <BudgetRow
           key={`${cat.id}-${budgetMap.get(cat.id)?.id ?? 'new'}`}
@@ -224,6 +306,12 @@ export function BudgetTab({ categories }: BudgetTabProps) {
           existingBudget={budgetMap.get(cat.id)}
           mainCurrency={mainCurrency}
           settingsReady={settingsReady}
+          readOnly={readOnly}
+          members={
+            showMembers
+              ? { directory, expenses: expensesByCategory.get(cat.id) ?? [] }
+              : undefined
+          }
         />
       ))}
     </div>
