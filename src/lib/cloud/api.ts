@@ -119,6 +119,10 @@ const planFeaturesSchema = z.object({
   max_devices: z.number(),
   max_records: z.number(),
   max_bytes: z.number(),
+  shared_spaces: z.boolean().optional(),
+  max_members: z.number().optional(),
+  max_space_records: z.number().optional(),
+  max_space_bytes: z.number().optional(),
 })
 
 const syncStatusSchema = z.object({
@@ -140,6 +144,15 @@ const syncStatusSchema = z.object({
     })
     .nullable(),
   devices_count: z.number(),
+  space: z
+    .object({
+      space_id: z.string(),
+      role: z.enum(['owner', 'member']),
+      status: z.enum(['pending', 'active']),
+      paused: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 })
 
 // The same checks as vault.ts's header validation, plus the string fields.
