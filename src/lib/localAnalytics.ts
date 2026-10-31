@@ -5,11 +5,13 @@ import { getAllBudgets, getAllIncome, getExpensesForRange } from './localDb'
 import { normalizeRange } from './analyticsUtils'
 import { DEFAULT_MAIN_CURRENCY } from './domain'
 import { incomeSourceLabel } from './incomeCategories'
+import { memberTotals, monthsInRange } from './memberStats'
 import { mainAmountOf } from './money'
 import { dbFor } from './spaces/spaceDb'
 import { PERSONAL_SPACE_ID } from './spaces/types'
 import { isLive } from './syncRecords'
 import type { RangeInput } from './analyticsUtils'
+import type { MemberTotal } from './memberStats'
 import type { SpaceOption } from './spaces/spaceDb'
 import type {
   AnalyticsRangeSummary,
@@ -27,6 +29,19 @@ export type RangeAnalytics = AnalyticsRangeSummary & {
   mainCurrency: Currency
   pendingCount: number
   budgetsExcluded: number
+  /** Only with `byMember: true`: totals by payer (`paidBy`) for the range. */
+  members?: {
+    expense: Array<MemberTotal>
+    income: Array<MemberTotal>
+    months: number
+  }
+}
+
+// `memberId` keeps only the entries paid / received by that member, for every
+// aggregate (pendingCount and totalIncome included); `byMember` adds `members`.
+export type RangeAnalyticsOptions = SpaceOption & {
+  memberId?: string
+  byMember?: boolean
 }
 
 // B1: a monthly budget limit scaled to an arbitrary [from, to] range, in local
@@ -60,7 +75,7 @@ export function scaleMonthlyLimitToRange(
 export async function computeRangeAnalytics(
   input: RangeInput = {},
   mainCurrency: Currency = DEFAULT_MAIN_CURRENCY,
-  opts?: SpaceOption,
+  opts?: RangeAnalyticsOptions,
 ): Promise<RangeAnalytics> {
   const range = normalizeRange(input)
 
@@ -72,8 +87,11 @@ export async function computeRangeAnalytics(
     db ? db.getAllIncome() : getAllIncome(),
     db ? db.getAllBudgets() : getAllBudgets(),
   ])
-  const expenses = allExpenses.filter(isLive)
-  const income = allIncome.filter(isLive)
+  const memberId = opts?.memberId
+  const byPayer = (e: { paidBy?: string }) =>
+    memberId === undefined || e.paidBy === memberId
+  const expenses = allExpenses.filter((e) => isLive(e) && byPayer(e))
+  const income = allIncome.filter((e) => isLive(e) && byPayer(e))
   const budgets = allBudgets.filter(isLive)
 
   const categoryMap = new Map<string, CategoryBreakdownItem>()
@@ -179,7 +197,7 @@ export async function computeRangeAnalytics(
       }
     })
 
-  return {
+  const result: RangeAnalytics = {
     from: range.from,
     to: range.to,
     categoryBreakdown,
@@ -191,4 +209,13 @@ export async function computeRangeAnalytics(
     pendingCount,
     budgetsExcluded,
   }
+  if (opts?.byMember) {
+    const months = monthsInRange(range.from, range.to)
+    result.members = {
+      expense: memberTotals(expenses, mainCurrency, months).rows,
+      income: memberTotals(rangeIncome, mainCurrency, months).rows,
+      months,
+    }
+  }
+  return result
 }
