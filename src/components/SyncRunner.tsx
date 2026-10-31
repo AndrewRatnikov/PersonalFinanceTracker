@@ -47,7 +47,7 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
         toast(t('sync.toast.passwordChanged'))
       } else if (event.type === 'data-problem') {
         if (isDecryptError(event.error)) reportDataProblem(event.error)
-      } else if (event.type === 'state') {
+      } else {
         const previous = lastStatus.current
         lastStatus.current = event.state.status
         if (previous === 'syncing' && event.state.status === 'synced') {
@@ -73,7 +73,7 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
       } else if (event.type === 'data-problem') {
         // The Family stream emits data-problem for undecryptable data only.
         reportDataProblem(event.error as DecryptError)
-      } else if (event.type === 'state') {
+      } else {
         const previous = lastFamilyStatus
         lastFamilyStatus = event.state.status
         if (previous === 'syncing' && event.state.status !== 'syncing') {
