@@ -25,7 +25,7 @@ import { reportDataProblem } from '../lib/dataProblem'
 import { prepareUnlockedVault } from '../lib/localDb'
 import { createAppQueryClient } from '../lib/queryClient'
 import { recurringCreatedMessage } from '../lib/recurrence'
-import { SpaceProvider } from '../lib/spaces/react'
+import { ActiveSpaceRoot, SpaceReadyGate } from '../lib/spaces/switcher'
 import { ensurePersistentStorage } from '../lib/storagePersistence'
 import { requestSyncRestoreFromUrl } from '../lib/sync/restoreRequest'
 import { listenForChanges } from '../lib/syncChannel'
@@ -243,8 +243,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <AppBody>
         <QueryClientProvider client={queryClient}>
-          {/* The active space: always personal until a switcher exists. */}
-          <SpaceProvider>
+          {/* The tab's active space (Personal, or the held Family once switched). */}
+          <ActiveSpaceRoot unlocked={phase === 'unlocked'}>
             <Header />
             <OfflineBanner />
             <AutoLock unlocked={phase === 'unlocked'} />
@@ -257,9 +257,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 onCancelCreate={phase === 'none' ? cancelCreateVault : undefined}
               />
             )}
-            <DataProblemGate>{showChildren && children}</DataProblemGate>
+            <DataProblemGate>
+              {/* Data routes wait for the start space, so they never query
+                  Personal first and then the Family. */}
+              <SpaceReadyGate>{showChildren && children}</SpaceReadyGate>
+            </DataProblemGate>
             <Toaster richColors position="bottom-center" />
-          </SpaceProvider>
+          </ActiveSpaceRoot>
         </QueryClientProvider>
         <TanStackDevtools
           config={{
