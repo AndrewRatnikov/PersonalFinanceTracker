@@ -43,6 +43,13 @@ export const SYNC_ENC_V = 1
 export const SYNC_INDEX_INFO = 'minima-sync-index-v1'
 export const SYNC_DATA_INFO = 'minima-sync-data-v1'
 
+// Family records (spec §22, decision D1): record_key = HMAC-SHA256(K_index,
+// `${type}:${id}`) with K_index = HKDF(indexKey, info SPACE_INDEX_INFO); the
+// indexKey never changes, so record keys are the same for every key version.
+// K_data = HKDF(sk of the version, info SYNC_DATA_INFO), and the AES-GCM
+// additional data is utf8(`${record_key}:${key_version}`), enc_v 1.
+export const SPACE_INDEX_INFO = 'minima-space-index-v1'
+
 export const RECORD_KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/
 
 export const MAX_RECORDS_PER_PUSH = 500
@@ -95,7 +102,7 @@ export type SpaceServerErrorCode = (typeof SPACE_SERVER_ERROR_CODES)[number]
 export type CloudErrorCode =
   ServerErrorCode | SpaceServerErrorCode | 'network' | 'unknown'
 
-export type FeatureName = 'sync'
+export type FeatureName = 'sync' | 'shared_spaces'
 
 export interface SyncKeys {
   index: CryptoKey
@@ -110,6 +117,15 @@ export interface EncryptedSyncRecord {
   updated_at_ms: number
 }
 
+// One Family row as stored in space_records (the parts decryption needs).
+export interface EncryptedSpaceRow {
+  record_key: string
+  ciphertext: string
+  iv: string
+  enc_v: number
+  key_version: number
+}
+
 export interface CloudRecordRow extends EncryptedSyncRecord {
   device_id: string
   seq: number
@@ -121,7 +137,19 @@ export interface PlanFeatures {
   max_devices: number
   max_records: number
   max_bytes: number
+  shared_spaces?: boolean
+  max_members?: number
+  max_space_records?: number
+  max_space_bytes?: number
   [k: string]: unknown
+}
+
+// get_sync_status().space: the caller's Family membership, if any.
+export interface SyncStatusSpace {
+  space_id: string
+  role: 'owner' | 'member'
+  status: 'pending' | 'active'
+  paused: boolean
 }
 
 export interface SyncStatus {
@@ -141,6 +169,7 @@ export interface SyncStatus {
     last_seq: number
   } | null
   devices_count: number
+  space?: SyncStatusSpace | null
 }
 
 export interface CloudDevice {
