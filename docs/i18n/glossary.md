@@ -45,6 +45,16 @@ consistently; when a new string needs a term that is not here, add it.
 | Turn on sync | Увімкнути синхронізацію |
 | This device | Цей пристрій |
 | Delete cloud data | Видалити дані з хмари |
+| Family | Сім’я |
+| Invite | Запросити |
+| Ask to join | Попросити приєднатися |
+| Approve | Схвалити |
+| Reject | Відхилити |
+| Safety code | Код безпеки |
+| Leave | Вийти |
+| Transfer ownership | Передати права власника |
+| Owner | Власник |
+| Member | Учасник |
 | Terms of Use | Умови використання |
 | Privacy Policy | Політика конфіденційності |
 
