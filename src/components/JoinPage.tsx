@@ -113,7 +113,7 @@ function JoinFlow() {
 
   // Previews once all the steps are done; again only when they change.
   useEffect(() => {
-    if (!canPreview || !invite) return
+    if (!canPreview) return
     const actions = getSyncRuntime().familyActions
     if (!actions) return
     let active = true
