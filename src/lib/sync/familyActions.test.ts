@@ -60,15 +60,15 @@ function entry(over: Partial<SpaceKeyEntry> = {}): SpaceKeyEntry {
   }
 }
 
-function member(userId: string, status: 'active' | 'pending', pair: IdentityKeyPair, role: 'owner' | 'member' = 'member'): SpaceMember {
+function member(userId: string, memberStatus: 'active' | 'pending', pair: IdentityKeyPair, role: 'owner' | 'member' = 'member'): SpaceMember {
   return {
     user_id: userId,
     email: `${userId}@example.com`,
     role,
-    status,
+    status: memberStatus,
     public_key: pair.publicKeyJwk,
     requested_at: NOW,
-    joined_at: status === 'active' ? NOW : null,
+    joined_at: memberStatus === 'active' ? NOW : null,
   }
 }
 

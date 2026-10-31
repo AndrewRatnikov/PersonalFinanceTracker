@@ -349,11 +349,12 @@ describe.each<Lang>(['en', 'uk'])('the invite (%s)', (lang) => {
 })
 
 describe('invite problems', () => {
-  async function render404(error: unknown) {
+  function render404(error: unknown): Promise<void> {
     ready()
     familyActions.previewInvite.mockRejectedValue(error)
     setHash(validHash().hash)
     render(<JoinPage />)
+    return Promise.resolve()
   }
 
   it('a used / expired / revoked / wrong link all show the same expired message and clear the invite', async () => {

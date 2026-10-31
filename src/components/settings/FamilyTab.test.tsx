@@ -37,7 +37,7 @@ vi.mock('@/lib/cloud/entitlements', () => ({
     status?.limits?.[feature] === true,
   SYNC_STATUS_QUERY_KEY: ['sync-status'],
 }))
-vi.mock('@/lib/sync/react', async () => ({
+vi.mock('@/lib/sync/react', () => ({
   OFF_FAMILY_STATE: {
     status: 'none',
     spaceId: null,
@@ -459,7 +459,7 @@ const EVE = 'user-eve'
 function rowOf(userId: string): HTMLElement {
   const row = screen
     .getAllByTestId('family-member-row')
-    .find((r) => within(r).getByTestId('family-member-email').textContent?.includes(`${userId}@example.com`))
+    .find((r) => within(r).getByTestId('family-member-email').textContent.includes(`${userId}@example.com`))
   if (!row) throw new Error(`no member row for ${userId}`)
   return row
 }
@@ -467,7 +467,7 @@ function rowOf(userId: string): HTMLElement {
 function requestRowOf(userId: string): HTMLElement {
   const row = screen
     .getAllByTestId('family-request-row')
-    .find((r) => within(r).getByTestId('family-request-email').textContent?.includes(`${userId}@example.com`))
+    .find((r) => within(r).getByTestId('family-request-email').textContent.includes(`${userId}@example.com`))
   if (!row) throw new Error(`no request row for ${userId}`)
   return row
 }
@@ -607,7 +607,7 @@ describe.each(LANGS)('the member view (%s)', (lang) => {
     })
   }
 
-  it('has Leave but no Invite, requests, delete or member actions', async () => {
+  it('has Leave but no Invite, requests, delete or member actions', () => {
     asMember()
     renderTab()
 

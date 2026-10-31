@@ -963,7 +963,7 @@ describe('state store', () => {
     expect(stateOf(w).space?.paused).toBe(true)
   })
 
-  it('onLocalChange fires when the local port reports a change in the space', async () => {
+  it('onLocalChange fires when the local port reports a change in the space', () => {
     const w = setup()
     const listener = vi.fn()
     w.stream.onLocalChange(listener)

@@ -193,7 +193,7 @@ describe('the second device of B', () => {
     expect(rows[0].n).toBe(2)
   })
 
-  it('does not re-upload what it pulled (pushed nothing it did not write)', async () => {
+  it('does not re-upload what it pulled (pushed nothing it did not write)', () => {
     const pushes = b2.calls.filter((c) => c.fn === 'push_space_records')
     const sent = pushes.reduce((n, c) => n + ((c.args.p_records as Array<unknown> | undefined)?.length ?? 0), 0)
 
