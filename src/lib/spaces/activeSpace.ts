@@ -2,7 +2,8 @@
 // `minima_active_space`. A stored id that is not 'personal' and not held by the
 // keyring (unknown, or not loaded yet while locked) reads as 'personal'; the
 // stored value is kept, so the space comes back once its key is loaded.
-// Nothing in the UI switches spaces yet (spec §20).
+// The UI keeps the tab's active space in React state (ActiveSpaceRoot in
+// switcher.tsx); this stored value is only the shared default (spec §20, §23).
 
 import { isSpaceHeld } from './keyring'
 import { PERSONAL_SPACE_ID } from './types'
@@ -52,4 +53,39 @@ export function subscribeActiveSpace(listener: () => void): () => void {
   return () => {
     listeners.delete(listener)
   }
+}
+
+/** The "Open the app in" choice (device-only, meta:settings `openAppIn`). */
+export type OpenAppIn = 'last' | 'personal' | 'family'
+
+/**
+ * The space a page load starts in. No Family held → personal. The shortcut and
+ * "last" follow the last used space (only when it is the held Family);
+ * "family" / "personal" open that space.
+ */
+export function resolveStartSpace(input: {
+  openIn: OpenAppIn
+  lastUsed: SpaceId
+  familyId: string | null
+  shortcut: boolean
+}): SpaceId {
+  const { openIn, lastUsed, familyId, shortcut } = input
+  if (familyId === null) return PERSONAL_SPACE_ID
+  if (shortcut || openIn === 'last') {
+    return lastUsed === familyId ? familyId : PERSONAL_SPACE_ID
+  }
+  if (openIn === 'family') return familyId
+  return PERSONAL_SPACE_ID
+}
+
+/** True for the home-screen shortcut URL: /transactions?add=expense without a space param. */
+export function isShortcutUrl(pathname: string, search: string): boolean {
+  if (pathname.replace(/\/+$/, '') !== '/transactions') return false
+  let params: URLSearchParams
+  try {
+    params = new URLSearchParams(search)
+  } catch {
+    return false
+  }
+  return params.get('add') === 'expense' && !params.has('space')
 }
