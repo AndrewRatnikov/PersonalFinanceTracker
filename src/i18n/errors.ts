@@ -58,6 +58,8 @@ const APP_KEYS: Record<Exclude<AppErrorCode, 'validation'>, MessageKey | { plura
   'import-needs-categories': 'errors.app.importNeedsCategories',
   'import-empty-file': 'errors.app.importEmptyFile',
   'import-unknown-columns': 'errors.app.importUnknownColumns',
+  'move-same-space': 'errors.app.moveSameSpace',
+  'move-too-many': 'errors.app.moveTooMany',
 }
 
 function paramsOf(err: ErrorLike): MessageParams {
