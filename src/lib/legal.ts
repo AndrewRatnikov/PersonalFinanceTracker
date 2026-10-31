@@ -29,10 +29,6 @@ export const LEGAL_LAST_UPDATED = '2026-10-29'
 export const TERMS_PATH = '/terms'
 export const PRIVACY_PATH = '/privacy'
 
-// TODO(owner): replace with the legal name of the operator (a person or a
-// company) before this reaches production; the pages are public.
-export const LEGAL_OPERATOR_NAME = 'MinimaSpend'
+export const LEGAL_OPERATOR_NAME = 'Andrew'
 
-// TODO(owner): replace with a real, monitored contact address before this
-// reaches production; the pages are public.
-export const LEGAL_CONTACT_EMAIL = 'contact@example.com'
+export const LEGAL_CONTACT_EMAIL = 'ratnikov@gmail.com'
