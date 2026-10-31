@@ -22,6 +22,7 @@ import { exportAllLocalData } from '@/lib/localExport'
 import { importLocalDataFile } from '@/lib/localImport'
 import { useActiveSpace } from '@/lib/spaces/react'
 import { spaceArgs, withSpaceOption } from '@/lib/spaces/spaceDb'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -57,6 +58,8 @@ const ROW_ERROR_KEYS: Record<ImportRowError['code'], MessageKey> = {
 export function DataToolsTab() {
   const queryClient = useQueryClient()
   const spaceId = useActiveSpace()
+  // A read-only Family copy can be exported but nothing can be imported into it.
+  const { readOnly } = useSpaceAccess()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { t, plural } = useT()
 
@@ -304,6 +307,7 @@ export function DataToolsTab() {
             type="file"
             accept=".csv"
             multiple
+            disabled={readOnly}
             onChange={(e) => void handleFileChange(e)}
             className="hidden"
           />
@@ -311,7 +315,7 @@ export function DataToolsTab() {
           <Button
             id="import-csv-btn"
             onClick={() => fileInputRef.current?.click()}
-            disabled={importPending}
+            disabled={importPending || readOnly}
             variant="secondary"
             className="self-start flex items-center gap-2"
           >
@@ -395,7 +399,7 @@ export function DataToolsTab() {
                 size="sm"
                 data-testid="import-anyway-btn"
                 onClick={() => void handleImportAnyway()}
-                disabled={importPending}
+                disabled={importPending || readOnly}
               >
                 {t('settings.data.importAnyway')}
               </Button>
