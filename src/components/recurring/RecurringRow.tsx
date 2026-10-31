@@ -1,4 +1,4 @@
-import { Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Pause, Pencil, Play, Trash2 } from 'lucide-react'
 
 import type { Category, RecurringItem } from '@/lib/domain'
 import { useT } from '@/i18n'
@@ -8,6 +8,7 @@ import {
   formatRecurringAmount,
   nextUnhandledOccurrence,
 } from '@/lib/recurrence'
+import { useSpaceAccess } from '@/lib/spaces/switcher'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +32,10 @@ interface RecurringRowProps {
   onTogglePaused: (item: RecurringItem) => void
   onDelete: (item: RecurringItem) => void
   isBusy?: boolean
+  /** Moves the item to the other space (only with a Family held). */
+  onMove?: (item: RecurringItem) => void
+  moveLabel?: string
+  moveDisabled?: boolean
 }
 
 export default function RecurringRow({
@@ -40,8 +45,14 @@ export default function RecurringRow({
   onTogglePaused,
   onDelete,
   isBusy,
+  onMove,
+  moveLabel,
+  moveDisabled,
 }: RecurringRowProps) {
   const { t } = useT()
+  // A read-only Family copy can be browsed but not changed.
+  const { readOnly } = useSpaceAccess()
+  const locked = isBusy === true || readOnly
   const name = item.description || category?.name || t('recurring.unknownCategory')
   const next = nextUnhandledOccurrence(item)
 
@@ -112,7 +123,7 @@ export default function RecurringRow({
             data-testid="recurring-edit-btn"
             aria-label={t('recurring.row.edit')}
             onClick={() => onEdit(item)}
-            disabled={isBusy}
+            disabled={locked}
             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent"
           >
             <Pencil size={14} />
@@ -123,12 +134,27 @@ export default function RecurringRow({
             size="sm"
             data-testid="recurring-pause-btn"
             onClick={() => onTogglePaused(item)}
-            disabled={isBusy}
+            disabled={locked}
             className="h-8 px-2 text-muted-foreground hover:text-foreground hover:bg-transparent"
           >
             {item.paused ? <Play size={14} /> : <Pause size={14} />}
             {item.paused ? t('recurring.row.resume') : t('recurring.row.pause')}
           </Button>
+          {onMove && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-testid="recurring-move-btn"
+              aria-label={moveLabel}
+              title={moveLabel}
+              onClick={() => onMove(item)}
+              disabled={locked || moveDisabled === true}
+              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-transparent"
+            >
+              <ArrowRightLeft size={14} />
+            </Button>
+          )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -137,7 +163,7 @@ export default function RecurringRow({
                 size="icon"
                 data-testid="recurring-delete-btn"
                 aria-label={t('recurring.row.delete')}
-                disabled={isBusy}
+                disabled={locked}
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-transparent"
               >
                 <Trash2 size={14} />
