@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import type { SyncStatusCode } from '@/lib/sync/types'
+import type { DecryptError } from '@/lib/dataErrors'
+import type { FamilySyncStatus, SyncStatusCode } from '@/lib/sync/types'
 import { t } from '@/i18n/core'
 import { useAccountSession, useAccountsVisible } from '@/lib/accountSession'
 import { isDecryptError } from '@/lib/dataErrors'
@@ -46,10 +47,36 @@ function SyncRunnerInner({ unlocked }: SyncRunnerProps) {
         toast(t('sync.toast.passwordChanged'))
       } else if (event.type === 'data-problem') {
         if (isDecryptError(event.error)) reportDataProblem(event.error)
-      } else {
+      } else if (event.type === 'state') {
         const previous = lastStatus.current
         lastStatus.current = event.state.status
         if (previous === 'syncing' && event.state.status === 'synced') {
+          void queryClient.invalidateQueries()
+        }
+      }
+    })
+  }, [accountsVisible, queryClient])
+
+  // Family events (only when the runtime has a Family stream): the joined and
+  // join-request toasts, data problems, and fresh queries once a Family cycle
+  // has settled.
+  useEffect(() => {
+    if (!accountsVisible) return
+    const family = getSyncRuntime().family
+    if (!family) return
+    let lastFamilyStatus: FamilySyncStatus | null = null
+    return family.onEvent((event) => {
+      if (event.type === 'joined') {
+        toast(t('family.toast.joined', { name: event.name }))
+      } else if (event.type === 'join-request') {
+        toast(t('family.toast.request', { email: event.email ?? '' }))
+      } else if (event.type === 'data-problem') {
+        // The Family stream emits data-problem for undecryptable data only.
+        reportDataProblem(event.error as DecryptError)
+      } else if (event.type === 'state') {
+        const previous = lastFamilyStatus
+        lastFamilyStatus = event.state.status
+        if (previous === 'syncing' && event.state.status !== 'syncing') {
           void queryClient.invalidateQueries()
         }
       }
