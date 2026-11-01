@@ -41,8 +41,9 @@ describe('DashboardStats theme colours', () => {
     expect(screen.getByTestId('dashboard-stats-total')).toBeTruthy()
   })
 
-  it('fills the Bar with the primary token', () => {
-    expect(captured.props.Bar.fill).toBe('var(--primary)')
+  it('fills the Bar with the shared chart accent token, not the primary one', () => {
+    expect(captured.props.Bar.fill).toBe('var(--chart-accent)')
+    expect(captured.props.Bar.fill).not.toBe('var(--primary)')
   })
 
   it.each(['XAxis', 'YAxis'])(
@@ -64,13 +65,22 @@ describe('DashboardStats theme colours', () => {
       border: '1px solid var(--border)',
       color: 'var(--popover-foreground)',
     })
-    expect(t.itemStyle).toMatchObject({ color: 'var(--primary)' })
+    expect(t.itemStyle).toMatchObject({ color: 'var(--chart-accent)' })
+    expect(t.itemStyle).not.toMatchObject({ color: 'var(--primary)' })
     expect(t.labelStyle).toMatchObject({ color: 'var(--muted-foreground)' })
   })
 
   it('has no hsl( wrapper in any chart prop', () => {
     for (const name of ['Bar', 'XAxis', 'YAxis', 'Tooltip']) {
       expect(JSON.stringify(captured.props[name])).not.toContain('hsl(')
+    }
+  })
+
+  it('has no hex literal and no var(--primary) in any chart prop', () => {
+    for (const name of ['Bar', 'XAxis', 'YAxis', 'Tooltip']) {
+      const json = JSON.stringify(captured.props[name])
+      expect(json).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+      expect(json).not.toContain('var(--primary)')
     }
   })
 })

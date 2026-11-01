@@ -180,8 +180,11 @@ describe('hydration', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     let root: ReturnType<typeof hydrateRoot> | undefined
-    await act(async () => {
+    // A sync callback that hands back a promise: still flushes async work, and
+    // satisfies require-await.
+    await act(() => {
       root = hydrateRoot(container, tree)
+      return Promise.resolve()
     })
 
     expect(consoleError).not.toHaveBeenCalled()

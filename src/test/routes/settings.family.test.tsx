@@ -1,11 +1,13 @@
-// CONTRACT_GAP: the Family trigger's position is asserted as "after Sync" (the
-//   last trigger), the order given in plan section 7 (tabs gain 'family' last).
-// CONTRACT_GAP: opening the Sync tab from the Family tab is driven by a fake
-//   FamilyTab that calls its onOpenSyncTab prop; Radix triggers are activated
-//   with mouseDown.
+// CONTRACT_GAP: the Family item's position is asserted as "after Sync" (the
+//   last item), the order of SETTINGS_TABS (family last).
+// CONTRACT_GAP: opening the Sync section from the Family section is driven by a
+//   fake FamilyTab that calls its onOpenSyncTab prop; the contract says it is
+//   the same as selecting 'sync', so the navigate call is asserted (the
+//   resulting render is covered in settings.layout.test.tsx).
 //
-// The Family tab rules of the Settings route: flags, badge, controlled tabs.
-// ENABLE_SPACES, ENABLE_SYNC and the accounts-visible hook are mutable.
+// The Family item rules of the Settings route: flags, badge, navigation.
+// ENABLE_SPACES, ENABLE_SYNC and the accounts-visible hook are mutable. The
+// layout comes from a mutable useIsDesktop mock (phone by default).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -17,11 +19,16 @@ import type { FamilySyncState } from '@/lib/sync/types'
 import { setLang, translate } from '@/i18n/core'
 import { useAccountsVisible } from '@/lib/accountSession'
 import { getAllBudgets, getAllCategories } from '@/lib/localDb'
-import { OFF_FAMILY_STATE, useFamilySyncState } from '@/lib/sync/react'
+import { OFF_FAMILY_STATE, useFamilySyncState, useSyncState } from '@/lib/sync/react'
 import { Route } from '@/routes/settings'
 
 const flags = vi.hoisted(() => ({ sync: true, spaces: true }))
+const layout = vi.hoisted(() => ({ desktop: false }))
 
+vi.mock('@/lib/useIsDesktop', () => ({
+  DESKTOP_QUERY: '(min-width: 768px)',
+  useIsDesktop: () => layout.desktop,
+}))
 vi.mock('@/lib/localDb', () => ({
   getAllCategories: vi.fn(),
   getAllBudgets: vi.fn(),
@@ -131,20 +138,26 @@ function renderSettings() {
   )
 }
 
-function tabIds() {
-  return screen.getAllByRole('tab').map((t) => t.getAttribute('data-testid'))
+function itemIds() {
+  return screen.getAllByRole('button').map((b) => b.getAttribute('data-testid'))
 }
+
+let navigate = vi.fn()
 
 beforeEach(() => {
   vi.resetAllMocks()
   flags.sync = true
   flags.spaces = true
+  layout.desktop = false
   setLang('en', { persist: false })
+  navigate = vi.fn()
   vi.mocked(getAllCategories).mockResolvedValue([])
   vi.mocked(getAllBudgets).mockResolvedValue([])
   vi.mocked(useAccountsVisible).mockReturnValue(true)
   vi.mocked(useFamilySyncState).mockReturnValue(OFF_FAMILY_STATE)
+  vi.mocked(useSyncState).mockReturnValue({ status: 'synced' } as never)
   vi.spyOn(Route, 'useSearch').mockReturnValue({})
+  vi.spyOn(Route, 'useNavigate').mockReturnValue(navigate as never)
 })
 
 afterEach(() => {
@@ -152,21 +165,20 @@ afterEach(() => {
   setLang('en', { persist: false })
 })
 
-describe('the Family trigger', () => {
-  it('is the last of eight tabs with an eight-column grid when all flags are on', () => {
+describe('the Family item', () => {
+  it('is the last of eight items when all flags are on', () => {
     renderSettings()
 
-    expect(tabIds().at(-1)).toBe('settings-tab-family')
-    expect(tabIds().at(-2)).toBe('settings-tab-sync')
-    expect(screen.getAllByRole('tab')).toHaveLength(8)
-    expect(screen.getAllByRole('tablist')[0].className.includes('grid-cols-8')).toBe(true)
+    expect(itemIds().at(-1)).toBe('settings-item-family')
+    expect(itemIds().at(-2)).toBe('settings-item-sync')
+    expect(itemIds()).toHaveLength(8)
   })
 
   it.each<Lang>(['en', 'uk'])('is labelled in %s', (lang) => {
     setLang(lang, { persist: false })
     renderSettings()
 
-    expect(screen.getByTestId('settings-tab-family').textContent.replace(/\d+$/, '').trim()).toBe(translate(lang, 'settings.tabs.family'))
+    expect(screen.getByTestId('settings-item-family').textContent).toContain(translate(lang, 'settings.tabs.family'))
   })
 
   it('the English and Ukrainian labels differ', () => {
@@ -177,26 +189,41 @@ describe('the Family trigger', () => {
     ['ENABLE_SPACES off', () => { flags.spaces = false }],
     ['ENABLE_SYNC off', () => { flags.sync = false }],
     ['accounts hidden', () => { vi.mocked(useAccountsVisible).mockReturnValue(false) }],
-  ])('is absent with %s, and ?tab=family falls back to General', (_name, apply) => {
+  ])('is absent with %s, and ?tab=family falls back (phone: list, desktop: General)', (_name, apply) => {
     apply()
     vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'family' })
     renderSettings()
 
-    expect(screen.queryByTestId('settings-tab-family')).toBeNull()
+    expect(screen.queryByTestId('settings-item-family')).toBeNull()
+    expect(screen.queryByTestId('fake-family-tab')).toBeNull()
+    expect(screen.getByTestId('settings-index')).toBeTruthy()
+    cleanup()
+
+    layout.desktop = true
+    renderSettings()
     expect(screen.queryByTestId('fake-family-tab')).toBeNull()
     expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
   })
 
-  it('renders the Family tab for ?tab=family and nothing else', () => {
+  it('renders the Family section for ?tab=family and nothing else', () => {
     vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'family' })
     renderSettings()
 
     expect(screen.getByTestId('fake-family-tab')).toBeTruthy()
     expect(screen.queryByTestId('fake-general-tab')).toBeNull()
-    expect(screen.getByTestId('settings-tab-family').getAttribute('data-state')).toBe('active')
+    expect(screen.getByTestId('settings-section').getAttribute('data-section')).toBe('family')
   })
 
-  it('keeps General as the default tab', () => {
+  it('on desktop marks the Family item current for ?tab=family', () => {
+    layout.desktop = true
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'family' })
+    renderSettings()
+
+    expect(screen.getByTestId('settings-item-family').getAttribute('aria-current')).toBe('page')
+  })
+
+  it('keeps General as the default section on desktop', () => {
+    layout.desktop = true
     renderSettings()
 
     expect(screen.getByTestId('fake-general-tab')).toBeTruthy()
@@ -209,59 +236,85 @@ describe('the pending-requests badge', () => {
     vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 3))
     renderSettings()
 
-    expect(screen.getByTestId('settings-tab-family-badge').textContent.trim()).toBe('3')
+    expect(screen.getByTestId('settings-item-family-badge').textContent.trim()).toBe('3')
   })
 
   it('follows the count', () => {
     vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 1))
     renderSettings()
-    expect(screen.getByTestId('settings-tab-family-badge').textContent.trim()).toBe('1')
+    expect(screen.getByTestId('settings-item-family-badge').textContent.trim()).toBe('1')
     cleanup()
 
     vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 4))
     renderSettings()
-    expect(screen.getByTestId('settings-tab-family-badge').textContent.trim()).toBe('4')
+    expect(screen.getByTestId('settings-item-family-badge').textContent.trim()).toBe('4')
+  })
+
+  it('shows on the desktop sidebar too', () => {
+    layout.desktop = true
+    vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 2))
+    renderSettings()
+
+    expect(screen.getByTestId('settings-item-family-badge').textContent.trim()).toBe('2')
   })
 
   it('is absent when there are no requests', () => {
     vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 0))
     renderSettings()
 
-    expect(screen.queryByTestId('settings-tab-family-badge')).toBeNull()
+    expect(screen.queryByTestId('settings-item-family-badge')).toBeNull()
   })
 
   it('is absent for a member even when the snapshot lists pending users', () => {
     vi.mocked(useFamilySyncState).mockReturnValue(familyState('member', 2))
     renderSettings()
 
-    expect(screen.queryByTestId('settings-tab-family-badge')).toBeNull()
+    expect(screen.queryByTestId('settings-item-family-badge')).toBeNull()
   })
 
   it('is absent outside a Family', () => {
+    renderSettings()
+
+    expect(screen.queryByTestId('settings-item-family-badge')).toBeNull()
+  })
+
+  it('the old tab badge is gone', () => {
+    vi.mocked(useFamilySyncState).mockReturnValue(familyState('owner', 3))
     renderSettings()
 
     expect(screen.queryByTestId('settings-tab-family-badge')).toBeNull()
   })
 })
 
-describe('controlled tabs', () => {
-  it('the Family tab can switch to the Sync tab', () => {
+describe('navigation from the Family section', () => {
+  it('the Family section can ask for the Sync section (push on the phone)', () => {
     vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'family' })
     renderSettings()
 
     fireEvent.click(screen.getByLabelText('open-sync-from-family'))
 
-    expect(screen.getByTestId('fake-sync-tab')).toBeTruthy()
-    expect(screen.queryByTestId('fake-family-tab')).toBeNull()
-    expect(screen.getByTestId('settings-tab-sync').getAttribute('data-state')).toBe('active')
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith({ search: { tab: 'sync' }, replace: false })
   })
 
-  it('clicking a trigger still switches tabs', () => {
+  it('and as a replace on desktop', () => {
+    layout.desktop = true
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ tab: 'family' })
     renderSettings()
 
-    fireEvent.mouseDown(screen.getByTestId('settings-tab-family'), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByLabelText('open-sync-from-family'))
 
-    expect(screen.getByTestId('fake-family-tab')).toBeTruthy()
-    expect(screen.queryByTestId('fake-general-tab')).toBeNull()
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith({ search: { tab: 'sync' }, replace: true })
+  })
+
+  it('clicking the Family item asks for ?tab=family', () => {
+    renderSettings()
+
+    fireEvent.click(screen.getByTestId('settings-item-family'))
+
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith({ search: { tab: 'family' }, replace: false })
+    expect(screen.queryByTestId('fake-family-tab')).toBeNull()
   })
 })

@@ -7,6 +7,9 @@
 // words. The mock environment follows query-errors.test.tsx: '@/lib/localDb' is
 // replaced by a list of vi.fn()s, the router Link by a plain anchor, and the
 // route hooks (useSearch / useNavigate) are spied because no router is mounted.
+// Settings: there is no tab bar any more. Without matchMedia the route renders
+// the phone layout, so /settings without a tab is the grouped index and
+// ?tab=<id> is a section page with its title.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -400,6 +403,7 @@ beforeEach(() => {
   vi.spyOn(TransactionsRoute, 'useSearch').mockReturnValue({ add: 'expense' })
   vi.spyOn(TransactionsRoute, 'useNavigate').mockReturnValue(vi.fn() as never)
   vi.spyOn(SettingsRoute, 'useSearch').mockReturnValue({})
+  vi.spyOn(SettingsRoute, 'useNavigate').mockReturnValue(vi.fn() as never)
 })
 
 afterEach(() => {
@@ -629,19 +633,38 @@ describe('every Settings tab in Ukrainian', () => {
     openTab('account')
 
     await screen.findByTestId('account-tab')
-    expect(screen.getByTestId('settings-tab-account').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('settings-section-title').textContent).toMatch(CYRILLIC)
     expect(screen.getByTestId('account-sign-in-link').textContent).toMatch(CYRILLIC)
     expectUkrainianOnly()
   })
 
-  it('the tab bar and the title are translated', async () => {
+  it('the section title and the back arrow are translated', async () => {
     openTab('general')
 
     await screen.findByTestId('general-tab')
-    for (const tab of screen.getAllByRole('tab')) {
-      expect(tab.textContent, tab.textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('settings-section-title').textContent).toMatch(CYRILLIC)
+    expect(screen.getByTestId('settings-back').getAttribute('aria-label')).toMatch(CYRILLIC)
+  })
+
+  it('the settings index, its group titles and descriptions are translated', () => {
+    vi.mocked(useAccountsVisible).mockReturnValue(true)
+    vi.spyOn(SettingsRoute, 'useSearch').mockReturnValue({})
+
+    renderRoute(SettingsRoute)
+
+    expect(screen.getByTestId('settings-index')).toBeTruthy()
+    expect(screen.getByTestId('settings-index').getAttribute('aria-label')).toMatch(CYRILLIC)
+    for (const group of ['budget', 'device', 'cloud']) {
+      const title = screen.getByTestId(`settings-group-${group}-title`).textContent
+      expect(title, title).toMatch(CYRILLIC)
     }
-    expect(screen.getByTestId('settings-tab-general').textContent).toMatch(CYRILLIC)
+    for (const item of ['general', 'categories', 'budget', 'security', 'data', 'account']) {
+      const text = screen.getByTestId(`settings-item-${item}`).textContent
+      expect(text, text).toMatch(CYRILLIC)
+    }
+    expect(screen.getByTestId('settings-item-general').textContent).toMatch(CYRILLIC)
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+    expectUkrainianOnly()
   })
 })
 

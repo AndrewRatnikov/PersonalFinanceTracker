@@ -124,7 +124,8 @@ export async function startDb(): Promise<SqlTestDb> {
     return result.rows
   }
 
-  async function asRole<T = Row>(
+  // Not async: it only returns the transaction's promise (lint: require-await).
+  function asRole<T = Row>(
     role: 'authenticated' | 'anon',
     userId: string | null,
     sql: string,
