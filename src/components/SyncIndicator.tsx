@@ -6,9 +6,10 @@ import { useT } from '@/i18n'
 import { ENABLE_SYNC } from '@/lib/featureFlags'
 import { useSyncAvailable, useSyncState } from '@/lib/sync/react'
 
-type IndicatorValue = 'synced' | 'syncing' | 'offline' | 'problem'
+export type SyncIndicatorValue = 'synced' | 'syncing' | 'offline' | 'problem'
 
-function indicatorFor(status: SyncStatusCode): IndicatorValue {
+// One mapping for the header icon and the Settings → Sync item's dot.
+export function syncIndicatorValue(status: SyncStatusCode): SyncIndicatorValue {
   if (status === 'synced' || status === 'syncing' || status === 'offline') {
     return status
   }
@@ -28,7 +29,7 @@ function SyncIndicatorInner() {
   const { t } = useT()
   if (!available || state.status === 'off') return null
 
-  const value = indicatorFor(state.status)
+  const value = syncIndicatorValue(state.status)
   const label = t(`sync.indicator.${value}`)
   const Icon = ICONS[value]
   return (
