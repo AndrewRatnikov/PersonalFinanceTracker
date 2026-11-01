@@ -9,6 +9,7 @@ import CategoryDonutChart from '../components/analytics/CategoryDonutChart'
 import TimelineBarChart from '../components/analytics/TimelineBarChart'
 import BudgetVarianceBarChart from '../components/analytics/BudgetVarianceBarChart'
 import PageShell from '../components/PageShell'
+import PageContainer from '../components/PageContainer'
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters'
 import { QueryErrorState } from '../components/QueryErrorState'
 import type { Currency, Expense, MonthlyExpenseSummary } from '@/lib/domain'
@@ -64,6 +65,50 @@ function computeMonthlyStats(
     const [year, month] = key.split('-')
     return { month, year, name: formatShortMonth(`${key}-01`), total }
   })
+}
+
+// Chart grid cells keep today's DOM order (phones follow it); from lg each cell
+// gets a fixed order that pairs them: donut | 12-month, budget-vs-actual | income,
+// members | over-time. Class strings are literals so Tailwind sees them.
+type ChartCell =
+  | 'categoryDonut'
+  | 'incomeDonut'
+  | 'members'
+  | 'timeline'
+  | 'budgetVariance'
+  | 'monthly'
+  | 'noData'
+
+const CHART_CELL_ORDER: Record<ChartCell, number> = {
+  categoryDonut: 1,
+  noData: 1,
+  monthly: 2,
+  budgetVariance: 3,
+  incomeDonut: 4,
+  members: 5,
+  timeline: 6,
+}
+
+const CHART_CELL_CLASS: Record<ChartCell, string> = {
+  categoryDonut: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-1',
+  noData: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-1 mt-4',
+  monthly: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-2',
+  budgetVariance: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-3',
+  incomeDonut: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-4',
+  members: 'flex min-w-0 flex-col gap-8 lg:[&>[data-slot=card]]:flex-1 lg:order-5',
+  timeline: 'flex min-w-0 flex-col lg:[&>[data-slot=card]]:flex-1 lg:order-6',
+}
+
+const CHART_CELL_SPAN_CLASS = 'lg:col-span-2'
+
+/** Class lookup for the visible cells: with an odd count, the last cell in lg order spans both columns. */
+function chartCellClasses(visible: Array<ChartCell>): (cell: ChartCell) => string {
+  const last =
+    visible.length % 2 === 1
+      ? visible.reduce((a, b) => (CHART_CELL_ORDER[b] > CHART_CELL_ORDER[a] ? b : a))
+      : null
+  return (cell) =>
+    cell === last ? `${CHART_CELL_CLASS[cell]} ${CHART_CELL_SPAN_CLASS}` : CHART_CELL_CLASS[cell]
 }
 
 function StatCard({ title, value }: { title: string; value: string }) {
@@ -179,11 +224,11 @@ function AnalyticsPage() {
   if (failedQueries.length > 0) {
     return (
       <PageShell>
-        <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <PageContainer className="flex flex-col gap-8">
           <QueryErrorState
             onRetry={() => failedQueries.forEach((q) => void q.refetch())}
           />
-        </div>
+        </PageContainer>
       </PageShell>
     )
   }
@@ -191,12 +236,12 @@ function AnalyticsPage() {
   if (!settingsReady || analyticsQuery.isLoading || !analytics) {
     return (
       <PageShell>
-        <div
+        <PageContainer
           data-testid="analytics-loading"
           className="flex items-center justify-center min-h-[60vh]"
         >
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        </PageContainer>
       </PageShell>
     )
   }
@@ -212,9 +257,23 @@ function AnalyticsPage() {
     0,
   )
 
+  const showMembersCell = showMembers && analytics.members !== undefined
+  const showBudgetCell = analytics.budgetVariance.length > 0
+  const visibleCells: Array<ChartCell> = hasData
+    ? [
+        'categoryDonut',
+        'incomeDonut',
+        ...(showMembersCell ? (['members'] as const) : []),
+        'timeline',
+        ...(showBudgetCell ? (['budgetVariance'] as const) : []),
+        'monthly',
+      ]
+    : ['noData', 'monthly']
+  const cellClass = chartCellClasses(visibleCells)
+
   return (
     <PageShell>
-      <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+      <PageContainer data-testid="analytics-page" className="flex flex-col gap-8">
         <AnalyticsFilters analytics={analytics} search={search} />
 
         {showMembers && (
@@ -225,7 +284,7 @@ function AnalyticsPage() {
           />
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div data-testid="analytics-summary" className="grid grid-cols-2 gap-4">
           <div data-testid="analytics-total-spent">
             <StatCard
               title={t('analytics.totalSpent')}
@@ -246,75 +305,86 @@ function AnalyticsPage() {
           fetchExchangeRates={fetchExchangeRates}
         />
 
-        {hasData ? (
-          <>
-            <section data-testid="analytics-category-donut">
-              <h2 className="text-sm font-semibold mb-2">{t('analytics.byCategory')}</h2>
-              <CategoryDonutChart
-                data={analytics.categoryBreakdown}
-                currency={mainCurrency}
-                ariaLabel={t('analytics.spendingByCategory')}
-              />
-            </section>
-
-            <section data-testid="analytics-income-donut">
-              <h2 className="text-sm font-semibold mb-2">{t('analytics.incomeSources')}</h2>
-              <CategoryDonutChart
-                data={analytics.incomeBreakdown}
-                currency={mainCurrency}
-                emptyText={t('analytics.noIncome')}
-                ariaLabel={t('analytics.incomeByCategory')}
-              />
-            </section>
-
-            {showMembers && analytics.members && (
-              <>
-                <MemberBreakdown
-                  kind="expense"
-                  rows={analytics.members.expense}
-                  directory={directory}
-                  mainCurrency={mainCurrency}
-                />
-                <MemberBreakdown
-                  kind="income"
-                  rows={analytics.members.income}
-                  directory={directory}
-                  mainCurrency={mainCurrency}
-                />
-              </>
-            )}
-
-            <section>
-              <h2 className="text-sm font-semibold mb-2">{t('analytics.overTime')}</h2>
-              <TimelineBarChart data={analytics.timeline} currency={mainCurrency} />
-            </section>
-
-            {analytics.budgetVariance.length > 0 && (
-              <section>
-                <h2 className="text-sm font-semibold mb-2">
-                  {t('analytics.budgetVsActual')}
-                </h2>
-                <BudgetVarianceBarChart
-                  data={analytics.budgetVariance}
+        <div
+          data-testid="analytics-chart-grid"
+          className="flex flex-col gap-8 lg:grid lg:grid-cols-2"
+        >
+          {hasData ? (
+            <>
+              <section
+                data-testid="analytics-category-donut"
+                className={cellClass('categoryDonut')}
+              >
+                <h2 className="text-sm font-semibold mb-2">{t('analytics.byCategory')}</h2>
+                <CategoryDonutChart
+                  data={analytics.categoryBreakdown}
                   currency={mainCurrency}
+                  ariaLabel={t('analytics.spendingByCategory')}
                 />
               </section>
-            )}
-          </>
-        ) : (
-          <section data-testid="analytics-no-data" className="mt-4">
-            <Card className="border-dashed bg-transparent">
-              <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
-                {t('analytics.noDataForPeriod')}
-              </CardContent>
-            </Card>
-          </section>
-        )}
 
-        <section>
-          <DashboardStats data={monthlyStats} currency={mainCurrency} />
-        </section>
-      </div>
+              <section data-testid="analytics-income-donut" className={cellClass('incomeDonut')}>
+                <h2 className="text-sm font-semibold mb-2">{t('analytics.incomeSources')}</h2>
+                <CategoryDonutChart
+                  data={analytics.incomeBreakdown}
+                  currency={mainCurrency}
+                  emptyText={t('analytics.noIncome')}
+                  ariaLabel={t('analytics.incomeByCategory')}
+                />
+              </section>
+
+              {showMembers && analytics.members && (
+                <div data-testid="analytics-members" className={cellClass('members')}>
+                  <MemberBreakdown
+                    kind="expense"
+                    rows={analytics.members.expense}
+                    directory={directory}
+                    mainCurrency={mainCurrency}
+                  />
+                  <MemberBreakdown
+                    kind="income"
+                    rows={analytics.members.income}
+                    directory={directory}
+                    mainCurrency={mainCurrency}
+                  />
+                </div>
+              )}
+
+              <section data-testid="analytics-timeline" className={cellClass('timeline')}>
+                <h2 className="text-sm font-semibold mb-2">{t('analytics.overTime')}</h2>
+                <TimelineBarChart data={analytics.timeline} currency={mainCurrency} />
+              </section>
+
+              {showBudgetCell && (
+                <section
+                  data-testid="analytics-budget-variance"
+                  className={cellClass('budgetVariance')}
+                >
+                  <h2 className="text-sm font-semibold mb-2">
+                    {t('analytics.budgetVsActual')}
+                  </h2>
+                  <BudgetVarianceBarChart
+                    data={analytics.budgetVariance}
+                    currency={mainCurrency}
+                  />
+                </section>
+              )}
+            </>
+          ) : (
+            <section data-testid="analytics-no-data" className={cellClass('noData')}>
+              <Card className="border-dashed bg-transparent">
+                <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
+                  {t('analytics.noDataForPeriod')}
+                </CardContent>
+              </Card>
+            </section>
+          )}
+
+          <section data-testid="analytics-monthly" className={cellClass('monthly')}>
+            <DashboardStats data={monthlyStats} currency={mainCurrency} />
+          </section>
+        </div>
+      </PageContainer>
     </PageShell>
   )
 }
