@@ -74,7 +74,7 @@ describe('findPageWidthViolations', () => {
 
   it('passes a PageContainer with an inner max-w element', () => {
     const sample = `<PageShell>
-      <PageContainer data-testid="x"><div className="max-w-xl">x</div></PageContainer>
+      <PageContainer data-testid="page-container-sample"><div className="max-w-xl">x</div></PageContainer>
     </PageShell>`
     expect(findPageWidthViolations(sample)).toEqual([])
   })

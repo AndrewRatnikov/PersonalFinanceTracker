@@ -301,11 +301,9 @@ describe('phone: the index at /settings', () => {
       within(screen.getByTestId(`settings-group-${group}`))
         .getAllByRole('button')
         .map((b) => b.getAttribute('data-testid'))
-    expect(within_('budget')).toEqual([
-      'settings-item-general',
-      'settings-item-categories',
-      'settings-item-budget',
-    ])
+    expect(within_('budget')).toEqual(
+      ['general', 'categories', 'budget'].map((id) => `settings-item-${id}`),
+    )
     expect(within_('device')).toEqual(['settings-item-security', 'settings-item-data'])
     expect(within_('cloud')).toEqual([
       'settings-item-account',
@@ -809,7 +807,7 @@ describe('page container and section column', () => {
     openAt('security')
     expect(within(screen.getByTestId('settings-content')).queryByTestId('categories-tab')).toBeNull()
 
-    fireEvent.click(screen.getByTestId('settings-item-categories'))
+    fireEvent.click(screen.getByTestId(`settings-item-${'categories'}`))
 
     expect(within(screen.getByTestId('settings-content')).getByTestId('categories-tab')).toBeTruthy()
     expect(within(screen.getByTestId('settings-content')).queryByTestId('security-tab')).toBeNull()
