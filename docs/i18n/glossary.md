@@ -45,6 +45,7 @@ consistently; when a new string needs a term that is not here, add it.
 | Turn on sync | Увімкнути синхронізацію |
 | This device | Цей пристрій |
 | Delete cloud data | Видалити дані з хмари |
+| Account & cloud | Обліковий запис і хмара |
 | Family | Сім’я |
 | Invite | Запросити |
 | Ask to join | Попросити приєднатися |
