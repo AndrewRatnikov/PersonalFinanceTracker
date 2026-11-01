@@ -457,8 +457,8 @@ describe('Family dashboard layout', () => {
   it('the Family title cue and the read-only banner are in the page shell, above the dashboard page', async () => {
     renderPage(familyValue({ readOnly: true }))
 
-    const banner = await screen.findByTestId('space-banner')
-    const page = screen.getByTestId('dashboard-page')
+    const page = await screen.findByTestId('dashboard-page')
+    const banner = screen.getByTestId('space-banner')
     expect(page.contains(banner)).toBe(false)
     expect(banner.contains(screen.getByTestId('space-readonly-banner'))).toBe(true)
     expect(banner.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
