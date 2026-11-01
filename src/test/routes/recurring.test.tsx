@@ -11,6 +11,9 @@
 // built with the @/i18n/format helpers. The Ukrainian block asserts the
 // recurrence texts of the plan exactly ("Щомісяця, 15-го") and the rest of the
 // Ukrainian wording as "Cyrillic and not the English text".
+//
+// Page-width additions: PageContainer root, lg 2-column list, form wrapper
+// capped at max-w-2xl (classes and DOM order only; jsdom has no layout).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -839,5 +842,96 @@ describe('recurring page in Ukrainian', () => {
     const error = await screen.findByTestId('recurring-form-error-amount')
     expect(error.textContent).toBe('Сума має бути більшою за 0')
     expect(addRecurring).not.toHaveBeenCalled()
+  })
+})
+
+describe('recurring page: page container and desktop layout', () => {
+  const classesOf = (el: Element) => el.className.split(/\s+/)
+
+  it('renders inside a full-width PageContainer that keeps the old vertical spacing', async () => {
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+
+    const page = screen.getByTestId('recurring-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = classesOf(page)
+    for (const token of ['max-w-6xl', 'mx-auto', 'px-4', 'md:px-8', 'py-4', 'md:py-8', 'min-h-screen']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('max-w-3xl')
+    expect(classes).not.toContain('pt-6')
+  })
+
+  it('the item list is one column and two columns from lg, holding every row card', async () => {
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+
+    const list = screen.getByTestId('recurring-list')
+    const classes = classesOf(list)
+    for (const token of ['flex', 'flex-col', 'gap-2', 'lg:grid', 'lg:grid-cols-2']) {
+      expect(classes, token).toContain(token)
+    }
+    const rows = screen.getAllByTestId('recurring-row')
+    expect(rows).toHaveLength(ITEMS.length)
+    for (const row of rows) expect(list.contains(row)).toBe(true)
+    expect(within(list).getAllByTestId('recurring-row')).toHaveLength(ITEMS.length)
+  })
+
+  it('the list holds exactly as many cards as there are items', async () => {
+    vi.mocked(getAllRecurring).mockResolvedValue([ITEMS[0], ITEMS[1]])
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+
+    expect(within(screen.getByTestId('recurring-list')).getAllByTestId('recurring-row')).toHaveLength(2)
+  })
+
+  it('there is no list when there are no items', async () => {
+    vi.mocked(getAllRecurring).mockResolvedValue([])
+    renderPage()
+    await screen.findByTestId('recurring-empty')
+
+    expect(screen.queryByTestId('recurring-list')).toBeNull()
+  })
+
+  it('the monthly total stays first, full width, before the list', async () => {
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+
+    const total = screen.getByTestId('recurring-monthly-total')
+    const list = screen.getByTestId('recurring-list')
+    expect(list.contains(total)).toBe(false)
+    expect(total.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByTestId('recurring-page').contains(total)).toBe(true)
+  })
+
+  it('an open Add form is wrapped to at most max-w-2xl, after the total and outside the list', async () => {
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+    expect(screen.queryByTestId('recurring-form-wrap')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('recurring-add-btn'))
+    const form = await screen.findByTestId('recurring-form')
+
+    const wrap = screen.getByTestId('recurring-form-wrap')
+    expect(wrap.contains(form)).toBe(true)
+    expect(classesOf(wrap)).toContain('max-w-2xl')
+    expect(classesOf(wrap)).toContain('w-full')
+    expect(screen.getByTestId('recurring-list').contains(wrap)).toBe(false)
+    expect(
+      screen.getByTestId('recurring-monthly-total').compareDocumentPosition(wrap) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('the Edit form is wrapped the same way and the wrap goes away when the form closes', async () => {
+    renderPage()
+    await screen.findAllByTestId('recurring-row')
+
+    fireEvent.click(within(rowFor('Gym')).getByTestId('recurring-edit-btn'))
+    const form = await screen.findByTestId('recurring-form')
+    expect(screen.getByTestId('recurring-form-wrap').contains(form)).toBe(true)
+
+    fireEvent.click(screen.getByTestId('recurring-form-cancel'))
+    await waitFor(() => expect(screen.queryByTestId('recurring-form-wrap')).toBeNull())
   })
 })

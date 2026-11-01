@@ -9,6 +9,10 @@
 // built with the @/i18n/format helpers. The Ukrainian block asserts amounts
 // exactly and the rest of the Ukrainian wording as "Cyrillic and not the
 // English text".
+//
+// Page-width additions: PageContainer root, filters and summary outside a lg
+// 2-column chart grid, lg:order pairing and the odd-count span (classes and
+// DOM order only; jsdom has no layout).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -495,5 +499,188 @@ describe('analytics page in Ukrainian', () => {
     const noData = await screen.findByTestId('analytics-no-data')
     expect(noData.textContent).toMatch(CYRILLIC)
     expect(noData.textContent).not.toContain('No data found')
+  })
+})
+
+describe('analytics page: page container and chart grid', () => {
+  const classesOf = (el: Element) => el.className.split(/\s+/)
+
+  const CELL_BASE = ['flex', 'min-w-0', 'flex-col', 'lg:[&>[data-slot=card]]:flex-1']
+
+  const chartGrid = () => screen.getByTestId('analytics-chart-grid')
+  const cellIds = () => Array.from(chartGrid().children).map((c) => c.getAttribute('data-testid'))
+  const cell = (id: string) => screen.getByTestId(id)
+  const lgOrder = (id: string) =>
+    classesOf(cell(id)).find((c) => /^lg:order-\d+$/.test(c))
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    setLang('en', { persist: false })
+    vi.spyOn(Route, 'useSearch').mockReturnValue({})
+    vi.mocked(getAllBudgets).mockResolvedValue([])
+    vi.mocked(getAllIncome).mockResolvedValue([])
+    setSettings()
+  })
+
+  it('the loading state is a PageContainer too', () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    const loading = screen.getByTestId('analytics-loading')
+    expect(loading.getAttribute('data-page-container')).toBe('full')
+    expect(classesOf(loading)).toContain('min-h-[60vh]')
+  })
+
+  it('renders inside a full-width PageContainer that keeps the column layout', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    const page = screen.getByTestId('analytics-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = classesOf(page)
+    for (const token of ['max-w-6xl', 'mx-auto', 'px-4', 'md:px-8', 'flex', 'flex-col', 'gap-8']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('max-w-xl')
+    expect(screen.queryByTestId('analytics-loading')).toBeNull()
+  })
+
+  it('the chart grid is one column and two columns from lg', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    const classes = classesOf(chartGrid())
+    for (const token of ['flex', 'flex-col', 'gap-8', 'lg:grid', 'lg:grid-cols-2']) {
+      expect(classes, token).toContain(token)
+    }
+  })
+
+  it('filters, summary numbers and the pending note are outside the grid, in the page', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([
+      expense('e1', 100, 'UAH'),
+      expense('e2', 100, 'USD'),
+    ])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    const page = screen.getByTestId('analytics-page')
+    const grid = chartGrid()
+    for (const id of ['analytics-filters', 'analytics-summary', 'conversion-pending-note']) {
+      const el = screen.getByTestId(id)
+      expect(page.contains(el), id).toBe(true)
+      expect(grid.contains(el), id).toBe(false)
+      expect(el.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING, id).toBeTruthy()
+    }
+    const summary = screen.getByTestId('analytics-summary')
+    expect(summary.contains(screen.getByTestId('analytics-total-spent'))).toBe(true)
+    expect(summary.contains(screen.getByTestId('analytics-total-income'))).toBe(true)
+  })
+
+  it('personal with data and no budgets: four cells in today\'s DOM order with their lg order', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    expect(cellIds()).toEqual([
+      'analytics-category-donut',
+      'analytics-income-donut',
+      'analytics-timeline',
+      'analytics-monthly',
+    ])
+    expect(lgOrder('analytics-category-donut')).toBe('lg:order-1')
+    expect(lgOrder('analytics-monthly')).toBe('lg:order-2')
+    expect(lgOrder('analytics-income-donut')).toBe('lg:order-4')
+    expect(lgOrder('analytics-timeline')).toBe('lg:order-6')
+    expect(screen.queryByTestId('analytics-members')).toBeNull()
+    expect(screen.queryByTestId('analytics-budget-variance')).toBeNull()
+  })
+
+  it('every cell is a flex column that can shrink and lets its card fill the row', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    for (const id of cellIds()) {
+      const classes = classesOf(cell(String(id)))
+      for (const token of CELL_BASE) expect(classes, `${id} ${token}`).toContain(token)
+    }
+  })
+
+  it('an even number of cells has no lg:col-span-2', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    expect(cellIds()).toHaveLength(4)
+    for (const id of cellIds()) {
+      expect(classesOf(cell(String(id))), String(id)).not.toContain('lg:col-span-2')
+    }
+  })
+
+  it('with budget data there are five cells, budget-vs-actual pairs with the income donut, and the last cell spans both columns', async () => {
+    const budget: BudgetEntry & { categoryName: string; categoryIcon: null } = {
+      id: 'b1',
+      categoryId: 'c1',
+      monthlyLimit: 200,
+      currency: 'UAH',
+      categoryName: 'Food',
+      categoryIcon: null,
+    }
+    vi.mocked(getAllBudgets).mockResolvedValue([budget])
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-budget-variance')
+    expect(cellIds()).toEqual([
+      'analytics-category-donut',
+      'analytics-income-donut',
+      'analytics-timeline',
+      'analytics-budget-variance',
+      'analytics-monthly',
+    ])
+    expect(lgOrder('analytics-budget-variance')).toBe('lg:order-3')
+    expect(lgOrder('analytics-monthly')).toBe('lg:order-2')
+    // Odd count: only the cell with the highest lg order (Over time) spans both.
+    expect(classesOf(cell('analytics-timeline'))).toContain('lg:col-span-2')
+    for (const id of cellIds().filter((c) => c !== 'analytics-timeline')) {
+      expect(classesOf(cell(String(id))), String(id)).not.toContain('lg:col-span-2')
+    }
+  })
+
+  it('no data: the no-data card sits first in lg order next to the 12-month chart, and nothing spans', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-no-data')
+    expect(cellIds()).toEqual(['analytics-no-data', 'analytics-monthly'])
+    expect(lgOrder('analytics-no-data')).toBe('lg:order-1')
+    expect(lgOrder('analytics-monthly')).toBe('lg:order-2')
+    expect(classesOf(cell('analytics-no-data'))).toContain('mt-4')
+    for (const id of cellIds()) {
+      expect(classesOf(cell(String(id))), String(id)).not.toContain('lg:col-span-2')
+    }
+  })
+
+  it('the 12-month chart is always in the grid; the lg orders differ per cell', async () => {
+    vi.mocked(getExpensesForRange).mockResolvedValue([expense('e1', 100, 'UAH')])
+
+    renderPage()
+
+    await screen.findByTestId('analytics-chart-grid')
+    const orders = cellIds().map((id) => lgOrder(String(id)))
+    expect(new Set(orders).size).toBe(orders.length)
+    expect(chartGrid().contains(screen.getByTestId('dashboard-stats-total'))).toBe(true)
+    expect(cell('analytics-monthly').contains(screen.getByTestId('dashboard-stats-total'))).toBe(true)
   })
 })
