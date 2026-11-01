@@ -113,7 +113,7 @@ export default function TimelineBarChart({ data, currency }: Props) {
           />
           <Bar
             dataKey="total"
-            fill="#6366f1"
+            fill="var(--chart-accent)"
             radius={[4, 4, 0, 0]}
             maxBarSize={40}
             className="opacity-90 hover:opacity-100 transition-opacity"
