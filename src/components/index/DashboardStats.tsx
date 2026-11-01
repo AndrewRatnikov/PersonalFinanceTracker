@@ -83,7 +83,7 @@ export default function DashboardStats({
                 boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
                 color: 'var(--popover-foreground)',
               }}
-              itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
+              itemStyle={{ color: 'var(--chart-accent)', fontWeight: 'bold' }}
               labelStyle={{
                 color: 'var(--muted-foreground)',
                 marginBottom: '4px',
@@ -95,7 +95,7 @@ export default function DashboardStats({
             />
             <Bar
               dataKey="total"
-              fill="var(--primary)"
+              fill="var(--chart-accent)"
               radius={[6, 6, 0, 0]}
               maxBarSize={45}
               className="opacity-90 hover:opacity-100 transition-opacity"
