@@ -28,6 +28,7 @@ import { SecurityTab } from '@/components/settings/SecurityTab'
 import { SettingsNav } from '@/components/settings/SettingsNav'
 import { SyncTab } from '@/components/settings/SyncTab'
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { Button } from '@/components/ui/button'
 
@@ -142,7 +143,7 @@ function SettingsPage() {
         <div className="md:grid md:grid-cols-[16rem_minmax(0,1fr)] md:gap-8">
           <aside className="md:sticky md:top-20 self-start">{nav('sidebar')}</aside>
           {active !== null && (
-            <div className="flex min-w-0 flex-col gap-6">
+            <div data-testid="settings-content" className="flex min-w-0 max-w-2xl flex-col gap-6">
               <h2
                 data-testid="settings-section-title"
                 className="text-2xl font-semibold tracking-tight text-foreground"
@@ -194,12 +195,9 @@ function SettingsPage() {
 
   return (
     <PageShell>
-      <div
-        data-testid="settings-page"
-        className="max-w-xl md:max-w-5xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8"
-      >
+      <PageContainer data-testid="settings-page" className="flex flex-col gap-8">
         {body}
-      </div>
+      </PageContainer>
     </PageShell>
   )
 }

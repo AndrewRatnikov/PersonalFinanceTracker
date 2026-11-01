@@ -4,6 +4,8 @@
 // Route.useNavigate are spied. The search lives in a tiny external store that
 // the spied useSearch subscribes to, so a navigate call re-renders the page the
 // way the router would.
+// Page-width additions: the page renders inside a full-width PageContainer
+// that keeps its old vertical spacing, min height and animation.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -534,5 +536,48 @@ describe('transactions page: the drawer follows the URL', () => {
     await waitFor(() => expect(deleteExpense).toHaveBeenCalledTimes(1))
     expect(deleteExpense).toHaveBeenCalledWith('e0', expect.any(String))
     expect(screen.queryByTestId('expense-drawer')).toBeNull()
+  })
+})
+
+describe('transactions page: page container', () => {
+  beforeEach(() => {
+    fill(3)
+  })
+
+  it('renders inside a full-width PageContainer that keeps spacing, min height and animation', async () => {
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByTestId('fake-row')).toHaveLength(3)
+    })
+
+    const page = screen.getByTestId('transactions-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = page.className.split(/\s+/)
+    for (const token of [
+      'max-w-6xl',
+      'mx-auto',
+      'px-4',
+      'md:px-8',
+      'py-4',
+      'md:py-8',
+      'min-h-screen',
+      'animate-in',
+      'fade-in',
+    ]) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('pt-6')
+    expect(classes).not.toContain('p-4')
+  })
+
+  it('the rows and the Add button are inside the page container', async () => {
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByTestId('fake-row')).toHaveLength(3)
+    })
+
+    const page = screen.getByTestId('transactions-page')
+    expect(page.contains(screen.getByTestId('transactions-add-btn'))).toBe(true)
+    for (const row of screen.getAllByTestId('fake-row')) expect(page.contains(row)).toBe(true)
   })
 })

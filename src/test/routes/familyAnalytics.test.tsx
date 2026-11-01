@@ -7,6 +7,8 @@
 // Analytics page in a Family: By member and Received by sections with
 // hand-computed totals and shares, the member filter on every number, pending
 // entries excluded and counted, Personal unchanged.
+// Page-width additions: the members cell sits in the chart grid with its lg
+// order, the member filter stays outside the grid.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -256,5 +258,61 @@ describe('switching space', () => {
 
     await waitFor(() => expect(screen.getByTestId('analytics-total-spent').textContent).toContain(`${fmt2(550)} UAH`))
     expect(screen.getByTestId('analytics-members-expense')).toBeTruthy()
+  })
+})
+
+describe('Family analytics layout', () => {
+  const classesOf = (el: Element) => el.className.split(/\s+/)
+  const cellIds = () =>
+    Array.from(screen.getByTestId('analytics-chart-grid').children).map((c) => c.getAttribute('data-testid'))
+
+  it('the members cell is a grid cell with lg order 5 holding both member sections', async () => {
+    renderPage(familyValue())
+
+    const members = await screen.findByTestId('analytics-members')
+    const grid = screen.getByTestId('analytics-chart-grid')
+    expect(members.parentElement).toBe(grid)
+    const classes = classesOf(members)
+    for (const token of ['flex', 'min-w-0', 'flex-col', 'gap-8', 'lg:order-5']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(members.contains(screen.getByTestId('analytics-members-expense'))).toBe(true)
+    expect(members.contains(screen.getByTestId('analytics-members-income'))).toBe(true)
+  })
+
+  it('Family cells keep DOM order and the odd count makes "Over time" span both columns', async () => {
+    renderPage(familyValue())
+
+    await screen.findByTestId('analytics-members')
+    expect(cellIds()).toEqual([
+      'analytics-category-donut',
+      'analytics-income-donut',
+      'analytics-members',
+      'analytics-timeline',
+      'analytics-monthly',
+    ])
+    expect(classesOf(screen.getByTestId('analytics-timeline'))).toContain('lg:order-6')
+    expect(classesOf(screen.getByTestId('analytics-timeline'))).toContain('lg:col-span-2')
+    for (const id of cellIds().filter((c) => c !== 'analytics-timeline')) {
+      expect(classesOf(screen.getByTestId(String(id))), String(id)).not.toContain('lg:col-span-2')
+    }
+  })
+
+  it('the member filter is outside the chart grid', async () => {
+    renderPage(familyValue())
+
+    await screen.findByTestId('analytics-members')
+    const filter = screen.getByTestId('member-filter')
+    expect(screen.getByTestId('analytics-page').contains(filter)).toBe(true)
+    expect(screen.getByTestId('analytics-chart-grid').contains(filter)).toBe(false)
+  })
+
+  it('Personal has no members cell and an even four-cell grid', async () => {
+    renderPage({ spaceId: 'personal', family: FAMILY })
+
+    await screen.findByTestId('analytics-chart-grid')
+    expect(screen.queryByTestId('analytics-members')).toBeNull()
+    expect(cellIds()).toHaveLength(4)
+    expect(classesOf(screen.getByTestId('analytics-timeline'))).not.toContain('lg:col-span-2')
   })
 })

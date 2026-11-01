@@ -1,6 +1,8 @@
 // No CONTRACT_GAPs: the income route approach and fake testids (#5) are fully
 // specified in the Interface Contract. The route now also queries
 // ['incomeCategories'] and passes the result to AddIncomeForm.
+// Page-width additions: the page renders inside a full-width PageContainer
+// that keeps its old vertical spacing, min height and animation.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -204,5 +206,49 @@ describe('income page loads the income categories for the form', () => {
       expect(screen.getByTestId('add-income-form')).toBeTruthy()
     })
     expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+})
+
+describe('income page: page container', () => {
+  beforeEach(() => {
+    fill(2)
+  })
+
+  it('renders inside a full-width PageContainer that keeps spacing, min height and animation', async () => {
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByTestId('fake-row')).toHaveLength(2)
+    })
+
+    const page = screen.getByTestId('income-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = page.className.split(/\s+/)
+    for (const token of [
+      'max-w-6xl',
+      'mx-auto',
+      'px-4',
+      'md:px-8',
+      'py-4',
+      'md:py-8',
+      'min-h-screen',
+      'animate-in',
+      'fade-in',
+    ]) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('pt-6')
+    expect(classes).not.toContain('p-4')
+  })
+
+  it('the add form and the rows are inside the page container', async () => {
+    renderPage()
+
+    const form = await screen.findByTestId('add-income-form')
+    await waitFor(() => {
+      expect(screen.getAllByTestId('fake-row')).toHaveLength(2)
+    })
+    const page = screen.getByTestId('income-page')
+    expect(page.contains(form)).toBe(true)
+    for (const row of screen.getAllByTestId('fake-row')) expect(page.contains(row)).toBe(true)
   })
 })

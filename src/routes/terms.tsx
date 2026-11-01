@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { LegalDocument } from '@/components/legal/LegalDocument'
 
 // Public and server-rendered, in the language of the root loader. The unlock
@@ -12,12 +13,9 @@ export const Route = createFileRoute('/terms')({
 function TermsPage() {
   return (
     <PageShell>
-      <div
-        data-testid="terms-page"
-        className="max-w-2xl mx-auto px-4 sm:px-6 pt-6"
-      >
+      <PageContainer width="reading" data-testid="terms-page">
         <LegalDocument kind="terms" />
-      </div>
+      </PageContainer>
     </PageShell>
   )
 }

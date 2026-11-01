@@ -14,6 +14,7 @@ import {
   setVaultPhase,
 } from '@/lib/vaultSession'
 import Header from '@/components/Header'
+import { PAGE_FRAME_CLASS } from '@/components/PageContainer'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -154,5 +155,42 @@ describe('Header Start tracking button', () => {
     renderHeader()
 
     expect(screen.getByTestId('header-start-tracking').closest('a')).toBeNull()
+  })
+})
+
+describe('Header bar shares the page frame', () => {
+  const frameTokens = PAGE_FRAME_CLASS.split(/\s+/)
+
+  it.each(['unlocked', 'checking', 'none', 'locked'] as const)(
+    'carries every PAGE_FRAME_CLASS token in phase %s (one bar at a time)',
+    (phase) => {
+      setVaultPhase(phase)
+      renderHeader()
+
+      const bars = screen.getAllByTestId('header-bar')
+      expect(bars).toHaveLength(1)
+      const classes = bars[0].className.split(/\s+/)
+      for (const token of frameTokens) expect(classes, token).toContain(token)
+    },
+  )
+
+  it('the bar keeps its own height and flex layout next to the frame', () => {
+    setVaultPhase('unlocked')
+    renderHeader()
+
+    const classes = screen.getByTestId('header-bar').className.split(/\s+/)
+    expect(classes).toContain('h-16')
+    expect(classes).toContain('flex')
+    expect(classes).toContain('items-center')
+  })
+
+  it('the frame is the 1152 px column with the page gutter, not a narrower width', () => {
+    setVaultPhase('unlocked')
+    renderHeader()
+
+    const classes = screen.getByTestId('header-bar').className.split(/\s+/)
+    expect(classes).toContain('max-w-6xl')
+    expect(classes).not.toContain('max-w-2xl')
+    expect(classes).not.toContain('max-w-xl')
   })
 })

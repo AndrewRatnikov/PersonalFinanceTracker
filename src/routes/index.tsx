@@ -20,6 +20,7 @@ import SpeedEntryForm from '@/components/index/SpeedEntryForm'
 import { InstallHintCard } from '@/components/InstallHintCard'
 import LandingPage from '@/components/LandingPage'
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { ExpenseDrawer } from '@/components/transactions/ExpenseDrawer'
 import { Card, CardContent } from '@/components/ui/card'
@@ -158,11 +159,11 @@ function Dashboard() {
   if (failedQueries.length > 0) {
     return (
       <PageShell>
-        <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+        <PageContainer className="flex flex-col gap-8">
           <QueryErrorState
             onRetry={() => failedQueries.forEach((q) => void q.refetch())}
           />
-        </div>
+        </PageContainer>
       </PageShell>
     )
   }
@@ -181,10 +182,7 @@ function Dashboard() {
   if (isLoading) {
     return (
       <PageShell>
-        <div
-          className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8"
-          aria-busy="true"
-        />
+        <PageContainer className="flex flex-col gap-8" aria-busy="true" />
       </PageShell>
     )
   }
@@ -194,67 +192,81 @@ function Dashboard() {
 
   return (
     <PageShell>
-      <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-8">
+      <PageContainer data-testid="dashboard-page" className="flex flex-col gap-8">
         <InstallHintCard />
         <RecoveryKeyBanner />
         <BackupReminderBanner />
         {familyEmpty && <FamilyEmptyState onAddFirst={() => setDrawerInitial({})} />}
-        <DashboardSummarySection
-          summary={summary}
-          fetchExchangeRates={fetchExchangeRates}
-        />
-        {isFamily && directory !== null && !familyEmpty && (
-          <MemberSummaryCard
-            expenses={expenses}
-            directory={directory}
-            mainCurrency={mainCurrency}
-          />
-        )}
-        <RecurringDashboardSection today={todayStr} />
-
-        <section>
-          <h2 className="text-xl font-bold mb-4">{t('dashboard.quickAdd.title')}</h2>
-          {isFamily && family !== null && (
-            <p
-              data-testid="quick-add-space-cue"
-              className="-mt-3 mb-4 text-sm font-medium text-primary"
-            >
-              {t('space.adding', { name: family.name })}
-            </p>
-          )}
-          {categories.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              <RepeatLastChips
-                key={`repeat-${spaceId}`}
+        <div
+          data-testid="dashboard-grid"
+          className="flex flex-col gap-8 lg:grid lg:grid-cols-3 lg:items-start"
+        >
+          <div
+            data-testid="dashboard-side"
+            className="flex min-w-0 flex-col gap-8 lg:col-start-3 lg:row-start-1"
+          >
+            <DashboardSummarySection
+              summary={summary}
+              fetchExchangeRates={fetchExchangeRates}
+            />
+            {isFamily && directory !== null && !familyEmpty && (
+              <MemberSummaryCard
                 expenses={expenses}
-                categories={categories}
-                onCustomize={setDrawerInitial}
+                directory={directory}
+                mainCurrency={mainCurrency}
               />
-              <SpeedEntryForm
-                key={`quick-add-${spaceId}`}
-                categories={categories}
-                onSubmit={handleCreateExpense}
-                isPending={isPending}
-                defaultCurrency={mainCurrency}
-                entries={expenses}
-              />
-            </div>
-          ) : (
-            <Card className="border-dashed bg-transparent">
-              <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
-                {t('dashboard.quickAdd.noCategories')}
-              </CardContent>
-            </Card>
-          )}
-        </section>
+            )}
+            <RecurringDashboardSection today={todayStr} />
+          </div>
+          <div
+            data-testid="dashboard-main"
+            className="flex min-w-0 flex-col gap-8 lg:col-span-2 lg:col-start-1 lg:row-start-1"
+          >
+            <section data-testid="dashboard-quick-add">
+              <h2 className="text-xl font-bold mb-4">{t('dashboard.quickAdd.title')}</h2>
+              {isFamily && family !== null && (
+                <p
+                  data-testid="quick-add-space-cue"
+                  className="-mt-3 mb-4 text-sm font-medium text-primary"
+                >
+                  {t('space.adding', { name: family.name })}
+                </p>
+              )}
+              {categories.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  <RepeatLastChips
+                    key={`repeat-${spaceId}`}
+                    expenses={expenses}
+                    categories={categories}
+                    onCustomize={setDrawerInitial}
+                  />
+                  <SpeedEntryForm
+                    key={`quick-add-${spaceId}`}
+                    categories={categories}
+                    onSubmit={handleCreateExpense}
+                    isPending={isPending}
+                    defaultCurrency={mainCurrency}
+                    entries={expenses}
+                  />
+                </div>
+              ) : (
+                <Card className="border-dashed bg-transparent">
+                  <CardContent className="flex items-center justify-center py-10 text-muted-foreground">
+                    {t('dashboard.quickAdd.noCategories')}
+                  </CardContent>
+                </Card>
+              )}
+            </section>
 
-        <section>
-          <RecentActivityList
-            items={summary.recent}
-            mainCurrency={mainCurrency}
-          />
-        </section>
-      </div>
+            <section>
+              <RecentActivityList
+                items={summary.recent}
+                mainCurrency={mainCurrency}
+              />
+            </section>
+          </div>
+        </div>
+      </PageContainer>
 
       <ExpenseDrawer
         key={JSON.stringify(drawerInitial)}

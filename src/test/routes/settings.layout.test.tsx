@@ -10,6 +10,8 @@
 // page the way the router would (same harness as transactions.test.tsx).
 // The section bodies are light fakes. ENABLE_SYNC, ENABLE_SPACES and the
 // accounts-visible hook are mutable.
+// Page-width additions: PageContainer root and the max-w-2xl section column on
+// desktop (classes and DOM order only; jsdom has no layout).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -299,11 +301,9 @@ describe('phone: the index at /settings', () => {
       within(screen.getByTestId(`settings-group-${group}`))
         .getAllByRole('button')
         .map((b) => b.getAttribute('data-testid'))
-    expect(within_('budget')).toEqual([
-      'settings-item-general',
-      'settings-item-categories',
-      'settings-item-budget',
-    ])
+    expect(within_('budget')).toEqual(
+      ['general', 'categories', 'budget'].map((id) => `settings-item-${id}`),
+    )
     expect(within_('device')).toEqual(['settings-item-security', 'settings-item-data'])
     expect(within_('cloud')).toEqual([
       'settings-item-account',
@@ -761,5 +761,70 @@ describe('the Budget section error path', () => {
       expect(screen.getByTestId('budget-tab')).toBeTruthy()
     })
     expect(screen.queryByTestId('query-error')).toBeNull()
+  })
+})
+
+describe('page container and section column', () => {
+  const classesOf = (el: Element) => el.className.split(/\s+/)
+
+  it.each([false, true])('settings-page is a full-width PageContainer (desktop: %s)', (desktop) => {
+    layout.desktop = desktop
+    openAt()
+
+    const page = screen.getByTestId('settings-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = classesOf(page)
+    for (const token of ['max-w-6xl', 'mx-auto', 'px-4', 'md:px-8', 'flex', 'flex-col', 'gap-8']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('md:max-w-5xl')
+    expect(classes).not.toContain('max-w-xl')
+    expect(classes).not.toContain('sm:px-6')
+  })
+
+  it('on desktop the section sits in a column capped at max-w-2xl next to the sidebar', () => {
+    layout.desktop = true
+    openAt('security')
+
+    const content = screen.getByTestId('settings-content')
+    const classes = classesOf(content)
+    for (const token of ['max-w-2xl', 'min-w-0', 'flex', 'flex-col', 'gap-6']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(content.contains(screen.getByTestId('settings-section-title'))).toBe(true)
+    expect(content.contains(screen.getByTestId('settings-section'))).toBe(true)
+    expect(content.contains(screen.getByTestId('security-tab'))).toBe(true)
+    expect(content.contains(screen.getByTestId('settings-sidebar'))).toBe(false)
+    expect(
+      screen.getByTestId('settings-sidebar').compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByTestId('settings-page').contains(content)).toBe(true)
+  })
+
+  it('the section column follows the chosen section', () => {
+    layout.desktop = true
+    openAt('security')
+    expect(within(screen.getByTestId('settings-content')).queryByTestId('categories-tab')).toBeNull()
+
+    fireEvent.click(screen.getByTestId(`settings-item-${'categories'}`))
+
+    expect(within(screen.getByTestId('settings-content')).getByTestId('categories-tab')).toBeTruthy()
+    expect(within(screen.getByTestId('settings-content')).queryByTestId('security-tab')).toBeNull()
+  })
+
+  it('the phone layout has no section column', () => {
+    layout.desktop = false
+    openAt('security')
+
+    expect(screen.queryByTestId('settings-content')).toBeNull()
+    expect(screen.getByTestId('settings-section')).toBeTruthy()
+  })
+
+  it('the phone index has no section column either', () => {
+    layout.desktop = false
+    openAt()
+
+    expect(screen.queryByTestId('settings-content')).toBeNull()
   })
 })

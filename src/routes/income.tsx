@@ -15,6 +15,7 @@ import { useMoveRecords } from '@/lib/spaces/useMoveRecords'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { MemberFilter } from '@/components/members/MemberFilter'
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { MoveConfirmDialog } from '@/components/space/MoveConfirmDialog'
 import { Button } from '@/components/ui/button'
@@ -156,9 +157,9 @@ function IncomePage() {
 
   return (
     <PageShell>
-      <div
+      <PageContainer
         data-testid="income-page"
-        className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500"
+        className="py-4 md:py-8 min-h-screen animate-in fade-in duration-500"
       >
         <div className="space-y-1 mb-8">
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -255,7 +256,7 @@ function IncomePage() {
             )}
           </div>
         </div>
-      </div>
+      </PageContainer>
 
       {mover.direction !== null && family !== null && (
         <MoveConfirmDialog

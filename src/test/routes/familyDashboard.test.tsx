@@ -8,6 +8,8 @@
 //
 // Dashboard in a Family: cues, month-by-member card, empty state, Paid by in
 // Quick Add, read-only and paused, and the data following the switch.
+// Page-width additions: the by-member card lives in the side column, the
+// empty-Family actions sit above the grid.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -406,5 +408,59 @@ describe('SpeedEntryForm', () => {
     renderForm(familyValue({ readOnly: true }))
 
     expect(screen.getByTestId<HTMLButtonElement>('speed-entry-submit').disabled).toBe(true)
+  })
+})
+
+describe('Family dashboard layout', () => {
+  it('the by-member card is in the side column, after the summary and not in the main area', async () => {
+    renderPage(familyValue())
+
+    const card = await screen.findByTestId('family-month-card')
+    const side = screen.getByTestId('dashboard-side')
+    expect(side.contains(card)).toBe(true)
+    expect(screen.getByTestId('dashboard-main').contains(card)).toBe(false)
+    expect(
+      screen.getByTestId('dashboard-summary').compareDocumentPosition(card) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByTestId('dashboard-grid').contains(card)).toBe(true)
+  })
+
+  it('Quick Add with its "Adding to" cue is in the main area, not the side column', async () => {
+    renderPage(familyValue())
+
+    const cue = await screen.findByTestId('quick-add-space-cue')
+    expect(screen.getByTestId('dashboard-quick-add').contains(cue)).toBe(true)
+    expect(screen.getByTestId('dashboard-main').contains(cue)).toBe(true)
+    expect(screen.getByTestId('dashboard-side').contains(cue)).toBe(false)
+  })
+
+  it('there is no by-member card in the side column in Personal', async () => {
+    renderPage({ spaceId: 'personal', family: FAMILY })
+
+    await screen.findByTestId('dashboard-summary')
+    expect(within(screen.getByTestId('dashboard-side')).queryByTestId('family-month-card')).toBeNull()
+  })
+
+  it('the empty-Family actions sit above the grid, as a child of the page', async () => {
+    h.family = []
+    renderPage(familyValue())
+
+    const empty = await screen.findByTestId('family-empty-state')
+    const page = screen.getByTestId('dashboard-page')
+    const grid = screen.getByTestId('dashboard-grid')
+    expect(empty.parentElement).toBe(page)
+    expect(grid.contains(empty)).toBe(false)
+    expect(empty.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('the Family title cue and the read-only banner are in the page shell, above the dashboard page', async () => {
+    renderPage(familyValue({ readOnly: true }))
+
+    const page = await screen.findByTestId('dashboard-page')
+    const banner = screen.getByTestId('space-banner')
+    expect(page.contains(banner)).toBe(false)
+    expect(banner.contains(screen.getByTestId('space-readonly-banner'))).toBe(true)
+    expect(banner.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

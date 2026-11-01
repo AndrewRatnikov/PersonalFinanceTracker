@@ -3,6 +3,7 @@
 // Contract. Nothing here mounts a QueryClientProvider, a vault or a session, so
 // a page that needed any of them would throw. "While locked" is proven by
 // computeGate in vaultSession.publicRoutes.test.ts. Link is mocked (no router).
+// Page-width additions: both pages are PageContainers with the reading width.
 
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
@@ -151,6 +152,36 @@ describe('legal pages render without a session', () => {
     const links = screen.getByTestId('legal-links')
     expect(within(links).getByTestId('legal-terms-link').getAttribute('href')).toBe('/terms')
     expect(within(links).getByTestId('legal-privacy-link').getAttribute('href')).toBe('/privacy')
+  })
+})
+
+describe('legal pages use the reading width', () => {
+  it.each(CASES)('/%s in %s is a PageContainer with width="reading"', (kind, lang) => {
+    render(pageFor(kind, lang))
+
+    const page = screen.getByTestId(ROUTES[kind].page)
+    expect(page.getAttribute('data-page-container')).toBe('reading')
+    const classes = page.className.split(/\s+/)
+    for (const token of ['max-w-2xl', 'mx-auto', 'px-4', 'md:px-8']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('max-w-6xl')
+    expect(classes).not.toContain('sm:px-6')
+  })
+
+  it('the document and its links are inside the page container', () => {
+    render(pageFor('privacy', 'en'))
+
+    const page = screen.getByTestId('privacy-page')
+    expect(page.contains(screen.getByTestId('legal-body'))).toBe(true)
+    expect(page.contains(screen.getByTestId('legal-links'))).toBe(true)
+  })
+
+  it('renders the marker into the server HTML', () => {
+    const html = renderToString(pageFor('terms', 'en'))
+
+    expect(html).toContain('data-page-container="reading"')
+    expect(html).not.toContain('data-page-container="full"')
   })
 })
 

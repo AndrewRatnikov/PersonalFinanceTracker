@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import type { ActiveSpaceState } from '@/lib/spaces/switcher'
 import { setLang, translate } from '@/i18n/core'
 import { SpaceSwitchProvider } from '@/lib/spaces/switcher'
+import { PAGE_FRAME_CLASS } from '@/components/PageContainer'
 import { SpaceBanner } from '@/components/space/SpaceBanner'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -43,6 +44,11 @@ describe('Personal or no Family', () => {
   it('renders nothing in Personal even when a Family is held (and read-only flags are ignored)', () => {
     const { container } = renderBanner({ spaceId: 'personal', family: FAMILY, readOnly: true, paused: true })
     expect(container.innerHTML).toBe('')
+  })
+
+  it('has no space-banner element', () => {
+    renderBanner({ spaceId: 'personal', family: FAMILY })
+    expect(screen.queryByTestId('space-banner')).toBeNull()
   })
 })
 
@@ -93,5 +99,24 @@ describe('Family active', () => {
     expect(translate('uk', 'space.readOnlyBanner', { name: 'X' })).not.toBe(
       translate('en', 'space.readOnlyBanner', { name: 'X' }),
     )
+  })
+
+  it('the banner root carries every PAGE_FRAME_CLASS token plus pt-3, so it lines up with the header', () => {
+    renderBanner({ spaceId: 'fam-1', family: FAMILY })
+
+    const root = screen.getByTestId('space-banner')
+    const classes = root.className.split(/\s+/)
+    for (const token of PAGE_FRAME_CLASS.split(/\s+/)) expect(classes, token).toContain(token)
+    expect(classes).toContain('pt-3')
+    expect(classes).not.toContain('max-w-xl')
+    expect(root.contains(screen.getByTestId('space-title-cue'))).toBe(true)
+  })
+
+  it('keeps the frame classes when the read-only banner is shown', () => {
+    renderBanner({ spaceId: 'fam-1', family: FAMILY, readOnly: true })
+
+    const root = screen.getByTestId('space-banner')
+    expect(root.className.split(/\s+/)).toContain('max-w-6xl')
+    expect(root.contains(screen.getByTestId('space-readonly-banner'))).toBe(true)
   })
 })

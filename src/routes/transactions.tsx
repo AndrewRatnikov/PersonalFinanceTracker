@@ -22,6 +22,7 @@ import { useMoveRecords } from '@/lib/spaces/useMoveRecords'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import { MemberFilter } from '@/components/members/MemberFilter'
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import { MoveConfirmDialog } from '@/components/space/MoveConfirmDialog'
 import { CategoryFilter } from '@/components/transactions/CategoryFilter'
@@ -297,9 +298,9 @@ function Transactions() {
 
   return (
     <PageShell>
-      <div
+      <PageContainer
         data-testid="transactions-page"
-        className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen animate-in fade-in duration-500"
+        className="py-4 md:py-8 min-h-screen animate-in fade-in duration-500"
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div className="space-y-1">
@@ -400,7 +401,7 @@ function Transactions() {
             )}
           </Card>
         )}
-      </div>
+      </PageContainer>
 
       <Button
         type="button"

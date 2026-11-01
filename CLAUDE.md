@@ -22,6 +22,16 @@ Tests use Vitest + jsdom (`vitest.config.ts`, separate from `vite.config.ts`) an
 
 **UI:** Tailwind CSS v4 + shadcn/ui components (in `src/components/ui/`). `components.json` controls shadcn config. Charts use Recharts. Theme variables in `src/styles.css` hold full oklch colours, so use `var(--token)` in inline styles and chart props, never `hsl(var(--token))`.
 
+### Page layout (src/components/PageContainer.tsx)
+
+Every page uses PageContainer; full width is 1152 px; use 'reading' for text pages; inner forms max 672 px.
+
+- `PageContainer` (`width?: 'full' | 'reading'`, default `'full'`) renders one `<div data-page-container={width}>` with the page width (`max-w-6xl` / `max-w-2xl`), the gutter (`mx-auto px-4 md:px-8`) and the top spacing (`pt-6`). Header and SpaceBanner use the exported `PAGE_FRAME_CLASS` (`max-w-6xl mx-auto px-4 md:px-8`), so content edges always line up with the header.
+- A `className` on PageContainer may set vertical spacing and layout (e.g. `py-4 md:py-8`, `flex flex-col gap-8`, `min-h-screen`; merged by `cn`/twMerge), never `max-w-*`, `px-*` or `mx-*`. Inner elements (cards, forms, prose) may still use `max-w-*` (forms up to `max-w-2xl`).
+- Desktop layouts keep the phone DOM order (phones follow it) and place cells with `lg:`-only grid classes (`lg:col-start-*` / `lg:row-start-*` on the Dashboard, `lg:order-*` on Analytics); below `lg` pages are a single `flex-col` column.
+- `src/test/pageWidthGuard.test.ts` enforces it: no route under `src/routes` (except login and join) and no page-level wrapper sets its own `max-w-*` on the outermost page element.
+- Login and Join keep their own small centred cards (`max-w-sm` / `max-w-md`), and the Landing page keeps its own layout.
+
 ### Storage — local-first, encrypted IndexedDB
 
 The app migrated away from Supabase for data. **Supabase is used only for the optional account** (see Unlock gate). All data lives in IndexedDB, encrypted at rest.

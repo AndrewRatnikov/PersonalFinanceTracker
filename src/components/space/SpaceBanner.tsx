@@ -6,6 +6,7 @@ import { CirclePause, Users } from 'lucide-react'
 
 import { useT } from '@/i18n'
 import { useSpaceSwitch } from '@/lib/spaces/switcher'
+import { PAGE_FRAME_CLASS } from '@/components/PageContainer'
 
 export function SpaceBanner() {
   const { t } = useT()
@@ -13,7 +14,7 @@ export function SpaceBanner() {
   if (!isFamily || family === null) return null
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 pt-3 flex flex-col gap-2">
+    <div data-testid="space-banner" className={`${PAGE_FRAME_CLASS} pt-3 flex flex-col gap-2`}>
       <div
         data-testid="space-title-cue"
         className="flex items-center gap-2 text-sm font-medium text-primary"

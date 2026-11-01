@@ -12,6 +12,10 @@
 //
 // Fast-entry additions: the localDb mock gains deleteExpense and updateExpense
 // (the dashboard now renders the repeat-last row and the ExpenseDrawer).
+//
+// Page-width additions: the dashboard renders inside PageContainer, banners
+// above a lg 3-column grid with a side and a main column (classes and DOM
+// order only; jsdom has no layout).
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -521,5 +525,167 @@ describe('index route: repeat-last row', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('expense-drawer')).toBeNull()
     })
+  })
+})
+
+describe('index route: page container and desktop grid', () => {
+  const classesOf = (testId: string) =>
+    screen.getByTestId(testId).className.split(/\s+/)
+
+  async function renderDashboard() {
+    vi.mocked(getAllCategories).mockResolvedValue([FOOD])
+    setVaultPhase('unlocked')
+    renderIndex()
+    await screen.findByTestId('dashboard-grid')
+  }
+
+  it('renders inside a full-width PageContainer that keeps the column layout', async () => {
+    await renderDashboard()
+
+    const page = screen.getByTestId('dashboard-page')
+    expect(page.getAttribute('data-page-container')).toBe('full')
+    const classes = classesOf('dashboard-page')
+    for (const token of ['max-w-6xl', 'mx-auto', 'px-4', 'md:px-8', 'flex', 'flex-col', 'gap-8']) {
+      expect(classes, token).toContain(token)
+    }
+    expect(classes).not.toContain('max-w-xl')
+    expect(classes).not.toContain('sm:px-6')
+  })
+
+  it('the grid is one column and three columns from lg', async () => {
+    await renderDashboard()
+
+    const classes = classesOf('dashboard-grid')
+    for (const token of ['flex', 'flex-col', 'gap-8', 'lg:grid', 'lg:grid-cols-3', 'lg:items-start']) {
+      expect(classes, token).toContain(token)
+    }
+    // Between md and lg it stays a single column (no md grid classes).
+    expect(classes.filter((c) => c.startsWith('md:'))).toEqual([])
+  })
+
+  it('the side column sits in the third grid column, the main area spans the first two', async () => {
+    await renderDashboard()
+
+    const side = classesOf('dashboard-side')
+    expect(side).toContain('lg:col-start-3')
+    expect(side).toContain('lg:row-start-1')
+    expect(side).not.toContain('lg:col-span-2')
+    const main = classesOf('dashboard-main')
+    for (const token of ['lg:col-span-2', 'lg:col-start-1', 'lg:row-start-1']) {
+      expect(main, token).toContain(token)
+    }
+    expect(main).not.toContain('lg:col-start-3')
+  })
+
+  it('both columns are direct children of the grid, side first in the DOM', async () => {
+    await renderDashboard()
+
+    const grid = screen.getByTestId('dashboard-grid')
+    const side = screen.getByTestId('dashboard-side')
+    const main = screen.getByTestId('dashboard-main')
+    expect(side.parentElement).toBe(grid)
+    expect(main.parentElement).toBe(grid)
+    expect(
+      side.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('the side column holds the summary; the main area holds Quick Add and Recent activity', async () => {
+    await renderDashboard()
+
+    const side = screen.getByTestId('dashboard-side')
+    const main = screen.getByTestId('dashboard-main')
+    expect(within(side).getByTestId('dashboard-summary')).toBeTruthy()
+    expect(within(side).queryByTestId('speed-entry-form')).toBeNull()
+    expect(within(side).queryByTestId('recent-activity')).toBeNull()
+    expect(within(main).queryByTestId('dashboard-summary')).toBeNull()
+    expect(within(main).getByTestId('recent-activity')).toBeTruthy()
+    const quickAdd = within(main).getByTestId('dashboard-quick-add')
+    expect(within(quickAdd).getByTestId('speed-entry-form')).toBeTruthy()
+    expect(within(quickAdd).queryByTestId('recent-activity')).toBeNull()
+  })
+
+  it('main order: Quick Add (chips, then the form) before Recent activity', async () => {
+    vi.mocked(getAllCategories).mockResolvedValue([FOOD])
+    vi.mocked(getExpensesForRange).mockResolvedValue([
+      {
+        id: 'x1',
+        amount: 30,
+        currency: 'UAH',
+        categoryId: 'c1',
+        description: 'Lunch',
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    setVaultPhase('unlocked')
+    renderIndex()
+    const row = await screen.findByTestId('repeat-last-row')
+
+    const quickAdd = screen.getByTestId('dashboard-quick-add')
+    expect(quickAdd.contains(row)).toBe(true)
+    const form = screen.getByTestId('speed-entry-form')
+    const recent = screen.getByTestId('recent-activity')
+    expect(
+      row.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      quickAdd.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(quickAdd.contains(recent)).toBe(false)
+  })
+
+  it('the banners are children of the page before the grid, not inside it', async () => {
+    await renderDashboard()
+
+    const page = screen.getByTestId('dashboard-page')
+    const grid = screen.getByTestId('dashboard-grid')
+    for (const id of ['fake-install-hint', 'fake-recovery-key-banner', 'fake-backup-reminder']) {
+      const banner = screen.getByTestId(id)
+      expect(banner.parentElement, id).toBe(page)
+      expect(grid.contains(banner), id).toBe(false)
+      expect(
+        banner.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING,
+        id,
+      ).toBeTruthy()
+    }
+  })
+
+  it('the due card sits in the side column after the summary', async () => {
+    vi.mocked(getAllRecurring).mockResolvedValue([
+      recurringItem({ id: 'ask', mode: 'ask', description: 'Rent' }),
+    ])
+    await renderDashboard()
+
+    const due = await screen.findByTestId('recurring-due')
+    const side = screen.getByTestId('dashboard-side')
+    expect(side.contains(due)).toBe(true)
+    expect(screen.getByTestId('dashboard-main').contains(due)).toBe(false)
+    expect(
+      screen.getByTestId('dashboard-summary').compareDocumentPosition(due) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('the upcoming card sits in the side column too', async () => {
+    vi.mocked(getAllRecurring).mockResolvedValue([
+      recurringItem({
+        id: 'soon',
+        description: 'Netflix',
+        startDate: dayjs().add(2, 'day').format('YYYY-MM-DD'),
+      }),
+    ])
+    await renderDashboard()
+
+    const upcoming = await screen.findByTestId('recurring-upcoming')
+    expect(screen.getByTestId('dashboard-side').contains(upcoming)).toBe(true)
+    expect(screen.getByTestId('dashboard-main').contains(upcoming)).toBe(false)
+  })
+
+  it('the landing page has no dashboard grid', () => {
+    setVaultPhase('locked')
+    renderIndex()
+
+    expect(screen.queryByTestId('dashboard-grid')).toBeNull()
+    expect(screen.queryByTestId('dashboard-page')).toBeNull()
   })
 })
