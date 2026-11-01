@@ -31,6 +31,8 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-10-31](2026-10-31-family-sharing-flows-key-bundle-rotation-read-only.md) | Family sharing flows: key bundle with fixed index key, approval with safety code, rotation and re-encryption, read-only after removal | Accepted |
 | [2026-10-31](2026-10-31-family-ux-one-active-space-move-as-create-tombstone.md) | Family UX: one active space for the whole app, move as create + tombstone across spaces | Accepted |
 | [2026-11-01](2026-11-01-settings-grouped-list-phone-sidebar-desktop.md) | Settings is a grouped list on phones and a sidebar on desktop, driven by `?tab=` | Accepted |
+| [2026-11-01](2026-11-01-one-page-width-shared-with-the-header.md) | One page width shared with the header | Accepted |
+| [2026-11-01](2026-11-01-desktop-layouts-keep-dom-order-lg-grid-placement.md) | Desktop layouts keep the phone DOM order and place cells with lg-only grid classes | Accepted |
 
 ## Where else decisions live
 
