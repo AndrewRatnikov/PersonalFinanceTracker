@@ -3,7 +3,8 @@
 //
 // No CONTRACT_GAPs: file names, function names, parameter names and return
 // shapes come from plan section B6 and the "Test harness (Tester-owned)" part
-// of the Interface Contract. harness.ts is re-used, never modified.
+// of the Interface Contract. harness.ts is re-used; a later run only made a
+// lint-only edit to it (no behaviour change).
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -278,9 +279,9 @@ export async function joinAndApprove(
   joiner: FamilyUser,
   keyVersion = 1,
 ): Promise<{ join: Join; wrappedKey: Json }> {
-  const join = await requestToJoin(owner, spaceId, joiner)
+  const joinRow = await requestToJoin(owner, spaceId, joiner)
   const wrappedKey = await approveMember(owner, spaceId, joiner, fakeWrappedKey(), keyVersion)
-  return { join, wrappedKey }
+  return { join: joinRow, wrappedKey }
 }
 
 export interface FamilySpace {

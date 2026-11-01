@@ -539,6 +539,26 @@ export const en = {
       sync: 'Sync',
       family: 'Family',
     },
+    groups: {
+      budget: 'Budget',
+      budgetFor: 'Budget · {name}',
+      device: 'This device',
+      cloud: 'Account & cloud',
+    },
+    descriptions: {
+      general: 'Main currency, exchange rates, language',
+      categories: 'Expense and income categories',
+      budget: 'Monthly limits by category',
+      security: 'Password, recovery key, auto-lock',
+      data: 'Backup, restore, CSV',
+      account: 'Sign-in and your plan',
+      sync: 'Keep your devices in sync',
+      family: 'Share a budget with your family',
+    },
+    nav: {
+      label: 'Settings sections',
+      back: 'Back to settings',
+    },
     categories: {
       income: 'Income categories',
       expense: 'Expense categories',

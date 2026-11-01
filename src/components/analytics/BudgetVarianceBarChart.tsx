@@ -116,7 +116,7 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
           <Bar
             dataKey="Budget"
             name={t('analytics.budget')}
-            fill="#6366f1"
+            fill="var(--chart-accent)"
             radius={[0, 4, 4, 0]}
             maxBarSize={16}
           />
@@ -129,7 +129,7 @@ export default function BudgetVarianceBarChart({ data, currency }: Props) {
             {chartData.map((entry, index) => (
               <Cell
                 key={`actual-cell-${index}`}
-                fill={entry.overBudget ? '#ef4444' : '#22c55e'}
+                fill={entry.overBudget ? 'var(--chart-negative)' : 'var(--chart-positive)'}
               />
             ))}
           </Bar>

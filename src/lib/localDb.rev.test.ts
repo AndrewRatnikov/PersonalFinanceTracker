@@ -301,7 +301,7 @@ const CASES: Array<Case> = [
     name: 'addExpense',
     touches: 1,
     keys: [MARCH_CHUNK],
-    prepare: async () => () => addExpense(expenseInput('c1')),
+    prepare: () => Promise.resolve(() => addExpense(expenseInput('c1'))),
   },
   {
     name: 'updateExpense in the same month',
@@ -346,8 +346,10 @@ const CASES: Array<Case> = [
     name: 'addIncome',
     touches: 1,
     keys: ['income'],
-    prepare: async () => () =>
-      addIncome({ categoryId: 'ic1', amount: 1, currency: 'UAH' }),
+    prepare: () =>
+      Promise.resolve(() =>
+        addIncome({ categoryId: 'ic1', amount: 1, currency: 'UAH' }),
+      ),
   },
   {
     name: 'deleteIncome',
@@ -362,7 +364,7 @@ const CASES: Array<Case> = [
     name: 'addCategory',
     touches: 1,
     keys: ['categories'],
-    prepare: async () => () => addCategory({ name: 'Food' }),
+    prepare: () => Promise.resolve(() => addCategory({ name: 'Food' })),
   },
   {
     name: 'updateCategory',
@@ -386,7 +388,7 @@ const CASES: Array<Case> = [
     name: 'addIncomeCategory',
     touches: 1,
     keys: ['incomeCategories'],
-    prepare: async () => () => addIncomeCategory({ name: 'Salary' }),
+    prepare: () => Promise.resolve(() => addIncomeCategory({ name: 'Salary' })),
   },
   {
     name: 'updateIncomeCategory',
@@ -429,14 +431,16 @@ const CASES: Array<Case> = [
     name: 'provisionDefaultCategories (six defaults)',
     touches: 6,
     keys: ['categories'],
-    prepare: async () => () => provisionDefaultCategories(),
+    prepare: () => Promise.resolve(() => provisionDefaultCategories()),
   },
   {
     name: 'upsertBudget creating',
     touches: 1,
     keys: ['budgets'],
-    prepare: async () => () =>
-      upsertBudget({ categoryId: 'c1', monthlyLimit: 10, currency: 'UAH' }),
+    prepare: () =>
+      Promise.resolve(() =>
+        upsertBudget({ categoryId: 'c1', monthlyLimit: 10, currency: 'UAH' }),
+      ),
   },
   {
     name: 'upsertBudget updating',
@@ -561,24 +565,26 @@ const CASES: Array<Case> = [
     name: 'addRepeatingExpense (expense and item)',
     touches: 2,
     keys: ['recurring', MARCH_CHUNK],
-    prepare: async () => () =>
-      addRepeatingExpense(expenseInput('c1', MARCH), 'month'),
+    prepare: () =>
+      Promise.resolve(() => addRepeatingExpense(expenseInput('c1', MARCH), 'month')),
   },
   {
     name: 'addRepeatingIncome (income and item)',
     touches: 2,
     keys: ['recurring', 'income'],
-    prepare: async () => () =>
-      addRepeatingIncome(
-        { categoryId: 'ic1', amount: 1, currency: 'UAH', createdAt: MARCH },
-        'month',
+    prepare: () =>
+      Promise.resolve(() =>
+        addRepeatingIncome(
+          { categoryId: 'ic1', amount: 1, currency: 'UAH', createdAt: MARCH },
+          'month',
+        ),
       ),
   },
   {
     name: 'ensureIncomeCategories (the six defaults get a rev)',
     touches: 6,
     keys: ['incomeCategories', 'income'],
-    prepare: async () => () => ensureIncomeCategories(),
+    prepare: () => Promise.resolve(() => ensureIncomeCategories()),
   },
 ]
 

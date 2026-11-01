@@ -15,7 +15,7 @@ interface DashboardSummarySectionProps {
 }
 
 const BAR_COLOR: Record<BudgetStatus, string> = {
-  ok: 'bg-primary',
+  ok: 'bg-chart-accent',
   warning: 'bg-amber-500',
   over: 'bg-destructive',
 }

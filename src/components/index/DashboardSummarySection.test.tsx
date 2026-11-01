@@ -489,12 +489,15 @@ describe('criterion 12: budget watch', () => {
 
     const warningBar = within(items[0]).getByTestId('budget-watch-bar')
     expect(warningBar.className).toContain('bg-amber-500')
+    expect(warningBar.className).not.toContain('bg-chart-accent')
 
     const overBar = within(items[1]).getByTestId('budget-watch-bar')
     expect(overBar.className).toContain('bg-destructive')
+    expect(overBar.className).not.toContain('bg-chart-accent')
 
     const okBar = within(items[2]).getByTestId('budget-watch-bar')
-    expect(okBar.className).toContain('bg-primary')
+    expect(okBar.className).toContain('bg-chart-accent')
+    expect(okBar.className).not.toContain('bg-primary')
   })
 
   it('shows spent and limit with 2 decimals in the main currency', () => {
