@@ -24,6 +24,7 @@ import {
 } from '@/lib/recurrence'
 import { useCurrencySettings } from '@/lib/useCurrencySettings'
 import PageShell from '@/components/PageShell'
+import PageContainer from '@/components/PageContainer'
 import { QueryErrorState } from '@/components/QueryErrorState'
 import RecurringForm from '@/components/recurring/RecurringForm'
 import RecurringRow from '@/components/recurring/RecurringRow'
@@ -292,17 +293,19 @@ function RecurringPage() {
         </Card>
 
         {form && (
-          <RecurringForm
-            key={form.mode === 'edit' ? form.item.id : 'new'}
-            expenseCategories={expenseCategories}
-            incomeCategories={incomeCategories}
-            today={today}
-            initial={form.mode === 'edit' ? form.item : undefined}
-            defaultCurrency={mainCurrency}
-            isPending={saveMutation.isPending}
-            onSubmit={handleSubmit}
-            onCancel={() => setForm(null)}
-          />
+          <div data-testid="recurring-form-wrap" className="w-full max-w-2xl">
+            <RecurringForm
+              key={form.mode === 'edit' ? form.item.id : 'new'}
+              expenseCategories={expenseCategories}
+              incomeCategories={incomeCategories}
+              today={today}
+              initial={form.mode === 'edit' ? form.item : undefined}
+              defaultCurrency={mainCurrency}
+              isPending={saveMutation.isPending}
+              onSubmit={handleSubmit}
+              onCancel={() => setForm(null)}
+            />
+          </div>
         )}
 
         {sortedItems.length === 0 ? (
@@ -315,7 +318,7 @@ function RecurringPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div data-testid="recurring-list" className="flex flex-col gap-2 lg:grid lg:grid-cols-2">
             {sortedItems.map((item) => (
               <RecurringRow
                 key={item.id}
@@ -345,9 +348,9 @@ function RecurringPage() {
 
   return (
     <PageShell>
-      <div
+      <PageContainer
         data-testid="recurring-page"
-        className="p-4 md:p-8 max-w-3xl mx-auto min-h-screen animate-in fade-in duration-500"
+        className="py-4 md:py-8 min-h-screen animate-in fade-in duration-500"
       >
         <div className="flex items-start justify-between gap-4 mb-8">
           <div className="space-y-1">
@@ -369,7 +372,7 @@ function RecurringPage() {
         </div>
 
         {content}
-      </div>
+      </PageContainer>
 
       {mover.direction !== null && family !== null && (
         <MoveConfirmDialog
