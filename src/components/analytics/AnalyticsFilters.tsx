@@ -80,7 +80,7 @@ export default function AnalyticsFilters({
   }
 
   return (
-    <Card className="shadow-sm border">
+    <Card data-testid="analytics-filters" className="shadow-sm border">
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <div className="space-y-1">
           <CardTitle className="text-xl font-bold tracking-tight">
