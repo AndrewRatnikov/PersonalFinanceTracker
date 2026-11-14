@@ -15,10 +15,39 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
-    typeof search.redirect === 'string' ? { redirect: search.redirect } : {},
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { redirect?: string; error?: 'auth' } => ({
+    ...(typeof search.redirect === 'string' ? { redirect: search.redirect } : {}),
+    ...(search.error === 'auth' ? { error: 'auth' as const } : {}),
+  }),
   component: Login,
 })
+
+const REACHABILITY_TIMEOUT_MS = 8000
+
+// True when the auth server answers at all. An opaque (no-cors) response is
+// enough: only a network failure (DNS, offline, timeout) rejects. Without this
+// the browser would leave the app for a page that never loads.
+async function authServerReachable(): Promise<boolean> {
+  const base: unknown = import.meta.env.VITE_SUPABASE_URL
+  if (typeof base !== 'string' || base === '') return true
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REACHABILITY_TIMEOUT_MS)
+  try {
+    await fetch(`${base}/auth/v1/health`, {
+      mode: 'no-cors',
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: controller.signal,
+    })
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function Login() {
   const [isLoading, setIsLoading] = useState(false)
@@ -27,13 +56,19 @@ function Login() {
   const { t } = useT()
 
   // Extract the redirect path from the search params, default to '/'
-  const search: { redirect?: string } = Route.useSearch()
+  const search: { redirect?: string; error?: 'auth' } = Route.useSearch()
   const fallback = search.redirect ?? '/'
+  // The callback sends a failed sign-in back here with ?error=auth.
+  const shownError = authError ?? (search.error === 'auth' ? t('login.failed') : null)
 
   const handleGoogleLogin = async () => {
     try {
       setIsLoading(true)
       setAuthError(null)
+      if (!(await authServerReachable())) {
+        setAuthError(t('login.unreachable'))
+        return
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -64,9 +99,9 @@ function Login() {
           <CardDescription>{t('login.description')}</CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
-          {authError && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertDescription>{authError}</AlertDescription>
+          {shownError && (
+            <Alert variant="destructive" className="mb-6" data-testid="login-error">
+              <AlertDescription>{shownError}</AlertDescription>
             </Alert>
           )}
 

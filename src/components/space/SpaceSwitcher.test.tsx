@@ -263,3 +263,25 @@ describe('SpaceChip', () => {
     expect(chip.getAttribute('aria-label')).toContain('Our home')
   })
 })
+
+describe('while the account is signed out', () => {
+  it('the Family sync icon says so instead of the stored "synced"', () => {
+    renderWith(
+      { spaceId: 'personal', family: FAMILY, familyStatus: 'synced', signedOut: true },
+      <SpaceSwitcher variant="header" />,
+    )
+
+    const icon = screen.getByTestId('space-sync-state')
+    expect(icon.getAttribute('data-status')).toBe('signed-out')
+    expect(icon.getAttribute('aria-label')).toBe(translate('en', 'family.state.signedOut'))
+  })
+
+  it('signed in: the stored status shows as before', () => {
+    renderWith(
+      { spaceId: 'personal', family: FAMILY, familyStatus: 'synced' },
+      <SpaceSwitcher variant="header" />,
+    )
+
+    expect(screen.getByTestId('space-sync-state').getAttribute('data-status')).toBe('synced')
+  })
+})

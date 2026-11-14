@@ -189,6 +189,7 @@ function spaceState(
     readOnly: false,
     paused: false,
     familyStatus: null,
+    signedOut: false,
     ready: true,
     directory: null,
     memberId: null,

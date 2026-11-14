@@ -66,6 +66,8 @@ export const exchangeAuthCode = createServerFn({ method: 'POST' })
 
     return { code }
   })
-  .handler(async ({ data }): Promise<void> => {
-    await getAuthenticatedClient().auth.exchangeCodeForSession(data.code)
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const { error } = await getAuthenticatedClient().auth.exchangeCodeForSession(data.code)
+    if (error) console.error('Auth code exchange failed:', error.name)
+    return { ok: !error }
   })

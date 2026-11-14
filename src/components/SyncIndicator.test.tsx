@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import type { Lang } from '@/i18n/lang'
 import type { SyncState, SyncStatusCode } from '@/lib/sync/types'
 import { setLang, translate } from '@/i18n/core'
+import { useAccountSignedOut } from '@/lib/accountSession'
 import { useSyncAvailable, useSyncState } from '@/lib/sync/react'
 import { SyncIndicator } from '@/components/SyncIndicator'
 
@@ -41,6 +42,7 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }))
+vi.mock('@/lib/accountSession', () => ({ useAccountSignedOut: vi.fn() }))
 vi.mock('@/lib/sync/react', () => ({
   useSyncState: vi.fn(),
   useSyncAvailable: vi.fn(),
@@ -60,7 +62,8 @@ function state(status: SyncStatusCode): SyncState {
   }
 }
 
-function show(status: SyncStatusCode, available = true) {
+function show(status: SyncStatusCode, available = true, signedOut = false) {
+  vi.mocked(useAccountSignedOut).mockReturnValue(signedOut)
   vi.mocked(useSyncAvailable).mockReturnValue(available)
   vi.mocked(useSyncState).mockReturnValue(state(status))
   return render(<SyncIndicator />)
@@ -148,5 +151,32 @@ describe('when it is shown', () => {
     vi.mocked(useSyncState).mockReturnValue(state('offline'))
     view.rerender(<SyncIndicator />)
     expect(screen.getByTestId('header-sync-indicator').getAttribute('data-sync-indicator')).toBe('offline')
+  })
+})
+
+describe('while the account is signed out', () => {
+  it('a stored "synced" shows as a problem, not as synced', () => {
+    show('synced', true, true)
+    const link = screen.getByTestId('header-sync-indicator')
+    expect(link.getAttribute('data-sync-indicator')).toBe('problem')
+    expect(link.getAttribute('data-signed-out')).toBe('true')
+  })
+
+  it.each(LANGS)('says to sign in, in %s', (lang) => {
+    setLang(lang, { persist: false })
+    show('synced', true, true)
+    const link = screen.getByTestId('header-sync-indicator')
+    expect(link.getAttribute('aria-label')).toBe(translate(lang, 'sync.indicator.signedOut'))
+    expect(link.getAttribute('href')).toBe('/settings?tab=sync')
+  })
+
+  it('does not read the session while sync is off on this device', () => {
+    show('off', true, true)
+    expect(useAccountSignedOut).not.toHaveBeenCalled()
+  })
+
+  it('signed in: no signed-out marker', () => {
+    show('synced')
+    expect(screen.getByTestId('header-sync-indicator').getAttribute('data-signed-out')).toBeNull()
   })
 })

@@ -41,6 +41,17 @@ export function useAccountSession(): AccountSession | null {
   return data ?? null
 }
 
+// True once the session check has finished and found no session. False while
+// it is still loading, so nothing flashes "signed out" at startup.
+export function useAccountSignedOut(): boolean {
+  const { data, isSuccess } = useQuery({
+    queryKey: ACCOUNT_SESSION_QUERY_KEY,
+    queryFn: getAccountSession,
+    staleTime: Infinity,
+  })
+  return isSuccess && data === null
+}
+
 export function useAccountsVisible(): boolean {
   const session = useAccountSession()
   return ENABLE_ACCOUNTS || session !== null

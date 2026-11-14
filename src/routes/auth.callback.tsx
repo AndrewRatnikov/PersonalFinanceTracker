@@ -14,9 +14,19 @@ export const Route = createFileRoute('/auth/callback')({
         ? raw
         : '/'
 
+    // The provider or Supabase refused (e.g. the user cancelled): no code.
+    let failed = url.searchParams.has('error')
     if (code) {
       // Execute the server function to swap the code for cookies
-      await exchangeAuthCode({ data: { code } })
+      const result = await exchangeAuthCode({ data: { code } })
+      if (!result.ok) failed = true
+    }
+    if (failed) {
+      // Back to the sign-in page with a message, instead of landing in the
+      // app signed out with no explanation.
+      const params = new URLSearchParams({ error: 'auth' })
+      if (redirectTo !== '/') params.set('redirect', redirectTo)
+      throw redirect({ href: `/login?${params.toString()}` })
     }
 
     // Always redirect back to the app to clear the callback URL parameters.

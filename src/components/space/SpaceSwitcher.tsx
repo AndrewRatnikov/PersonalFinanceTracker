@@ -5,6 +5,7 @@
 import {
   CircleAlert,
   CirclePause,
+  CloudAlert,
   CloudCheck,
   CloudOff,
   KeyRound,
@@ -25,8 +26,32 @@ const ICONS: Partial<Record<FamilySyncStatus, typeof CloudCheck>> = {
   'rotation-pending': KeyRound,
 }
 
-function SpaceSyncState({ status, name }: { status: FamilySyncStatus | null; name: string }) {
+function SpaceSyncState({
+  status,
+  name,
+  signedOut,
+}: {
+  status: FamilySyncStatus | null
+  name: string
+  signedOut: boolean
+}) {
   const { t } = useT()
+  if (signedOut) {
+    // No cycle runs while signed out, so the stored status would be stale.
+    const label = t('family.state.signedOut')
+    return (
+      <span
+        data-testid="space-sync-state"
+        data-status="signed-out"
+        role="img"
+        aria-label={label}
+        title={label}
+        className="inline-flex h-9 w-9 items-center justify-center text-destructive"
+      >
+        <CloudAlert className="h-5 w-5" />
+      </span>
+    )
+  }
   const value: FamilySyncStatus = status ?? 'none'
   let label: string
   switch (value) {
@@ -92,7 +117,7 @@ const OPTION_IDLE_CLASS = 'text-muted-foreground hover:bg-accent hover:text-fore
 
 export function SpaceSwitcher({ variant }: { variant: 'header' | 'nav' }) {
   const { t } = useT()
-  const { family, isFamily, familyStatus, switchTo } = useSpaceSwitch()
+  const { family, isFamily, familyStatus, signedOut, switchTo } = useSpaceSwitch()
   if (family === null) return null
 
   const ids = TEST_IDS[variant]
@@ -135,7 +160,7 @@ export function SpaceSwitcher({ variant }: { variant: 'header' | 'nav' }) {
   return (
     <>
       {group}
-      <SpaceSyncState status={familyStatus} name={family.name} />
+      <SpaceSyncState status={familyStatus} name={family.name} signedOut={signedOut} />
     </>
   )
 }

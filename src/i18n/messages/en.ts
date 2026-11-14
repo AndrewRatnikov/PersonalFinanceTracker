@@ -693,6 +693,8 @@ export const en = {
   },
   login: {
     unexpected: 'An unexpected error occurred.',
+    failed: "Sign-in didn't complete. Please try again.",
+    unreachable: "Can't reach the sign-in server. Check your connection and try again later.",
     description: 'Sign in to manage your core expenses instantly.',
     google: 'Continue with Google',
     agree: {
@@ -843,6 +845,7 @@ export const en = {
       syncing: 'Syncing',
       offline: 'Offline, changes will sync later',
       problem: 'Sync needs attention',
+      signedOut: 'Signed out. Sign in to keep syncing.',
     },
     errors: {
       actionFailed: "Couldn't complete the action ({code}).",
@@ -1023,6 +1026,7 @@ export const en = {
       offline: "Offline. Changes will sync when you're back online.",
       paused: "Family sync is paused: the owner's plan doesn't include it. Changes are kept and will sync when it's back.",
       rotationPending: 'Replacing the Family key. Changes will sync when it is done.',
+      signedOut: 'Signed out. Sign in to sync the Family.',
       error: 'Family sync problem ({code}). It will try again.',
     },
     pending: {

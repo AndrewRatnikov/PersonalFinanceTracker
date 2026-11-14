@@ -28,7 +28,7 @@ function redirectOf(err: unknown) {
 
 beforeEach(() => {
   vi.mocked(exchangeAuthCode).mockReset()
-  vi.mocked(exchangeAuthCode).mockResolvedValue(undefined as never)
+  vi.mocked(exchangeAuthCode).mockResolvedValue({ ok: true })
 })
 
 function callback(redirectTo: string | null, code: string | null = 'c'): string {
@@ -105,5 +105,24 @@ describe('/auth/callback redirect', () => {
 
     expect(err).toBe(failure)
     expect(isRedirect(err)).toBe(false)
+  })
+
+  it('sends a refused exchange back to the sign-in page with the target kept', async () => {
+    vi.mocked(exchangeAuthCode).mockResolvedValue({ ok: false })
+
+    const options = redirectOf(await runLoader(callback('/settings?tab=account')))
+
+    const url = new URL(options.href ?? '', 'http://localhost')
+    expect(url.pathname).toBe('/login')
+    expect(url.searchParams.get('error')).toBe('auth')
+    expect(url.searchParams.get('redirect')).toBe('/settings?tab=account')
+  })
+
+  it('a refused exchange with no target adds no redirect', async () => {
+    vi.mocked(exchangeAuthCode).mockResolvedValue({ ok: false })
+
+    const options = redirectOf(await runLoader(callback(null)))
+
+    expect(options.href).toBe('/login?error=auth')
   })
 })

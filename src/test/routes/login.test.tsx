@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type * as ReactRouter from '@tanstack/react-router'
 
-import { setLang } from '@/i18n/core'
+import { setLang, translate } from '@/i18n/core'
 import { Route } from '@/routes/login'
 
 const { signInWithOAuth } = vi.hoisted(() => ({
@@ -56,6 +56,8 @@ async function clickGoogleAndGetCallback(redirect: string): Promise<URL> {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   setLang('en', { persist: false })
 })
 
@@ -63,6 +65,7 @@ describe('login redirect_to encoding (#8)', () => {
   beforeEach(() => {
     signInWithOAuth.mockReset()
     signInWithOAuth.mockResolvedValue({ error: null })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
   })
 
   it('round-trips a redirect that carries its own query string', async () => {
@@ -114,6 +117,68 @@ describe('login validateSearch', () => {
     expect(validate({})).toEqual({})
     expect(validate({ redirect: 5 })).toEqual({})
     expect(validate({ redirect: ['/a'] })).toEqual({})
+  })
+})
+
+describe('login failures are shown', () => {
+  beforeEach(() => {
+    signInWithOAuth.mockReset()
+    signInWithOAuth.mockResolvedValue({ error: null })
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://project.example')
+    setLang('en', { persist: false })
+  })
+
+  it('keeps error=auth and drops any other error value', () => {
+    const fn = Route.options.validateSearch
+    if (typeof fn !== 'function') throw new Error('login route has no validateSearch')
+    expect(fn({ error: 'auth', redirect: '/settings' })).toEqual({
+      error: 'auth',
+      redirect: '/settings',
+    })
+    expect(fn({ error: '<b>x</b>' })).toEqual({})
+  })
+
+  it('shows the failed sign-in message after the callback sent error=auth', () => {
+    vi.spyOn(Route, 'useSearch').mockReturnValue({ error: 'auth' })
+    renderLogin()
+
+    expect(screen.getByTestId('login-error').textContent).toBe(translate('en', 'login.failed'))
+  })
+
+  it('shows no error on a plain visit', () => {
+    vi.spyOn(Route, 'useSearch').mockReturnValue({})
+    renderLogin()
+
+    expect(screen.queryByTestId('login-error')).toBeNull()
+  })
+
+  it('an unreachable sign-in server shows a message and starts no sign-in', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(Route, 'useSearch').mockReturnValue({})
+    renderLogin()
+    fireEvent.click(screen.getByTestId('login-google-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-error').textContent).toBe(
+        translate('en', 'login.unreachable'),
+      )
+    })
+    expect(signInWithOAuth).not.toHaveBeenCalled()
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://project.example/auth/v1/health')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ mode: 'no-cors', credentials: 'omit' })
+  })
+
+  it('a reachable server goes on to the sign-in', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
+    vi.spyOn(Route, 'useSearch').mockReturnValue({})
+    renderLogin()
+    fireEvent.click(screen.getByTestId('login-google-btn'))
+
+    await waitFor(() => {
+      expect(signInWithOAuth).toHaveBeenCalledTimes(1)
+    })
+    expect(screen.queryByTestId('login-error')).toBeNull()
   })
 })
 

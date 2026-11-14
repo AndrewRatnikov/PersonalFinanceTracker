@@ -23,6 +23,7 @@ import {
   useState,
 } from 'react'
 
+import { useAccountSignedOut } from '../accountSession'
 import { OPEN_APP_IN_QUERY_KEY, getOpenAppIn } from '../appSettings'
 import { getMemberProfiles, getSpaceInfo, listLocalSpaces } from '../localDb'
 import { buildMemberDirectory } from '../memberStats'
@@ -74,6 +75,8 @@ export interface ActiveSpaceState {
   /** isFamily && the Family stream is 'paused'. */
   paused: boolean
   familyStatus: FamilySyncStatus | null
+  /** A Family is held but the account is signed out: nothing syncs. */
+  signedOut: boolean
   ready: boolean
   /** Non-null only when isFamily. */
   directory: MemberDirectory | null
@@ -91,6 +94,7 @@ const DEFAULT_STATE: ActiveSpaceState = {
   readOnly: false,
   paused: false,
   familyStatus: null,
+  signedOut: false,
   ready: true,
   directory: null,
   memberId: null,
@@ -188,6 +192,17 @@ function FamilyStateBridge({
   return null
 }
 
+// Reports whether the account is signed out; mounted only while a Family is
+// held, so the session is not read otherwise.
+function SignedOutBridge({ onChange }: { onChange: (signedOut: boolean) => void }) {
+  const signedOut = useAccountSignedOut()
+  useEffect(() => {
+    onChange(signedOut)
+  }, [signedOut, onChange])
+  useEffect(() => () => onChange(false), [onChange])
+  return null
+}
+
 const DISMISSED_STATUSES: ReadonlyArray<FamilySyncStatus> = ['removed', 'space-gone']
 
 export function ActiveSpaceRoot({
@@ -201,6 +216,7 @@ export function ActiveSpaceRoot({
   const available = useFamilyAvailable()
   const famState = useFamilySyncState()
   const enabled = available && unlocked
+  const [accountSignedOut, setAccountSignedOut] = useState(false)
 
   const familyQuery = useQuery({
     queryKey: [
@@ -260,6 +276,7 @@ export function ActiveSpaceRoot({
       (syncState !== null && DISMISSED_STATUSES.includes(syncState.status)))
   const paused = isFamily && syncState?.status === 'paused'
   const familyStatus = familyId !== null ? (syncState?.status ?? null) : null
+  const signedOut = familyId !== null && accountSignedOut
 
   const profilesQuery = useQuery({
     queryKey: [MEMBER_PROFILES_QUERY_KEY, familyId],
@@ -331,18 +348,20 @@ export function ActiveSpaceRoot({
       readOnly,
       paused,
       familyStatus,
+      signedOut,
       ready,
       directory,
       memberId,
       switchTo,
       registerGuard,
     }),
-    [spaceId, family, isFamily, readOnly, paused, familyStatus, ready, directory, memberId, switchTo, registerGuard],
+    [spaceId, family, isFamily, readOnly, paused, familyStatus, signedOut, ready, directory, memberId, switchTo, registerGuard],
   )
 
   return (
     <SwitchContext.Provider value={value}>
       {familyId !== null && <FamilyStateBridge spaceId={familyId} onState={setFs} />}
+      {familyId !== null && <SignedOutBridge onChange={setAccountSignedOut} />}
       <SpaceProvider spaceId={spaceId}>{children}</SpaceProvider>
       <AlertDialog
         open={pending !== null}
