@@ -33,6 +33,7 @@ What the system does is already documented in [`docs/free-tier-spec.md`](../free
 | [2026-11-01](2026-11-01-settings-grouped-list-phone-sidebar-desktop.md) | Settings is a grouped list on phones and a sidebar on desktop, driven by `?tab=` | Accepted |
 | [2026-11-01](2026-11-01-one-page-width-shared-with-the-header.md) | One page width shared with the header | Accepted |
 | [2026-11-01](2026-11-01-desktop-layouts-keep-dom-order-lg-grid-placement.md) | Desktop layouts keep the phone DOM order and place cells with lg-only grid classes | Accepted |
+| [2026-11-20](2026-11-20-localdb-split-into-db-modules-behind-barrel.md) | localDb.ts is split into layered `src/lib/db/` modules behind an unchanged barrel that db files never import | Accepted |
 
 ## Where else decisions live
 

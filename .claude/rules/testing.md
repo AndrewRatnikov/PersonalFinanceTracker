@@ -48,3 +48,13 @@ must change a value (Radix Select can't be driven by `fireEvent` in jsdom).
   (`import/first`). Vitest hoists those calls anyway.
 - `import type` lines from `@/lib/*` go before value imports from
   `@/components/*` (`import/order`).
+
+## Run the suite under Node 24, not 26
+
+- Symptom: dozens of test files fail with `TypeError: Cannot read properties of
+  undefined (reading 'clear')` at `localStorage.clear()`, plus worker-start
+  timeouts. It fails the same way on an unmodified `main`.
+- Cause: under Node 26 the jsdom `localStorage` global is undefined in vitest.
+- Do: run `npm run test` with Node 24 (for example
+  `PATH=$HOME/.nvm/versions/node/v24.11.1/bin:$PATH npm run test`). Check
+  `node -v` before treating a mass `localStorage` failure as a code bug.
