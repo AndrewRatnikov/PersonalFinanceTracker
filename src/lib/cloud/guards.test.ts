@@ -307,7 +307,15 @@ describe('key handling (decisions D1 and D2)', () => {
   })
 
   it('the unchanged files still do not know about sync', () => {
-    for (const file of ['lib/crypto.ts', 'lib/localDb.ts', 'lib/backup.ts', 'lib/featureFlags.ts']) {
+    // The localDb split: every non-test file in src/lib/db/ is covered too, listed from disk
+    // so a new db file is covered automatically.
+    const dbFiles = readdirSync(join(SRC, 'lib/db'))
+      .filter((name) => name.endsWith('.ts') && !isTestFile(name))
+      .map((name) => `lib/db/${name}`)
+    expect(dbFiles).toContain('lib/db/context.ts')
+    expect(dbFiles).toContain('lib/db/handles.ts')
+    const files = ['lib/crypto.ts', 'lib/localDb.ts', 'lib/backup.ts', 'lib/featureFlags.ts', ...dbFiles]
+    for (const file of files) {
       const text = source(file)
       expect(text, file).not.toMatch(/HKDF|getSyncKeys|lib\/cloud/)
     }
