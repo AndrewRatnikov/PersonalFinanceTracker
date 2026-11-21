@@ -42,6 +42,8 @@ About 214 top-level functions: expenses, categories, income, budgets, recurring,
 
 **Fix:** split by domain into `src/lib/localDb/` (core store/crypto/lock, then one file per record type, sync, spaces) and keep `localDb.ts` as a re-export so imports and test mocks stay unchanged.
 
+**Done** (2026-11-21, PR #TBD): split into `src/lib/db/` behind the `localDb.ts` barrel; see the ADR.
+
 ### 4. `CLAUDE.md` is 77 KB
 
 It is loaded into every agent session and will drift from the code as it grows.
