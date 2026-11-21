@@ -4,6 +4,7 @@
     "max_files": 3,
     "sensitive_paths": [
       "src/lib/localDb.ts",
+      "src/lib/db/**",
       "src/lib/vault.ts",
       "src/lib/vaultSession.ts",
       "src/lib/crypto.ts",
