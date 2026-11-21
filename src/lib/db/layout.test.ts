@@ -140,7 +140,7 @@ describe('checker fixtures', () => {
       '  e,',
       '  f,',
       "} from '../crypto'",
-      "// import { z } from './commented'",
+      "// import { z } from '../localDb'",
     ].join('\n')
     expect(importsOf(text).sort()).toEqual(
       ['../crypto', './context', './events', './records', './revs', './settings', './storage'].sort(),
